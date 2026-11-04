@@ -53,10 +53,9 @@ ${ticketContext(issue, analysis)}
 TASK (phase 2 of 2, fix): the committed test e2e/tests/${issue.key}.spec.ts reproduces the bug and fails. Implement the smallest correct fix in the application code.
 - Follow the proposed fix unless you find a smaller correct one. Keep existing behaviour working (for example the footer PULISCI button).
 - Do NOT modify anything under e2e/. Match the style of the surrounding code; a short comment referencing ${issue.key} only where it helps a reader.
-- Verify:
-  1. from the e2e folder: ${testEnv} npx playwright test   (all tests must pass)
-  2. from the frontend folder: npx ng build   (must succeed)
-  3. only if you changed backend code: from the backend folder: mvn -q test ${javaHint}
+- Verify from the e2e folder: ${testEnv} npx playwright test   (all tests must pass; a compile error also makes them fail).
+  Do not run ng build: the watcher runs the build and all checks again independently.
+  Only if you changed backend code: from the backend folder: mvn -q test ${javaHint}
 - Do not commit.
 
 Reply with ONLY one \`\`\`json block:

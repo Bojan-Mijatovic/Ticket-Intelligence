@@ -29,6 +29,7 @@ Everything is **read-only** until you approve. The only write actions are the Ji
 | [docs/DEMO_SCENARIO.md](docs/DEMO_SCENARIO.md) | demo script, setup checklist, fallbacks, reset |
 | [docs/DEPENDENCIES_AND_RISKS.md](docs/DEPENDENCIES_AND_RISKS.md) | dependencies, assumptions, risk register |
 | [docs/EXIT_CRITERIA.md](docs/EXIT_CRITERIA.md) | gate from discovery to the next build steps |
+| [docs/COPILOT_TEST.md](docs/COPILOT_TEST.md) | test plan for GitHub Copilot on company projects |
 
 ## Installation (once)
 
@@ -202,6 +203,9 @@ install.mjs                   installs the skills (user-level, Copilot CLI or in
 agent/                        autonomous watcher, headless analysis, policy, live dashboard
 demo/seed-jira.mjs            copies the historical demo tickets into a real Jira project
 demo/new-ticket.mjs           opens the demo target ticket in Jira (rehearsal / live demo)
+demo/resolve-ticket.mjs       moves a ticket to Done (triggers the documentation stage)
+demo/reset-demo.mjs           puts the demo back to its starting point (dry run unless --yes)
+demo/preflight.mjs            go / no-go check before a live demo
 ```
 
 Division of work: the **scripts** collect data from Jira and git/SVN and compute transparent scores; the **agent** reads the ticket, screenshots, diffs and code, connects the facts, and writes the report, the proposed fix and the documentation. The scripts need Node 18+ and have no dependencies. Only read-only VCS commands are used for the analysis.

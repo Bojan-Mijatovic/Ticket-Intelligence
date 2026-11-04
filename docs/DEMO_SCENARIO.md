@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | Defined and approved by Bojan Mijatović (2026-11-04); parts marked *(planned)* are built on POC days 3–4 |
+| **Status** | Defined and approved by Bojan Mijatović (2026-11-04); fully implemented and rehearsed (DEM-10, 2026-11-04) |
 | **Owner** | Bojan Mijatović |
-| **Length** | 10 minutes (5 min live flow + 5 min questions) |
+| **Length** | 15 minutes (9 min live flow + questions) |
 | **Audience** | team leads, developers, support, management |
 
 ## 1. The message
@@ -24,17 +24,14 @@ The demo project is **MediAgenda**, a fictional healthcare scheduling app (Angul
 ## 3. Setup
 
 **The day before**
-- [ ] `demo/mediagenda` is on `main`, up to date with GitHub, with no leftover agent branches or open pull requests; `node demo/run-mediagenda.mjs` works.
-- [ ] Rehearsal tickets deleted, so the live ticket isn't flagged as a duplicate: `node demo/new-ticket.mjs --delete DEM-7`, the same for DEM-8 and any other rehearsal ticket.
-- [ ] Full rehearsal done, and a **screen recording saved** as a fallback.
+- [ ] Full rehearsal done (section 4, with `node demo/new-ticket.mjs` and `node demo/resolve-ticket.mjs <KEY>`), and a **screen recording saved** as a fallback (Windows: Win+Alt+R, or Clipchamp).
+- [ ] `node demo/reset-demo.mjs` (dry run), then `node demo/reset-demo.mjs --yes`: closes the agent's pull requests and branches, deletes the rehearsal tickets, archives the agent state.
 - [ ] Laptop: power plan "never sleep", notifications off, browser zoom 110 %.
 
 **30 minutes before**
-- [ ] `node demo/run-mediagenda.mjs` → http://localhost:4200/agenda loads.
-- [ ] `node agent/watcher.mjs` → http://localhost:7070 shows *watching*.
-- [ ] `node ~/.claude/skills/analyze-ticket/scripts/ticket.mjs check` → `ok: true`.
-- [ ] `claude -p "say OK"` answers (CLI session is valid).
-- [ ] Browser tabs, in order: (1) MediAgenda app, (2) Jira board DEM, (3) dashboard.
+- [ ] `node demo/run-mediagenda.mjs` (app on :4200, backend on :8080) and `node agent/watcher.mjs` (dashboard on :7070, restarted after the reset so it starts empty).
+- [ ] `node demo/preflight.mjs` → **GO** (Jira, no leftover tickets, Claude CLI, GitHub CLI, clean MediAgenda main, no agent branches/PRs, Playwright, watcher, app).
+- [ ] Browser tabs, in order: (1) MediAgenda app, (2) Jira board DEM, (3) dashboard, (4) MediAgenda pull requests on GitHub.
 
 ## 4. Script
 
@@ -47,10 +44,11 @@ The demo project is **MediAgenda**, a fictional healthcare scheduling app (Angul
 | 2:15 | Opens the Jira ticket | the internal AI analysis comment, label `ai-analyzed` | "It's already in Jira, where the team works." |
 | 2:30 | Back to the dashboard, Teams panel | the message to Sara, ready to act on | "The right person knows, with context, without a meeting." |
 | 2:45 | Shows "Waiting for a human" | drafts: assign to Sara, reply to the reporter | "What the agent may do alone is a policy. Anything customer-facing waits for a person." |
-| 3:00 | Dashboard: reproduction | generated browser test runs; screenshot + request with two structureIds attached to Jira | "It proved the bug in the real app." |
-| ~5:00 | Dashboard: fix | branch DEM-x, the diff, `ng build` ✓, `mvn test` ✓, reproduction test ✓, draft PR | "And proposed a tested fix. A developer reviews it, they don't start from zero." |
-| 4:30 | *(planned)* Moves the ticket to Done | a docs PR with the known-issue entry for this component | "Next time this kind of bug comes, the answer is already in the repo." |
-| 5:00 | Questions | | |
+| ~3:30 | Dashboard: reproduction | the browser test the agent wrote fails on the current code (checked by the watcher); the "before" screenshot shows providers of both structures | "It proved the bug in the real app, with a test." |
+| ~6:30 | Dashboard: fix | browser tests ✓, `ng build` ✓, backend unchanged; before/after screenshots; **Open draft pull request** | "And proposed a tested fix. A developer reviews it, they don't start from zero." |
+| 7:00 | Opens the pull request on GitHub | two commits (failing test, then fix), the diff, the verification table | "Merging is always a human decision." |
+| 7:30 | In Jira, moves the ticket to Done (or `node demo/resolve-ticket.mjs <KEY>`) | within ~1.5 min: a documentation PR with the known-issue entry (cause, fix, how to verify, recurrence of DEM-5) | "Next time this kind of bug comes, the answer is already in the repo." |
+| 9:00 | Questions | | |
 
 ## 5. What makes it convincing
 
@@ -64,7 +62,7 @@ The demo project is **MediAgenda**, a fictional healthcare scheduling app (Angul
 | Problem | Fallback |
 |---|---|
 | Network / Jira unavailable | play the recording; the dashboard history still shows earlier runs |
-| Agent slower than usual | keep talking over the streamed steps; typical: analysis 55–90 s, reproduction 1.5–3.5 min, fix + checks 1.5 min (DEM-9: 6 min 24 s end to end) |
+| Agent slower than usual | keep talking over the streamed steps. Measured in the rehearsal (DEM-10): analysis in Jira 1:23, bug reproduced 2:27, draft PR 6:10; Done → documentation PR 1:32 |
 | Agent fails (`ai-failed`) | remove the label in Jira; it is retried at the next poll; meanwhile show DEM-7's earlier result |
 | Ticket flagged as a duplicate | turn it into a talking point ("it also recognized the duplicate"), then continue |
 | Claude CLI session expired | run `claude` once in a terminal before the demo; fallback to the recording |
@@ -74,10 +72,11 @@ The demo project is **MediAgenda**, a fictional healthcare scheduling app (Angul
 The demo application lives in its own private repository, https://github.com/Bojan-Mijatovic/MediAgenda (local clone: `demo/mediagenda`). Its `main` is never rewritten; the agent only adds branches and pull requests.
 
 ```
-node demo/new-ticket.mjs --delete DEM-<n>                 # the live ticket(s)
-gh pr close <n> --repo Bojan-Mijatovic/MediAgenda --delete-branch   # each agent pull request + its branch
-cd demo/mediagenda && git checkout main && git pull       # local clone back to main
+node demo/reset-demo.mjs          # dry run: shows what will be closed / deleted
+node demo/reset-demo.mjs --yes    # agent PRs closed + branches deleted, demo tickets deleted, agent state archived
 ```
+
+Then restart the watcher and run `node demo/preflight.mjs`.
 
 `make-mediagenda.mjs --force` refuses to rebuild a repository that has a remote, because the new history would need a force push.
 

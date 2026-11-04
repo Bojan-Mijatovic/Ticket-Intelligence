@@ -93,7 +93,7 @@ Ticket Intelligence gives every Jira ticket a fast, evidence-based first analysi
 | FR-37 | Post owner notifications to Teams through a Workflows webhook when `TEAMS_WEBHOOK_URL` is set | Implemented (not tested against a real channel) |
 | FR-38 | Reproduce the bug with a generated Playwright test (mocked backend API); the watcher verifies that the test fails before the fix; attach screenshot and recorded API calls to Jira | Implemented |
 | FR-39 | Implement the fix on a branch named after the ticket in an isolated worktree; the watcher re-runs all browser tests, `ng build` and (if backend code changed) `mvn test`; push and open a draft PR (GitHub). SVN: patch file | Implemented for git/GitHub; SVN patch Later |
-| FR-40 | On transition to Done, run `/document-ticket` and open a documentation PR | Planned |
+| FR-40 | On transition to Done, run `/document-ticket` headless on branch `docs/<KEY>` (only `docs/knowledge/*.md` may change, checked by the watcher) and open a draft documentation PR | Implemented |
 
 ### 4.5 Documentation of resolved tickets
 
@@ -179,6 +179,8 @@ Scores only order lists; every recommendation must cite tickets, commits or file
 | Analysis quality | DEM-7 / DEM-8: correct cause (file:line), related tickets, owner; DEM-1 (meaningless ticket): low confidence, no notification |
 | git vs. SVN | identical components, commits and people on both demo repositories |
 | Autonomy | DEM-8 created → picked in 13 s → commented in 59 s, no human action |
+| Warm-up | the fix workspace and dev server are prepared during the analysis: reproduction 64 s instead of 197 s (DEM-10 vs DEM-9) |
+| Done → docs | DEM-10 moved to Done → documentation PR #4 in 1 min 32 s |
 | Reproduce and fix | DEM-9 created → analysis 63 s → test written and failing (verified) → fix → 2 browser tests + `ng build` passing (verified) → draft PR #1 + Jira comment with 4 attachments; 6 min 24 s end to end, no human action |
 | Not yet validated | GitHub Copilot, real company tickets, real SVN server, real Teams channel |
 

@@ -95,6 +95,12 @@ node agent/fix-one.mjs DEM-7 --local     # reproduce + fix + verify, no push / P
 node agent/fix-one.mjs DEM-7             # full run for one ticket (uses its saved analysis)
 ```
 
+To keep this fast, the worktree and an Angular dev server are prepared **while the analysis runs** (only for tickets the title rules allow; discarded if no fix follows). The agent's own test runs reuse that warm server; the watcher's checks always start their own.
+
+## Done → documentation
+
+When a ticket the agent analyzed moves to **Done** (`documentOnDone: auto`), the watcher runs the `document-ticket` skill headless on branch `docs/<KEY>`. The agent may only write `docs/knowledge/*.md` (checked); the watcher commits, pushes, opens a draft pull request and comments in Jira. Labels: `ai-documenting` → `ai-documented` (or `ai-doc-failed`).
+
 ## Duplicates
 
 When the analysis finds an open ticket reporting the same problem, it returns `duplicateOf`. The dashboard flags it, and the Jira comment mentions it. The agent does not link or close tickets on its own.
