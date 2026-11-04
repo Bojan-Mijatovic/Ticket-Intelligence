@@ -1,0 +1,438 @@
+{
+  "_note": "Fictional demo data for JIRA_MOCK=1, matching the demo/mediagenda project. People and tickets are invented.",
+  "baseUrl": "https://example.atlassian.net",
+  "issues": [
+    {
+      "key": "CUP_DEMO-2629",
+      "summary": "[FE] - Agenda: Search mask: Struttura field: the manually cleaning button doesn't work properly",
+      "description": "As we did on the US for the ‘PULISCI’ button in the footer of the ‘Agenda’ search Mask, we have to check the manual cleaning on the field Struttura.\n\nWhen we clean the field using the keyboard, the field on the screen is cleared, but something remains in the cache, resulting in the timeSlot service being called with two or more structureIDs, while the field is filled with only one value/structure.\n\nHow to reproduce:\n1 - select the radio button \"Struttura\" and search a structure, put SVIL_MS_VISITE (f.e.) as value\n2 - the tables are correctly populated\n3 - use the KEYBOARD and clean the field manually\n4 - select another value (f.e. TEST_GEN_25)\n5 - check the StructuretimeSlot BE service in the inspect section: we are sending to BE two structureIds (the first one searched and the second one filled in the field)\n\nThis creates multiple and mixed values in the timeSlot table, which is incorrect behaviour.",
+      "status": "To Do",
+      "statusCategory": "new",
+      "priority": "High",
+      "issueType": "Bug",
+      "created": "2026-10-30T09:20:00.000+0000",
+      "updated": "2026-11-03T11:05:00.000+0000",
+      "environments": [
+        "SVIL"
+      ],
+      "components": [
+        "Frontend",
+        "Agenda"
+      ],
+      "reporter": {
+        "id": "u-elena",
+        "name": "Elena Conti"
+      },
+      "assignee": null,
+      "comments": [
+        {
+          "author": {
+            "id": "u-paolo",
+            "name": "Paolo Ferri"
+          },
+          "created": "2026-11-03T11:00:00.000+0000",
+          "body": "The customer reported mixed agendas in COLLAUDO as well. Can we include this in the next release?"
+        }
+      ],
+      "changelog": [
+        {
+          "author": {
+            "id": "u-paolo",
+            "name": "Paolo Ferri"
+          },
+          "created": "2026-11-03T11:05:00.000+0000",
+          "items": [
+            {
+              "field": "priority",
+              "from": "Medium",
+              "to": "High"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "CUP_DEMO-2511",
+      "summary": "[FE] - Agenda: Search mask: PULISCI button doesn't clean the Struttura field",
+      "description": "After clicking PULISCI in the footer of the Agenda search mask the Struttura field looks empty, but the next search still sends the previous structureId to the StructuretimeSlot service, so the timeSlot table mixes two structures.",
+      "status": "Done",
+      "priority": "High",
+      "issueType": "Bug",
+      "resolution": "Done",
+      "resolutionDate": "2026-09-23T10:00:00.000+0000",
+      "created": "2026-09-15T08:30:00.000+0000",
+      "updated": "2026-09-23T10:00:00.000+0000",
+      "environments": [
+        "SVIL"
+      ],
+      "components": [
+        "Frontend",
+        "Agenda"
+      ],
+      "reporter": {
+        "id": "u-elena",
+        "name": "Elena Conti"
+      },
+      "assignee": {
+        "id": "u-sara",
+        "name": "Sara Colombo"
+      },
+      "comments": [
+        {
+          "author": {
+            "id": "u-sara",
+            "name": "Sara Colombo"
+          },
+          "created": "2026-09-22T13:10:00.000+0000",
+          "body": "Root cause: AgendaSearchStore.reset() cleared only resources and time slots, not selectedStructureIds, and the Struttura autocomplete kept its own selected value. Since CUP_DEMO-2398 the store appends every selected structure, so the old one stayed in the request. Fix: reset() now clears selectedStructureIds and the footer PULISCI also calls StructureAutocompleteComponent.clear()."
+        },
+        {
+          "author": {
+            "id": "u-marta",
+            "name": "Marta Ricci"
+          },
+          "created": "2026-09-22T16:00:00.000+0000",
+          "body": "Reviewed, OK. Note: the operator can also empty the field by hand; that path does not go through reset(), we may need the same there."
+        },
+        {
+          "author": {
+            "id": "u-elena",
+            "name": "Elena Conti"
+          },
+          "created": "2026-09-23T09:50:00.000+0000",
+          "body": "Verified on SVIL with SVIL_MS_VISITE → PULISCI → TEST_GEN_25: only TEST_GEN_25 is sent now."
+        }
+      ],
+      "worklogs": [
+        {
+          "author": {
+            "id": "u-sara",
+            "name": "Sara Colombo"
+          },
+          "started": "2026-09-22T09:00:00.000+0000",
+          "seconds": 12600
+        },
+        {
+          "author": {
+            "id": "u-marta",
+            "name": "Marta Ricci"
+          },
+          "started": "2026-09-22T15:30:00.000+0000",
+          "seconds": 1800
+        }
+      ],
+      "changelog": [
+        {
+          "author": {
+            "id": "u-sara",
+            "name": "Sara Colombo"
+          },
+          "created": "2026-09-16T08:00:00.000+0000",
+          "items": [
+            {
+              "field": "status",
+              "from": "To Do",
+              "to": "In Progress"
+            }
+          ]
+        },
+        {
+          "author": {
+            "id": "u-elena",
+            "name": "Elena Conti"
+          },
+          "created": "2026-09-23T10:00:00.000+0000",
+          "items": [
+            {
+              "field": "status",
+              "from": "In Test",
+              "to": "Done"
+            },
+            {
+              "field": "resolution",
+              "from": null,
+              "to": "Done"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "CUP_DEMO-2398",
+      "summary": "[BE][FE] - Agenda: time slot search for several structures",
+      "description": "Operators of multi-site organisations need to see the time slots of more than one structure in a single search. The StructuretimeSlot service must accept a list of structureIds and the Agenda search must send all the selected structures.",
+      "status": "Done",
+      "priority": "Medium",
+      "issueType": "Story",
+      "resolution": "Done",
+      "resolutionDate": "2026-05-16T15:00:00.000+0000",
+      "created": "2026-05-06T09:00:00.000+0000",
+      "updated": "2026-05-16T15:00:00.000+0000",
+      "environments": [
+        "SVIL"
+      ],
+      "components": [
+        "Backend",
+        "Frontend",
+        "Agenda"
+      ],
+      "reporter": {
+        "id": "u-paolo",
+        "name": "Paolo Ferri"
+      },
+      "assignee": {
+        "id": "u-luca",
+        "name": "Luca Bianchi"
+      },
+      "comments": [
+        {
+          "author": {
+            "id": "u-luca",
+            "name": "Luca Bianchi"
+          },
+          "created": "2026-05-14T10:30:00.000+0000",
+          "body": "BE done: POST /api/agenda/structure-timeslots now takes { structureIds: [...] } (the old structureId field is removed) and returns the slots of all structures merged. Test added in TimeSlotServiceTest."
+        },
+        {
+          "author": {
+            "id": "u-sara",
+            "name": "Sara Colombo"
+          },
+          "created": "2026-05-15T16:00:00.000+0000",
+          "body": "FE done: AgendaSearchStore keeps selectedStructureIds; every structure picked in the Struttura field is added to the list and sent to the service."
+        }
+      ],
+      "worklogs": [
+        {
+          "author": {
+            "id": "u-luca",
+            "name": "Luca Bianchi"
+          },
+          "started": "2026-05-13T09:00:00.000+0000",
+          "seconds": 21600
+        },
+        {
+          "author": {
+            "id": "u-sara",
+            "name": "Sara Colombo"
+          },
+          "started": "2026-05-15T09:00:00.000+0000",
+          "seconds": 14400
+        }
+      ],
+      "changelog": [
+        {
+          "author": {
+            "id": "u-luca",
+            "name": "Luca Bianchi"
+          },
+          "created": "2026-05-16T15:00:00.000+0000",
+          "items": [
+            {
+              "field": "status",
+              "from": "In Test",
+              "to": "Done"
+            },
+            {
+              "field": "resolution",
+              "from": null,
+              "to": "Done"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "CUP_DEMO-2615",
+      "summary": "[FE] - Agenda: time slot table sorted by weekday and start time",
+      "description": "In the 'Dettaglio giornaliero delle fasce orarie' table the time slots should be ordered by weekday and then by start time.",
+      "status": "Done",
+      "priority": "Low",
+      "issueType": "Story",
+      "resolution": "Done",
+      "resolutionDate": "2026-10-15T09:00:00.000+0000",
+      "created": "2026-10-08T10:00:00.000+0000",
+      "updated": "2026-10-15T09:00:00.000+0000",
+      "environments": [
+        "SVIL"
+      ],
+      "components": [
+        "Frontend",
+        "Agenda"
+      ],
+      "reporter": {
+        "id": "u-paolo",
+        "name": "Paolo Ferri"
+      },
+      "assignee": {
+        "id": "u-marta",
+        "name": "Marta Ricci"
+      },
+      "comments": [
+        {
+          "author": {
+            "id": "u-marta",
+            "name": "Marta Ricci"
+          },
+          "created": "2026-10-14T09:00:00.000+0000",
+          "body": "Sorting is done in TimeSlotTableComponent (weekday order, then startTime)."
+        }
+      ],
+      "worklogs": [
+        {
+          "author": {
+            "id": "u-marta",
+            "name": "Marta Ricci"
+          },
+          "started": "2026-10-14T08:00:00.000+0000",
+          "seconds": 5400
+        }
+      ],
+      "changelog": [
+        {
+          "author": {
+            "id": "u-marta",
+            "name": "Marta Ricci"
+          },
+          "created": "2026-10-15T09:00:00.000+0000",
+          "items": [
+            {
+              "field": "status",
+              "from": "In Progress",
+              "to": "Done"
+            },
+            {
+              "field": "resolution",
+              "from": null,
+              "to": "Done"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "CUP_DEMO-2602",
+      "summary": "[BE] - Resources endpoint returns inactive erogatori",
+      "description": "GET /api/resources returns providers that are no longer active (e.g. MS_ALLERGOLOGIA) and the operators can select them in the Risorse list.",
+      "status": "Done",
+      "priority": "Medium",
+      "issueType": "Bug",
+      "resolution": "Done",
+      "resolutionDate": "2026-07-09T10:00:00.000+0000",
+      "created": "2026-07-01T08:00:00.000+0000",
+      "updated": "2026-07-09T10:00:00.000+0000",
+      "environments": [
+        "COLLAUDO"
+      ],
+      "components": [
+        "Backend"
+      ],
+      "reporter": {
+        "id": "u-elena",
+        "name": "Elena Conti"
+      },
+      "assignee": {
+        "id": "u-davide",
+        "name": "Davide Greco"
+      },
+      "comments": [
+        {
+          "author": {
+            "id": "u-davide",
+            "name": "Davide Greco"
+          },
+          "created": "2026-07-08T09:00:00.000+0000",
+          "body": "AgendaResourceService now uses findByStructureIdInAndActiveTrue."
+        }
+      ],
+      "worklogs": [
+        {
+          "author": {
+            "id": "u-davide",
+            "name": "Davide Greco"
+          },
+          "started": "2026-07-08T08:00:00.000+0000",
+          "seconds": 3600
+        }
+      ],
+      "changelog": [
+        {
+          "author": {
+            "id": "u-davide",
+            "name": "Davide Greco"
+          },
+          "created": "2026-07-09T10:00:00.000+0000",
+          "items": [
+            {
+              "field": "status",
+              "from": "In Progress",
+              "to": "Done"
+            },
+            {
+              "field": "resolution",
+              "from": null,
+              "to": "Done"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "CUP_DEMO-2580",
+      "summary": "[FE] - Pazienti: paging restarts from page 1 after every search",
+      "description": "On the Pazienti page, when the operator moves to page 2 and searches again, the paging indicator is wrong.",
+      "status": "Done",
+      "priority": "Low",
+      "issueType": "Bug",
+      "resolution": "Done",
+      "resolutionDate": "2026-06-10T10:00:00.000+0000",
+      "created": "2026-06-02T08:00:00.000+0000",
+      "updated": "2026-06-10T10:00:00.000+0000",
+      "environments": [
+        "COLLAUDO"
+      ],
+      "components": [
+        "Frontend"
+      ],
+      "reporter": {
+        "id": "u-elena",
+        "name": "Elena Conti"
+      },
+      "assignee": {
+        "id": "u-sara",
+        "name": "Sara Colombo"
+      },
+      "comments": [
+        {
+          "author": {
+            "id": "u-sara",
+            "name": "Sara Colombo"
+          },
+          "created": "2026-06-09T10:00:00.000+0000",
+          "body": "Search always starts from page 0 now."
+        }
+      ],
+      "changelog": [
+        {
+          "author": {
+            "id": "u-sara",
+            "name": "Sara Colombo"
+          },
+          "created": "2026-06-10T10:00:00.000+0000",
+          "items": [
+            {
+              "field": "status",
+              "from": "In Progress",
+              "to": "Done"
+            },
+            {
+              "field": "resolution",
+              "from": null,
+              "to": "Done"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

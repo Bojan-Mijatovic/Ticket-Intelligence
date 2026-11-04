@@ -1,0 +1,8 @@
+.env
+demo/mediagenda/
+demo/mediagenda-svn/
+demo/mediagenda-svn-repo/
+tools/
+*.local.json
+agent/state/
+demo/jira-keys.json

@@ -1,0 +1,20 @@
+{
+  "project": "DEM",
+  "repo": "../demo/mediagenda",
+  "pollSeconds": 30,
+  "lookbackHours": 72,
+  "maxParallel": 1,
+  "analysisTimeoutMinutes": 10,
+  "dashboardPort": 7070,
+  "labels": {
+    "inProgress": "ai-analyzing",
+    "done": "ai-analyzed",
+    "failed": "ai-failed",
+    "skip": "no-ai"
+  },
+  "claude": {
+    "command": "claude",
+    "maxTurns": 40,
+    "model": null
+  }
+}

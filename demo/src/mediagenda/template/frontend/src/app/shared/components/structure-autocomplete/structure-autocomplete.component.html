@@ -1,0 +1,27 @@
+<div class="field">
+  <label class="field-label" for="structure-input">{{ label }}</label>
+  <div class="input-row">
+    <input
+      id="structure-input"
+      type="text"
+      autocomplete="off"
+      placeholder="Codice o nome struttura (min. 2 caratteri)"
+      [ngModel]="text"
+      (ngModelChange)="onInput($event)"
+    />
+    @if (selected) {
+      <span class="badge" title="Strutture selezionate">1</span>
+    }
+  </div>
+
+  @if (suggestions.length) {
+    <ul class="suggestions" role="listbox">
+      @for (s of suggestions; track s.id) {
+        <li role="option" (mousedown)="choose(s)">
+          <strong>{{ s.id }}</strong>
+          <span class="muted">{{ s.name }} · {{ s.city }}</span>
+        </li>
+      }
+    </ul>
+  }
+</div>

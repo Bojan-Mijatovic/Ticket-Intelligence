@@ -1,0 +1,13 @@
+{
+  "baseUrl": "",
+  "deployment": "cloud",
+  "projects": [],
+  "environmentField": "environment",
+  "environmentMatch": "auto",
+  "lookbackDays": 365,
+  "maxCandidates": 50,
+  "maxRelated": 10,
+  "halfLifeDays": 180,
+  "doneStatuses": ["Done", "Resolved", "Closed", "Fixed"],
+  "excludeUsers": ["Automation for Jira", "Jira Automation"]
+}

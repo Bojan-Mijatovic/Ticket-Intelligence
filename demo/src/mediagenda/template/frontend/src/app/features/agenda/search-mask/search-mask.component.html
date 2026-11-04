@@ -1,0 +1,31 @@
+<section class="card">
+  <h1 class="page-title">{{ labels.agenda }}</h1>
+
+  <div class="search-by" role="radiogroup" aria-label="Cerca per">
+    <label><input type="radio" name="searchBy" value="struttura" [(ngModel)]="searchBy" /> {{ labels.structure }}</label>
+    <label><input type="radio" name="searchBy" value="agenda" [(ngModel)]="searchBy" disabled /> {{ labels.agenda }}</label>
+    <label><input type="radio" name="searchBy" value="erogatore" [(ngModel)]="searchBy" disabled /> {{ labels.provider }}</label>
+  </div>
+
+  @if (searchBy === 'struttura') {
+    <app-structure-autocomplete (structureSelected)="onStructureSelected($event)" />
+  }
+</section>
+
+<section class="card">
+  <h2>Liste</h2>
+  <p class="hint">Seleziona almeno una fascia oraria per attivare il pulsante {{ labels.createCalendar }}.</p>
+  <app-resources-list [resources]="store.resources()" />
+</section>
+
+<section class="card">
+  <h2>{{ labels.timeSlots }}</h2>
+  <app-timeslot-table [slots]="store.timeSlots()" [loading]="store.loading()" />
+</section>
+
+<app-footer-actions (clean)="onClean()" (search)="onSearch()" />
+
+<style>
+  .search-by { display: flex; gap: 20px; margin-bottom: 12px; }
+  .search-by label { display: inline-flex; align-items: center; gap: 6px; }
+</style>

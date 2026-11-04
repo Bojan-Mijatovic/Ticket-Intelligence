@@ -1,0 +1,15 @@
+{
+  "_comment": "What the agent may do on its own. 'auto' = done without asking, 'draft' = prepared and shown on the dashboard for a human, 'off' = never.",
+  "actions": {
+    "postInternalComment": "auto",
+    "addLabels": "auto",
+    "notifyOwner": "auto",
+    "assignOwner": "draft",
+    "changePriority": "off",
+    "replyToReporter": "draft",
+    "transitionStatus": "off"
+  },
+  "notifyMinConfidence": "medium",
+  "commentHeader": "(robot) *AI analysis* — automated first analysis. Please verify before acting on it.",
+  "maxCommentChars": 6000
+}

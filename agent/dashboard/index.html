@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ticket Intelligence Agent</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --surface: #ffffff; --surface-2: #f9fafb; --text: #17202b; --muted: #687384; --border: #e2e6eb;
+    --accent: #3b5bdb; --accent-soft: #eef2ff; --ok: #1f8a4c; --ok-soft: #e7f6ed; --warn: #b26b00; --warn-soft: #fff4e0;
+    --bad: #c0362c; --bad-soft: #fdecea; --teams: #5b5fc7; --teams-soft: #eef0fb; --code: #f1f3f5;
+    --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 3px rgb(16 24 40 / 0.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1216; --surface: #171b21; --surface-2: #1c2129; --text: #e6e9ee; --muted: #9aa4b2; --border: #2a313b;
+      --accent: #8da2fb; --accent-soft: #1e2440; --ok: #4cc283; --ok-soft: #12291d; --warn: #f0b354; --warn-soft: #2c2312;
+      --bad: #f2786d; --bad-soft: #2f1716; --teams: #9ea2f0; --teams-soft: #1f2140; --code: #222832;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, .mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12px; }
+
+  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 14px 24px; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
+  .brand .logo { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), var(--teams)); display: grid; place-items: center; color: #fff; font-size: 15px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .pill.live { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+  .pill.live .dot { background: var(--ok); animation: pulse 1.6s infinite; }
+  .pill.busy { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+  .pill.busy .dot { background: var(--warn); animation: pulse 0.9s infinite; }
+  .pill.off { color: var(--bad); background: var(--bad-soft); border-color: transparent; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+  .spacer { flex: 1; }
+  .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  button { font: inherit; font-weight: 600; font-size: 13px; border-radius: 8px; padding: 7px 14px; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  main { padding: 20px 24px 40px; max-width: 1480px; margin: 0 auto; }
+  .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .kpi .label { color: var(--muted); font-size: 12px; }
+  .kpi .value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .kpi .sub { color: var(--muted); font-size: 12px; }
+
+  .grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(320px, 1fr); gap: 20px; align-items: start; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 10px; font-weight: 700; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+
+  .ticket { padding: 16px 18px; margin-bottom: 14px; }
+  .ticket.new { animation: slidein 0.5s ease-out; }
+  @keyframes slidein { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .t-head { display: flex; align-items: flex-start; gap: 10px; }
+  .t-key { font-weight: 700; white-space: nowrap; }
+  .t-title { font-weight: 600; flex: 1; min-width: 0; }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+  .chip.queued { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+  .chip.analyzing { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+  .chip.done { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+  .chip.failed { color: var(--bad); background: var(--bad-soft); border-color: transparent; }
+  .chip.high { color: var(--bad); background: var(--bad-soft); border-color: transparent; }
+  .t-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+  .steps { margin: 12px 0 0; padding: 10px 12px; background: var(--surface-2); border-radius: 8px; max-height: 220px; overflow: auto; }
+  .step { display: grid; grid-template-columns: 44px 18px 1fr; gap: 6px; font-size: 12.5px; padding: 2px 0; }
+  .step .t { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+  .step .i { text-align: center; }
+  .step.ok .m { color: var(--ok); font-weight: 600; }
+  .step.bad .m { color: var(--bad); font-weight: 600; }
+  .typing::after { content: "▍"; animation: pulse 1s infinite; color: var(--warn); }
+
+  .result { margin-top: 14px; display: grid; gap: 12px; }
+  .result .row { display: grid; grid-template-columns: 120px 1fr; gap: 10px; }
+  .result .k { color: var(--muted); font-size: 12px; font-weight: 600; padding-top: 1px; }
+  .result ul { margin: 0; padding-left: 18px; }
+  .files { display: flex; flex-wrap: wrap; gap: 6px; }
+  .files code { background: var(--code); padding: 1px 6px; border-radius: 4px; }
+  .owner { display: flex; align-items: center; gap: 10px; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 12px; color: #fff; background: var(--teams); flex: none; }
+  .conf { margin-left: 6px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+  details summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 13px; }
+  pre.comment { white-space: pre-wrap; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 12px; max-height: 280px; overflow: auto; }
+
+  .teams-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .teams-logo { width: 26px; height: 26px; border-radius: 6px; background: var(--teams); color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 13px; }
+  .teams-body { padding: 14px 16px; display: grid; gap: 14px; max-height: 560px; overflow: auto; }
+  .msg { display: grid; grid-template-columns: 30px 1fr; gap: 10px; }
+  .msg .who { font-size: 12px; color: var(--muted); }
+  .msg .who b { color: var(--text); }
+  .card { margin-top: 4px; border: 1px solid var(--border); border-left: 4px solid var(--teams); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); }
+  .card .to { font-size: 11px; font-weight: 700; color: var(--teams); text-transform: uppercase; letter-spacing: 0.04em; }
+  .card .ct { font-weight: 700; margin: 2px 0 6px; }
+  .card .esc { margin-top: 6px; font-size: 12px; color: var(--bad); }
+  .empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
+
+  .drafts { padding: 14px 16px; display: grid; gap: 10px; }
+  .draft { border: 1px dashed var(--border); border-radius: 8px; padding: 10px 12px; }
+  .draft .dk { font-size: 11px; font-weight: 700; color: var(--warn); text-transform: uppercase; letter-spacing: 0.04em; }
+  .policy { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px; border-top: 1px solid var(--border); }
+
+  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 600px) { header, main { padding-left: 16px; padding-right: 16px; } .result .row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo">✦</span> Ticket Intelligence <span class="meta" style="font-weight:500">agent</span></div>
+  <span class="pill" id="state"><span class="dot"></span><span id="state-text">connecting…</span></span>
+  <span class="meta" id="project"></span>
+  <span class="spacer"></span>
+  <span class="meta" id="poll"></span>
+  <button class="primary" id="check">Check now</button>
+</header>
+
+<main>
+  <section class="kpis">
+    <div class="kpi"><div class="label">Tickets analyzed</div><div class="value" id="k-done">0</div><div class="sub">by the agent, no human start</div></div>
+    <div class="kpi"><div class="label">Avg. time to analysis</div><div class="value" id="k-time">–</div><div class="sub">from pickup to Jira comment</div></div>
+    <div class="kpi"><div class="label">Owners notified</div><div class="value" id="k-notified">0</div><div class="sub">handoff messages sent</div></div>
+    <div class="kpi"><div class="label">Escalations flagged</div><div class="value" id="k-esc">0</div><div class="sub">by the escalation rules</div></div>
+    <div class="kpi"><div class="label">In queue / failed</div><div class="value" id="k-queue">0 / 0</div><div class="sub">waiting · needs a look</div></div>
+  </section>
+
+  <div class="grid">
+    <section>
+      <h2>Tickets</h2>
+      <div id="tickets"><div class="panel ticket empty" id="no-tickets">No tickets yet. Create one in Jira; the agent picks it up within the poll interval.</div></div>
+    </section>
+
+    <aside>
+      <h2>Microsoft Teams · #support-triage</h2>
+      <div class="panel">
+        <div class="teams-head"><span class="teams-logo">T</span><div><b>support-triage</b><div class="meta" id="teams-mode">simulated channel</div></div></div>
+        <div class="teams-body" id="teams"><div class="empty">Handoff messages to owners appear here.</div></div>
+      </div>
+
+      <h2 style="margin-top:20px">Waiting for a human</h2>
+      <div class="panel">
+        <div class="drafts" id="drafts"><div class="empty">Drafts that policy does not allow the agent to send on its own.</div></div>
+        <div class="policy" id="policy"></div>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+function h(tag, attrs = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v; else if (k.startsWith('on')) el.addEventListener(k.slice(2), v); else el.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : String(kid));
+  return el;
+}
+const initials = (name = '?') => name.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
+const ago = (iso) => { if (!iso) return '–'; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`; };
+const ICON = { duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺' };
+
+const tickets = new Map();
+const teams = [];
+const drafts = [];
+let status = null;
+let live = false;
+
+function ticketOf(ev) {
+  if (!tickets.has(ev.key)) tickets.set(ev.key, { key: ev.key, title: ev.text, url: ev.url, priority: ev.priority, state: 'queued', steps: [], startedAt: ev.at, fresh: live });
+  return tickets.get(ev.key);
+}
+
+function apply(ev) {
+  if (!ev.key) return;
+  const t = ticketOf(ev);
+  if (ev.url && !t.url && ev.type !== 'commented') t.url = ev.url;
+  if (ev.priority) t.priority = ev.priority;
+  switch (ev.type) {
+    case 'queued': t.title = ev.text; t.state = 'queued'; break;
+    case 'picked': t.title = ev.text || t.title; t.state = 'analyzing'; t.startedAt = ev.at; t.steps = []; t.result = null; break;
+    case 'analyzed': t.result = ev.result; t.meta = ev.meta; break;
+    case 'commented': t.commentUrl = ev.url; break;
+    case 'notified': teams.unshift({ ...ev.card, at: ev.at, channel: ev.channel }); break;
+    case 'draft': drafts.unshift({ ...ev }); break;
+    case 'done': t.state = 'done'; t.doneAt = ev.at; t.totalMs = ev.totalMs; break;
+    case 'failed': t.state = 'failed'; t.error = ev.text; break;
+    case 'duplicate': t.duplicateOf = { key: ev.of, why: ev.why }; break;
+  }
+  if (['picked', 'analyzing', 'progress', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'skipped'].includes(ev.type)) {
+    t.steps.push({ at: ev.at, type: ev.type, text: ev.step ?? ev.text });
+  }
+}
+
+function stepRow(t, s) {
+  const secs = Math.max(0, Math.round((Date.parse(s.at) - Date.parse(t.startedAt)) / 1000));
+  const cls = s.type === 'done' || s.type === 'commented' || s.type === 'notified' ? 'ok' : s.type === 'failed' ? 'bad' : '';
+  return h('div', { class: `step ${cls}` }, h('span', { class: 't' }, `${secs}s`), h('span', { class: 'i' }, ICON[s.type] ?? '·'), h('span', { class: 'm' }, s.text));
+}
+
+function resultView(t) {
+  const r = t.result;
+  if (!r) return null;
+  const confCls = r.confidence === 'high' ? 'done' : r.confidence === 'medium' ? 'analyzing' : 'failed';
+  return h('div', { class: 'result' },
+    t.duplicateOf ? h('div', { class: 'row' }, h('span', { class: 'k' }, 'Duplicate?'), h('span', {}, h('span', { class: 'chip analyzing' }, `possible duplicate of ${t.duplicateOf.key}`), ' ', t.duplicateOf.why ?? '')) : null,
+    h('div', { class: 'row' }, h('span', { class: 'k' }, 'Summary'), h('span', {}, r.summary)),
+    h('div', { class: 'row' }, h('span', { class: 'k' }, 'Likely cause'), h('span', {}, r.likelyCause, h('span', { class: `chip ${confCls} conf` }, `${r.confidence} confidence`))),
+    h('div', { class: 'row' }, h('span', { class: 'k' }, 'Where'), h('div', { class: 'files' }, (r.files ?? []).slice(0, 6).map((f) => h('code', {}, f.replace(/^.*?(frontend|backend)\//, '$1/'))))),
+    h('div', { class: 'row' }, h('span', { class: 'k' }, 'Owner'), h('div', { class: 'owner' }, h('span', { class: 'avatar' }, initials(r.owner?.name)), h('div', {}, h('b', {}, r.owner?.name), h('div', { class: 't-sub' }, r.owner?.why)))),
+    r.escalate?.yes ? h('div', { class: 'row' }, h('span', { class: 'k' }, 'Escalate'), h('span', {}, h('span', { class: 'chip failed' }, 'yes'), ' ', r.escalate.reason)) : null,
+    h('div', { class: 'row' }, h('span', { class: 'k' }, 'Next steps'), h('ul', {}, (r.nextSteps ?? []).slice(0, 6).map((s) => h('li', {}, s)))),
+    h('div', { class: 'row' }, h('span', { class: 'k' }, ''), h('div', { class: 'actions' },
+      t.commentUrl ? h('a', { href: t.commentUrl, target: '_blank' }, 'View the comment in Jira ↗') : null,
+      h('details', {}, h('summary', {}, 'Jira comment text'), h('pre', { class: 'comment' }, r.jiraComment)))),
+  );
+}
+
+function render() {
+  const list = [...tickets.values()].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
+  const box = $('#tickets');
+  box.replaceChildren(...(list.length ? list.map((t) => {
+    const showSteps = t.state !== 'done' || t.expanded;
+    const el = h('div', { class: `panel ticket ${t.fresh ? 'new' : ''}` },
+      h('div', { class: 't-head' },
+        h('a', { class: 't-key', href: t.url ?? '#', target: '_blank' }, t.key),
+        h('div', { class: 't-title' }, t.title, h('div', { class: 't-sub' }, t.state === 'done' ? `analyzed in ${Math.round((t.totalMs ?? 0) / 1000)} s · ${ago(t.doneAt)}` : t.state === 'analyzing' ? `analyzing for ${Math.round((Date.now() - Date.parse(t.startedAt)) / 1000)} s` : t.state === 'failed' ? t.error : `queued ${ago(t.startedAt)}`)),
+        t.priority ? h('span', { class: `chip ${/high|highest|critical/i.test(t.priority) ? 'high' : ''}` }, t.priority) : null,
+        h('span', { class: `chip ${t.state}` }, t.state)),
+      showSteps && t.steps.length ? h('div', { class: 'steps' }, t.steps.map((s) => stepRow(t, s)), t.state === 'analyzing' ? h('div', { class: 'step' }, h('span'), h('span'), h('span', { class: 'typing m' }, 'working')) : null) : null,
+      t.state === 'done' && !t.expanded ? h('div', { class: 'actions', style: 'margin-top:8px' }, h('button', { onclick: () => { t.expanded = true; render(); } }, `Show ${t.steps.length} agent steps`)) : null,
+      resultView(t));
+    t.fresh = false;
+    return el;
+  }) : [h('div', { class: 'panel ticket empty' }, 'No tickets yet. Create one in Jira; the agent picks it up within the poll interval.')]));
+  const stepsBox = box.querySelector('.steps');
+  if (stepsBox) stepsBox.scrollTop = stepsBox.scrollHeight;
+
+  $('#teams').replaceChildren(...(teams.length ? teams.map((m) => h('div', { class: 'msg' },
+    h('span', { class: 'avatar', style: 'background:linear-gradient(135deg,var(--accent),var(--teams))' }, '✦'),
+    h('div', {}, h('div', { class: 'who' }, h('b', {}, 'Ticket Intelligence'), ` · ${ago(m.at)}`),
+      h('div', { class: 'card' }, h('div', { class: 'to' }, `@${m.to}`), h('div', { class: 'ct' }, m.title), h('div', {}, m.message),
+        m.escalate ? h('div', { class: 'esc' }, `Escalation: ${m.escalate}`) : null,
+        h('div', { class: 'actions', style: 'margin-top:8px' }, h('a', { href: m.url, target: '_blank' }, 'Open in Jira ↗')))))) : [h('div', { class: 'empty' }, 'Handoff messages to owners appear here.')]));
+  if (teams.some((m) => m.channel === 'teams')) $('#teams-mode').textContent = 'live channel (webhook)';
+
+  $('#drafts').replaceChildren(...(drafts.length ? drafts.slice(0, 8).map((d) => h('div', { class: 'draft' },
+    h('div', { class: 'dk' }, `${d.key} · ${d.kind === 'assign' ? 'assignment' : 'reply to reporter'}`),
+    h('div', {}, d.text), d.why ? h('div', { class: 't-sub' }, d.why) : null,
+    d.body ? h('details', {}, h('summary', {}, 'Show text'), h('pre', { class: 'comment' }, d.body),
+      h('button', { onclick: (e) => { navigator.clipboard?.writeText(d.body); e.target.textContent = 'Copied'; } }, 'Copy')) : null)) : [h('div', { class: 'empty' }, 'Drafts that policy does not allow the agent to send on its own.')]));
+
+  const done = list.filter((t) => t.state === 'done');
+  $('#k-done').textContent = done.length;
+  const timed = done.filter((t) => (t.meta?.durationMs ?? 0) > 0);
+  $('#k-time').textContent = timed.length ? `${Math.round(timed.reduce((s, t) => s + t.totalMs, 0) / timed.length / 1000)} s` : '–';
+  $('#k-notified').textContent = teams.length;
+  $('#k-esc').textContent = done.filter((t) => t.result?.escalate?.yes).length;
+  $('#k-queue').textContent = `${status?.queue?.length ?? 0} / ${list.filter((t) => t.state === 'failed').length}`;
+}
+
+function renderStatus() {
+  const pill = $('#state');
+  if (!live) { pill.className = 'pill off'; $('#state-text').textContent = 'disconnected'; return; }
+  if (status?.processing) { pill.className = 'pill busy'; $('#state-text').textContent = `analyzing ${status.processing.key}`; }
+  else { pill.className = 'pill live'; $('#state-text').textContent = 'watching'; }
+  if (status) {
+    $('#project').textContent = `Jira project ${status.project}`;
+    const next = status.nextPoll ? Math.max(0, Math.round((Date.parse(status.nextPoll) - Date.now()) / 1000)) : null;
+    $('#poll').textContent = `last check ${ago(status.lastPoll)}${next != null ? ` · next in ${next}s` : ''}`;
+    $('#policy').replaceChildren(h('span', { class: 'meta', style: 'width:100%' }, 'Policy'), ...Object.entries(status.policy ?? {}).map(([k, v]) =>
+      h('span', { class: `chip ${v === 'auto' ? 'done' : v === 'draft' ? 'analyzing' : ''}` }, `${k.replace(/([A-Z])/g, ' $1').toLowerCase()}: ${v}`)));
+  }
+}
+
+function connect() {
+  const es = new EventSource('/api/events');
+  es.onopen = () => { live = true; renderStatus(); };
+  es.onerror = () => { live = false; renderStatus(); };
+  es.onmessage = (msg) => {
+    const ev = JSON.parse(msg.data);
+    if (ev.type === 'history') { tickets.clear(); teams.length = 0; drafts.length = 0; const was = live; live = false; ev.events.forEach(apply); live = was; render(); return; }
+    if (ev.type === 'status') { status = ev.status; renderStatus(); render(); return; }
+    if (ev.type === 'ping') return;
+    apply(ev); render();
+  };
+}
+
+$('#check').addEventListener('click', async (e) => {
+  e.target.disabled = true; e.target.textContent = 'Checking…';
+  await fetch('/api/poll', { method: 'POST' }).catch(() => {});
+  setTimeout(() => { e.target.disabled = false; e.target.textContent = 'Check now'; }, 1500);
+});
+setInterval(() => { renderStatus(); if (status?.processing) render(); }, 1000);
+connect();
+</script>
+</body>
+</html>
