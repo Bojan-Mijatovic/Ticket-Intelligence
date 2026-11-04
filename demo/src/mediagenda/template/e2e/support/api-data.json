@@ -1,0 +1,24 @@
+{
+  "structures": [
+    { "id": "SVIL_MS_VISITE", "name": "Poliambulatorio Visite Specialistiche", "city": "Milano" },
+    { "id": "TEST_GEN_25", "name": "Centro Diagnostico Generale 25", "city": "Bergamo" },
+    { "id": "UP18491", "name": "Presidio Ospedaliero Lodi", "city": "Lodi" },
+    { "id": "CA_PRESIDIO", "name": "Presidio Ospedaliero Casale", "city": "Casale" }
+  ],
+  "resources": [
+    { "code": "MS_DERMATOLOGIA", "description": "DERMATOLOGIA MILANO", "structureId": "SVIL_MS_VISITE", "active": true },
+    { "code": "MS_ORTOPEDIA", "description": "ORTOPEDIA MILANO", "structureId": "SVIL_MS_VISITE", "active": true },
+    { "code": "TG_RADIOLOGIA", "description": "RADIOLOGIA BERGAMO", "structureId": "TEST_GEN_25", "active": true },
+    { "code": "TG_LABORATORIO", "description": "LABORATORIO ANALISI", "structureId": "TEST_GEN_25", "active": true },
+    { "code": "LO_OCULISTICA", "description": "OCULISTICA LODI", "structureId": "UP18491", "active": true },
+    { "code": "CA_CARDIOLOGIA", "description": "CARDIOLOGIA CASALE", "structureId": "CA_PRESIDIO", "active": true }
+  ],
+  "timeSlots": [
+    { "id": 143201, "agendaName": "AMBULATORIO DI DERMATOLOGIA", "slotCode": "541200|0900|1200", "startDate": "2026-01-01", "endDate": "2030-12-31", "frequency": "09:00-12:00, ogni lunedì", "weekday": "lunedì", "startTime": "09:00:00", "endTime": "12:00:00", "priority": "P - PROGRAMMATO", "priorityRank": 5, "calendarEndDate": "2030-12-30", "resourceCode": "MS_DERMATOLOGIA", "structureId": "SVIL_MS_VISITE" },
+    { "id": 143210, "agendaName": "AMBULATORIO DI ORTOPEDIA", "slotCode": "541310|0830|1230", "startDate": "2026-03-01", "endDate": "2030-12-31", "frequency": "08:30-12:30, ogni martedì", "weekday": "martedì", "startTime": "08:30:00", "endTime": "12:30:00", "priority": "B - BREVE", "priorityRank": 3, "calendarEndDate": "2030-12-31", "resourceCode": "MS_ORTOPEDIA", "structureId": "SVIL_MS_VISITE" },
+    { "id": 144501, "agendaName": "RADIOLOGIA TRADIZIONALE", "slotCode": "552010|0800|1300", "startDate": "2026-01-01", "endDate": "2030-12-31", "frequency": "08:00-13:00, ogni lunedì", "weekday": "lunedì", "startTime": "08:00:00", "endTime": "13:00:00", "priority": "U - URGENTE", "priorityRank": 1, "calendarEndDate": "2030-12-30", "resourceCode": "TG_RADIOLOGIA", "structureId": "TEST_GEN_25" },
+    { "id": 144520, "agendaName": "PRELIEVI", "slotCode": "552300|0730|1000", "startDate": "2026-01-01", "endDate": "2030-12-31", "frequency": "07:30-10:00, ogni giorno", "weekday": "lunedì", "startTime": "07:30:00", "endTime": "10:00:00", "priority": "P - PROGRAMMATO", "priorityRank": 5, "calendarEndDate": "2030-12-30", "resourceCode": "TG_LABORATORIO", "structureId": "TEST_GEN_25" },
+    { "id": 146524, "agendaName": "CAMPO PACHIM - AMBULATORIO OCULISTICO DI REPARTO", "slotCode": "536135|0900|1130", "startDate": "2026-01-01", "endDate": "2030-12-31", "frequency": "09:00-11:30, ogni mercoledì", "weekday": "mercoledì", "startTime": "09:00:00", "endTime": "11:30:00", "priority": "P - PROGRAMMATO", "priorityRank": 5, "calendarEndDate": "2030-12-18", "resourceCode": "LO_OCULISTICA", "structureId": "UP18491" },
+    { "id": 143278, "agendaName": "AMBULATORIO DI CARDIOLOGIA", "slotCode": "567455|1330|1630", "startDate": "2026-07-01", "endDate": "2030-12-31", "frequency": "13:30-16:30, ogni martedì", "weekday": "martedì", "startTime": "13:30:00", "endTime": "16:30:00", "priority": "P - PROGRAMMATO", "priorityRank": 5, "calendarEndDate": "2030-12-31", "resourceCode": "CA_CARDIOLOGIA", "structureId": "CA_PRESIDIO" }
+  ]
+}

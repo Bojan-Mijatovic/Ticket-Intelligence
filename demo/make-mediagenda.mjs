@@ -28,6 +28,7 @@ const PEOPLE = {
   luca: ['Luca Bianchi', 'luca.bianchi@example.com'],
   marta: ['Marta Ricci', 'marta.ricci@example.com'],
   sara: ['Sara Colombo', 'sara.colombo@example.com'],
+  bojan: ['Bojan Mijatović', '256592520+Bojan-Mijatovic@users.noreply.github.com', 'bojan.mijatovic'],
 };
 
 const T = 'template';
@@ -153,6 +154,15 @@ const STEPS = [
     message: 'Report page: monthly bookings table',
     files: { [`${FE}/features/reports/reports.component.ts`]: T },
   },
+  {
+    who: 'bojan', date: '2026-11-04T19:00:00+01:00',
+    message: 'Browser tests: Playwright with a mocked backend API',
+    files: {
+      'e2e/package.json': T, 'e2e/playwright.config.ts': T, 'e2e/README.md': T,
+      'e2e/support/agenda.ts': T, 'e2e/support/api-data.json': T, 'e2e/support/evidence.ts': T, 'e2e/support/mock-api.ts': T,
+      'e2e/tests/agenda.smoke.spec.ts': T,
+    },
+  },
 ];
 
 // ---------------------------------------------------------------- build
@@ -171,11 +181,14 @@ function prepare(dir) {
     }
     // A repository that is published (has a remote) is never rebuilt: new commit hashes would need a force push.
     // Reset a published demo by deleting the agent's branches instead (see docs/DEMO_SCENARIO.md).
+    // Only the folder's own repository counts: without this check, git would walk up to a parent repository.
     let remote = '';
-    try {
-      remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-    } catch {
-      /* not a git repository, or no remote */
+    if (existsSync(join(dir, '.git'))) {
+      try {
+        remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      } catch {
+        /* no remote */
+      }
     }
     if (remote && !args.includes('--i-know-it-has-a-remote')) {
       console.error(`${dir} is published to ${remote}. Rebuilding it would rewrite its history.\nReset it by deleting the agent's branches instead (docs/DEMO_SCENARIO.md, "Reset").`);
@@ -236,7 +249,7 @@ if (!SVN_MODE) {
   writeFileSync(join(SVN_REPO, 'hooks', 'pre-revprop-change.bat'), '@exit 0\r\n');
   writeFileSync(join(SVN_REPO, 'hooks', 'pre-revprop-change'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   const repoUrl = pathToFileURL(SVN_REPO).href;
-  const login = (who) => PEOPLE[who][1].split('@')[0];
+  const login = (who) => PEOPLE[who][2] ?? PEOPLE[who][1].split('@')[0]; // optional explicit SVN login
   const stamp = (rev, date, who) => {
     run('svn', ['propset', '--revprop', '-r', String(rev), 'svn:date', new Date(date).toISOString().replace('Z', '000Z'), repoUrl]);
     run('svn', ['propset', '--revprop', '-r', String(rev), 'svn:author', login(who), repoUrl]);
