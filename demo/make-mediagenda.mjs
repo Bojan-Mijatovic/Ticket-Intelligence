@@ -169,6 +169,18 @@ function prepare(dir) {
       console.error(`${dir} already exists. Rerun with --force to recreate it.`);
       process.exit(1);
     }
+    // A repository that is published (has a remote) is never rebuilt: new commit hashes would need a force push.
+    // Reset a published demo by deleting the agent's branches instead (see docs/DEMO_SCENARIO.md).
+    let remote = '';
+    try {
+      remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    } catch {
+      /* not a git repository, or no remote */
+    }
+    if (remote && !args.includes('--i-know-it-has-a-remote')) {
+      console.error(`${dir} is published to ${remote}. Rebuilding it would rewrite its history.\nReset it by deleting the agent's branches instead (docs/DEMO_SCENARIO.md, "Reset").`);
+      process.exit(1);
+    }
     for (const entry of readdirSync(dir)) rmSync(join(dir, entry), { recursive: true, force: true });
   }
   mkdirSync(dir, { recursive: true });

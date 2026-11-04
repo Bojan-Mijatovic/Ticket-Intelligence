@@ -31,7 +31,7 @@
 | Jira API token (the sandbox owner's account, stored in the per-user `.env`) | available | POC |
 | Company Jira project + service account | **missing** | MVP on real tickets |
 | Teams channel + Workflows webhook | **not possible now** (no test channel); notifications simulated on the dashboard | real notifications |
-| GitHub repository for the demo app | **open** (decision pending) | real draft PRs *(planned)* |
+| GitHub repository for the demo app | available: private repo Bojan-Mijatovic/MediAgenda | real draft PRs *(planned)* |
 | Approved AI service for company ticket data | **open** | any use on company tickets |
 
 ### 1.3 People and decisions

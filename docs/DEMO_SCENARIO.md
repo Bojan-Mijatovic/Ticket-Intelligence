@@ -24,7 +24,7 @@ The demo project is **MediAgenda**, a fictional healthcare scheduling app (Angul
 ## 3. Setup
 
 **The day before**
-- [ ] `node demo/make-mediagenda.mjs --force` (clean git history with DEM keys); `node demo/run-mediagenda.mjs` works.
+- [ ] `demo/mediagenda` is on `main`, up to date with GitHub, with no leftover agent branches or open pull requests; `node demo/run-mediagenda.mjs` works.
 - [ ] Rehearsal tickets deleted, so the live ticket isn't flagged as a duplicate: `node demo/new-ticket.mjs --delete DEM-7`, the same for DEM-8 and any other rehearsal ticket.
 - [ ] Full rehearsal done, and a **screen recording saved** as a fallback.
 - [ ] Laptop: power plan "never sleep", notifications off, browser zoom 110 %.
@@ -71,10 +71,15 @@ The demo project is **MediAgenda**, a fictional healthcare scheduling app (Angul
 
 ## 7. Reset after the demo
 
+The demo application lives in its own private repository, https://github.com/Bojan-Mijatovic/MediAgenda (local clone: `demo/mediagenda`). Its `main` is never rewritten; the agent only adds branches and pull requests.
+
 ```
-node demo/new-ticket.mjs --delete DEM-<n>      # the live ticket(s)
-node demo/make-mediagenda.mjs --force           # restores the repository (removes fix branches)
+node demo/new-ticket.mjs --delete DEM-<n>                 # the live ticket(s)
+gh pr close <n> --repo Bojan-Mijatovic/MediAgenda --delete-branch   # each agent pull request + its branch
+cd demo/mediagenda && git checkout main && git pull       # local clone back to main
 ```
+
+`make-mediagenda.mjs --force` refuses to rebuild a repository that has a remote, because the new history would need a force push.
 
 ## 8. Expected questions
 

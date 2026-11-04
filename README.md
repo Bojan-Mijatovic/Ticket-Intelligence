@@ -92,6 +92,7 @@ A fictional project modelled on real tickets, where the AI has to search through
 | Backend | Spring Boot 3, Java 21: modules `structure`, `resource`, `timeslot`, `booking`, `patient`, `report`, `common` |
 | Database | H2 (SQL, in memory) + Flyway migrations V1–V4 in `backend/src/main/resources/db/migration` |
 | History | 14 commits by 4 people (Davide and Luca on the backend, Marta and Sara on the frontend) |
+| Repository | private GitHub repo [Bojan-Mijatovic/MediAgenda](https://github.com/Bojan-Mijatovic/MediAgenda), cloned in `demo/mediagenda`; the agent works there on branches and pull requests |
 | Jira (mock) | CUP_DEMO-2398, 2511, 2580, 2602, 2615 and the target ticket **CUP_DEMO-2629** |
 
 The story: CUP_DEMO-2398 made the time slot search work for several structures, and the frontend store started to **append** every selected structure. CUP_DEMO-2511 fixed the PULISCI button, but clearing the Struttura field by hand still leaves the old structure in the store. That is CUP_DEMO-2629.
