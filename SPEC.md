@@ -102,6 +102,19 @@ Ticket Intelligence gives every Jira ticket a fast, evidence-based first analysi
 | FR-50 | Write the cause/fix entry to `docs/knowledge/<component>.md` and update the index; confirmed facts vs. assumptions are labelled | Implemented |
 | FR-51 | git: review branch in a separate worktree + PR (`gh` on GitHub), or direct commit; SVN: direct commit of doc files only, `svn copy` branch, or patch file | Implemented |
 
+### 4.6 Post-POC extensions (see [docs/ROADMAP.md](docs/ROADMAP.md))
+
+| ID | Requirement | Status |
+|---|---|---|
+| FR-60 | Approval card (Teams + dashboard) with before/after, checks and risk; Approve marks the PR ready and comments in Jira; Reject re-runs the fix with the reason (≤ `maxFixAttempts`); never merges | Planned |
+| FR-61 | Mission Control: live per-ticket phase timeline; Impact metrics (times, hours saved vs. configured baseline, cost per ticket); Run on ticket and Pause | Planned |
+| FR-62 | Night shift: backlog processing in a time window with ticket and cost limits; morning digest to Teams, dashboard and `state/digests/` | Planned |
+| FR-63 | AI reviewer: read-only second run on every agent PR; posts review comments and a risk level used by FR-60; never blocks the PR | Planned |
+| FR-64 | Hotspot map: tickets, recurrences and churn per component over time; top hotspots with a cited recommendation | Planned |
+| FR-65 | Ask the knowledge base: read-only question answering over `docs/knowledge`, agent results and Jira; every claim cited; "not found" instead of guessing | Planned |
+| FR-66 | Release notes and sprint report in a technical and a business version, on a branch with a draft PR | Planned |
+| FR-67 | Reply to the reporter when the ticket's PR is merged (`replyOnMerge: draft` by default); one reply per merge | Planned |
+
 ## 5. Interfaces
 
 ### 5.1 CLI (`scripts/ticket.mjs`)

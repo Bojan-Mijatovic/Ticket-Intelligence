@@ -30,6 +30,7 @@ Everything is **read-only** until you approve. The only write actions are the Ji
 | [docs/DEPENDENCIES_AND_RISKS.md](docs/DEPENDENCIES_AND_RISKS.md) | dependencies, assumptions, risk register |
 | [docs/EXIT_CRITERIA.md](docs/EXIT_CRITERIA.md) | gate from discovery to the next build steps |
 | [docs/COPILOT_TEST.md](docs/COPILOT_TEST.md) | test plan for GitHub Copilot on company projects |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | post-POC plan: approval from Teams, Mission Control, night shift, AI reviewer, hotspots, ask, reports, reply on merge |
 
 ## Installation (once)
 
