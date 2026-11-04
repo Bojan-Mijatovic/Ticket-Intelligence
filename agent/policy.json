@@ -7,9 +7,19 @@
     "assignOwner": "draft",
     "changePriority": "off",
     "replyToReporter": "draft",
-    "transitionStatus": "off"
+    "transitionStatus": "off",
+    "proposeFix": "auto",
+    "mergeFix": "off"
   },
   "notifyMinConfidence": "medium",
   "commentHeader": "(robot) *AI analysis* — automated first analysis. Please verify before acting on it.",
-  "maxCommentChars": 6000
+  "maxCommentChars": 6000,
+  "proposeFixWhen": {
+    "minConfidence": "high",
+    "titleTags": [
+      "FE"
+    ],
+    "skipDuplicates": true
+  },
+  "_fixComment": "proposeFix = reproduce with a browser test, fix on branch <KEY>, verify independently, open a DRAFT pull request. mergeFix is always off: a human merges."
 }

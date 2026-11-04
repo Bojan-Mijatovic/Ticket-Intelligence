@@ -8,7 +8,7 @@
 // agent's labels (ai-analyzing, ai-analyzed, ai-failed) nor the opt-out label (no-ai).
 
 import { createServer } from 'node:http';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createEventLog } from './lib/events.mjs';
@@ -93,6 +93,17 @@ createServer((req, res) => {
     clients.add(res);
     req.on('close', () => clients.delete(res));
     return;
+  }
+  // Evidence screenshots: /evidence/<KEY>/before.png|after.png (only these names, only from state/work).
+  const ev = req.url.match(/^\/evidence\/([A-Z][A-Z0-9_]+-\d+)\/(before|after)\.png$/);
+  if (ev) {
+    const file = join(stateDir, 'work', ev[1], 'evidence', `${ev[2]}.png`);
+    if (!existsSync(file)) {
+      res.writeHead(404);
+      return res.end();
+    }
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache' });
+    return res.end(readFileSync(file));
   }
   if (req.url === '/api/poll' && req.method === 'POST') {
     poll();

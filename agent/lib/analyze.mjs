@@ -58,32 +58,72 @@ function describeTool(name, input = {}) {
 }
 
 /**
+ * Runs `claude -p` headless in `cwd` and returns the parsed JSON block of its final answer.
+ * The prompt goes through stdin: on Windows the CLI is a .cmd shim run through cmd.exe, which cannot pass
+ * multi-line arguments.
  * @returns {Promise<{ result: object, meta: { costUsd: number, durationMs: number, turns: number } }>}
  */
-export function runAnalysis({ key, repoDir, stateDir, cfg, onProgress = () => {} }) {
-  const workDir = join(stateDir, 'work', key);
-  mkdirSync(workDir, { recursive: true });
-  // The prompt goes through stdin: on Windows the CLI is a .cmd shim run through cmd.exe, which cannot pass
-  // multi-line arguments.
+export async function runClaude(opts) {
+  const { required = [], transcriptFile } = opts;
+  const first = await invokeClaude(opts);
+  let final = first.final;
+  let transcript = first.transcript;
+  let parsed = parseResult(final, required);
+
+  // An invalid or incomplete JSON answer is corrected in the SAME session (--resume): the agent keeps all its
+  // context, so nothing is redone. One correction attempt only.
+  if (parsed.error && final.session_id) {
+    const again = await invokeClaude({
+      ...opts,
+      resume: final.session_id,
+      prompt: `Your last reply could not be used: ${parsed.error}. Reply again with ONLY the \`\`\`json block, as valid JSON (commas between properties, quotes escaped inside strings), with all the required fields: ${required.join(', ')}. Do not run any tools.`,
+    });
+    transcript = [...transcript, ...again.transcript];
+    final = { ...again.final, total_cost_usd: (first.final.total_cost_usd ?? 0) + (again.final.total_cost_usd ?? 0), duration_ms: (first.final.duration_ms ?? 0) + (again.final.duration_ms ?? 0), num_turns: (first.final.num_turns ?? 0) + (again.final.num_turns ?? 0) };
+    parsed = parseResult(again.final, required);
+  }
+  if (transcriptFile) writeFileSync(transcriptFile, transcript.map((e) => JSON.stringify(e)).join('\n'));
+  if (parsed.error) throw new Error(parsed.error);
+  return { result: parsed.result, meta: { costUsd: final.total_cost_usd ?? 0, durationMs: final.duration_ms ?? 0, turns: final.num_turns ?? 0 } };
+}
+
+function parseResult(final, required) {
+  if (final.is_error) return { error: `claude reported an error: ${String(final.result ?? final.subtype).slice(0, 300)}` };
+  let result;
+  try {
+    result = extractJson(final.result);
+  } catch (e) {
+    return { error: `the JSON answer is not valid (${e.message})` };
+  }
+  const missing = required.filter((k) => result[k] === undefined);
+  return missing.length ? { error: `the JSON answer is missing: ${missing.join(', ')}` } : { result };
+}
+
+/** One `claude -p` process. Resolves with the final result event and the stream transcript. */
+function invokeClaude({ cwd, prompt, cfg, addDirs = [], disallowedTools = [], permissionMode = null, timeoutMinutes, resume = null, onProgress = () => {} }) {
   const args = [
     '-p',
+    ...(resume ? ['--resume', resume] : []),
     '--output-format', 'stream-json', '--verbose',
     '--max-turns', String(cfg.claude.maxTurns),
-    '--add-dir', workDir,
-    '--disallowedTools', 'Edit', 'Write', 'NotebookEdit',
+    ...addDirs.flatMap((d) => ['--add-dir', d]),
+    ...(permissionMode ? ['--permission-mode', permissionMode] : []),
+    // Rules with spaces ("Bash(git push *)") must be quoted for cmd.exe on Windows.
+    ...(disallowedTools.length ? ['--disallowedTools', ...disallowedTools.map((t) => (process.platform === 'win32' && /\s/.test(t) ? `"${t}"` : t))] : []),
     ...(cfg.claude.model ? ['--model', cfg.claude.model] : []),
   ];
 
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(cfg.claude.command, args, { cwd: repoDir, shell: process.platform === 'win32', windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
-    child.stdin.end(buildPrompt(key, workDir));
+    const child = spawn(cfg.claude.command, args, { cwd, shell: process.platform === 'win32', windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    child.stdin.end(prompt);
     const transcript = [];
     let buffer = '';
     let final = null;
+    const limit = timeoutMinutes ?? cfg.analysisTimeoutMinutes;
     const timer = setTimeout(() => {
       child.kill();
-      reject(new Error(`analysis timed out after ${cfg.analysisTimeoutMinutes} min`));
-    }, cfg.analysisTimeoutMinutes * 60_000);
+      reject(new Error(`agent run timed out after ${limit} min`));
+    }, limit * 60_000);
 
     child.stdout.on('data', (chunk) => {
       buffer += chunk.toString();
@@ -115,19 +155,26 @@ export function runAnalysis({ key, repoDir, stateDir, cfg, onProgress = () => {}
     });
     child.on('close', (code) => {
       clearTimeout(timer);
-      writeFileSync(join(workDir, 'transcript.jsonl'), transcript.map((e) => JSON.stringify(e)).join('\n'));
       if (!final) return reject(new Error(`claude exited with ${code} without a result. ${stderr.slice(0, 300)}`));
-      if (final.is_error) return reject(new Error(`claude reported an error: ${String(final.result ?? final.subtype).slice(0, 300)}`));
-      let result;
-      try {
-        result = extractJson(final.result);
-      } catch (e) {
-        return reject(new Error(`could not parse the agent's JSON: ${e.message}`));
-      }
-      const missing = REQUIRED.filter((k) => result[k] === undefined);
-      if (missing.length) return reject(new Error(`agent result is missing: ${missing.join(', ')}`));
-      writeFileSync(join(workDir, 'result.json'), JSON.stringify(result, null, 2));
-      resolvePromise({ result, meta: { costUsd: final.total_cost_usd ?? 0, durationMs: final.duration_ms ?? 0, turns: final.num_turns ?? 0 } });
+      resolvePromise({ final, transcript });
     });
   });
+}
+
+/** Read-only analysis of one ticket (analyze-ticket skill). File-editing tools are disabled. */
+export async function runAnalysis({ key, repoDir, stateDir, cfg, onProgress = () => {} }) {
+  const workDir = join(stateDir, 'work', key);
+  mkdirSync(workDir, { recursive: true });
+  const out = await runClaude({
+    cwd: repoDir,
+    prompt: buildPrompt(key, workDir),
+    cfg,
+    transcriptFile: join(workDir, 'transcript.jsonl'),
+    addDirs: [workDir],
+    disallowedTools: ['Edit', 'Write', 'NotebookEdit'],
+    required: REQUIRED,
+    onProgress,
+  });
+  writeFileSync(join(workDir, 'result.json'), JSON.stringify(out.result, null, 2));
+  return out;
 }

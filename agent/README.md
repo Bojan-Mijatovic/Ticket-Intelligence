@@ -39,6 +39,7 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 | `ai-analyzing` | being analyzed now (removed automatically if the watcher was interrupted) |
 | `ai-analyzed` | done; remove the label to have the ticket analyzed again |
 | `ai-failed` | the analysis failed; see the dashboard; remove the label to retry |
+| `ai-fix-proposed` | a draft pull request with a verified fix exists |
 | `no-ai` | set by a human: the agent never touches this ticket |
 
 ## Safety
@@ -74,6 +75,25 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 ## Notifications
 
 Without configuration, owner notifications are shown on the dashboard as Teams-style cards. To post them to a real Teams channel, create a webhook in the channel (Workflows › "Post to a channel when a webhook request is received") and set `TEAMS_WEBHOOK_URL=` in `~/.claude/skills/analyze-ticket/.env`.
+
+## Automatic reproduction and fix
+
+For tickets that pass `proposeFixWhen` in `policy.json` (by default: `[FE]` in the title, `high` confidence, not a duplicate), the agent continues after the analysis:
+
+| Step | Who | Check |
+|---|---|---|
+| 1. Worktree on a new branch `<KEY>` from `origin/main` | watcher | skipped if the branch already exists (someone may be working on it) |
+| 2. Write `e2e/tests/<KEY>.spec.ts` from the ticket's steps | agent | watcher: **only** that file changed, and it **fails** on the current code → commit "add regression test" |
+| 3. Fix the application code | agent | watcher: no test was modified; **all** browser tests pass; `ng build` passes; `mvn test` if backend code changed → commit "<KEY>: …" |
+| 4. Push the branch, open a **draft** pull request | watcher | GitHub via `gh`; other hosts: branch only |
+| 5. Attach before/after screenshots and the recorded API calls to Jira, comment with the PR link and the check results | watcher | |
+
+The agent may edit files only inside its worktree and cannot run git commands that change history or remotes; every check is re-run by the watcher, so a pull request exists only when the evidence is real. Nothing is merged automatically (`mergeFix: off`).
+
+```
+node agent/fix-one.mjs DEM-7 --local     # reproduce + fix + verify, no push / PR / Jira
+node agent/fix-one.mjs DEM-7             # full run for one ticket (uses its saved analysis)
+```
 
 ## Duplicates
 

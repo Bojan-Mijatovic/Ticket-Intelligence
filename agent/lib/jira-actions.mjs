@@ -54,6 +54,26 @@ export function createJira() {
       if (update.length) await api('PUT', `/rest/api/2/issue/${key}`, { update: { labels: update } });
     },
 
+    async getIssue(key) {
+      const i = await api('GET', `/rest/api/2/issue/${encodeURIComponent(key)}?fields=summary,description,labels,priority,status`);
+      return { key: i.key, summary: i.fields.summary, description: i.fields.description ?? '', labels: i.fields.labels ?? [], priority: i.fields.priority?.name ?? null, status: i.fields.status?.name };
+    },
+
+    /** Uploads a file as an attachment; returns its id and download URL. */
+    async attach(key, filePath, name) {
+      const { readFileSync } = await import('node:fs');
+      const form = new FormData();
+      form.append('file', new Blob([readFileSync(filePath)], { type: name.endsWith('.png') ? 'image/png' : 'application/octet-stream' }), name);
+      const res = await fetch(`${cfg.baseUrl}/rest/api/2/issue/${encodeURIComponent(key)}/attachments`, {
+        method: 'POST',
+        headers: { Authorization: auth, Accept: 'application/json', 'X-Atlassian-Token': 'no-check' },
+        body: form,
+      });
+      if (!res.ok) throw new Error(`attach ${name} -> ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      const [a] = await res.json();
+      return { id: a.id, url: a.content, name: a.filename };
+    },
+
     async comment(key, body) {
       const res = await api('POST', `/rest/api/2/issue/${key}/comment`, { body });
       return { id: res.id, url: `${cfg.baseUrl}/browse/${key}?focusedCommentId=${res.id}` };

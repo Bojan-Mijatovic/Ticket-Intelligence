@@ -62,6 +62,7 @@
   .chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
   .chip.queued { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
   .chip.analyzing { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+  .chip.fixing { color: var(--teams); background: var(--teams-soft); border-color: transparent; }
   .chip.done { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
   .chip.failed { color: var(--bad); background: var(--bad-soft); border-color: transparent; }
   .chip.high { color: var(--bad); background: var(--bad-soft); border-color: transparent; }
@@ -88,6 +89,17 @@
   details summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 13px; }
   pre.comment { white-space: pre-wrap; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 12px; max-height: 280px; overflow: auto; }
 
+  .fix { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--surface-2); display: grid; gap: 10px; }
+  .fix-title { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+  .stages { display: flex; flex-wrap: wrap; gap: 6px; }
+  .shots { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .shot { margin: 0; }
+  .shot img { width: 100%; border: 1px solid var(--border); border-radius: 6px; display: block; background: var(--surface); }
+  .shot figcaption { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .shot.before figcaption { color: var(--bad); }
+  .shot.after figcaption { color: var(--ok); }
+  pre.err { white-space: pre-wrap; background: var(--bad-soft); color: var(--bad); border-radius: 6px; padding: 8px 10px; font-size: 11.5px; margin: 0; max-height: 160px; overflow: auto; }
+  .pr-link { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; padding: 6px 12px; border-radius: 8px; background: var(--ok); color: #fff !important; text-decoration: none !important; }
   .teams-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
   .teams-logo { width: 26px; height: 26px; border-radius: 6px; background: var(--teams); color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 13px; }
   .teams-body { padding: 14px 16px; display: grid; gap: 14px; max-height: 560px; overflow: auto; }
@@ -163,7 +175,7 @@ function h(tag, attrs = {}, ...kids) {
 }
 const initials = (name = '?') => name.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
 const ago = (iso) => { if (!iso) return '–'; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`; };
-const ICON = { duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺' };
+const ICON = { workspace: '⎇', reproducing: '🧪', reproduced: '🐞', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺' };
 
 const tickets = new Map();
 const teams = [];
@@ -191,8 +203,15 @@ function apply(ev) {
     case 'done': t.state = 'done'; t.doneAt = ev.at; t.totalMs = ev.totalMs; break;
     case 'failed': t.state = 'failed'; t.error = ev.text; break;
     case 'duplicate': t.duplicateOf = { key: ev.of, why: ev.why }; break;
+    case 'reproducing': t.fix = { stage: 'reproducing' }; t.state = 'fixing'; break;
+    case 'reproduced': t.fix = { ...(t.fix ?? {}), stage: 'fixing', reproduced: true, failure: ev.failure, before: ev.evidence ? `/evidence/${ev.key}/before.png?${Date.parse(ev.at)}` : null }; break;
+    case 'verified': t.fix = { ...(t.fix ?? {}), stage: 'publishing', checks: ev.checks, after: ev.evidence ? `/evidence/${ev.key}/after.png?${Date.parse(ev.at)}` : null }; break;
+    case 'pr': t.fix = { ...(t.fix ?? {}), prUrl: ev.url ?? t.fix?.prUrl }; break;
+    case 'fix-proposed': t.fix = { ...(t.fix ?? {}), stage: 'done', title: ev.text.replace(/^draft PR ready: /, ''), prUrl: ev.url ?? t.fix?.prUrl, files: ev.files }; t.state = 'done'; break;
+    case 'fix-failed': t.fix = { ...(t.fix ?? {}), stage: 'failed', error: ev.text }; break;
+    case 'fix-skipped': t.fixSkipped = ev.text; break;
   }
-  if (['picked', 'analyzing', 'progress', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'skipped'].includes(ev.type)) {
+  if (['picked', 'analyzing', 'progress', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'skipped', 'workspace', 'reproducing', 'reproduced', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-skipped'].includes(ev.type)) {
     t.steps.push({ at: ev.at, type: ev.type, text: ev.step ?? ev.text });
   }
 }
@@ -201,6 +220,28 @@ function stepRow(t, s) {
   const secs = Math.max(0, Math.round((Date.parse(s.at) - Date.parse(t.startedAt)) / 1000));
   const cls = s.type === 'done' || s.type === 'commented' || s.type === 'notified' ? 'ok' : s.type === 'failed' ? 'bad' : '';
   return h('div', { class: `step ${cls}` }, h('span', { class: 't' }, `${secs}s`), h('span', { class: 'i' }, ICON[s.type] ?? '·'), h('span', { class: 'm' }, s.text));
+}
+
+function fixView(t) {
+  const f = t.fix;
+  if (!f) return t.fixSkipped ? h('div', { class: 't-sub' }, t.fixSkipped) : null;
+  const chip = (label, state) => h('span', { class: `chip ${state}` }, label);
+  const c = f.checks;
+  return h('div', { class: 'fix' },
+    h('div', { class: 'fix-title' }, '🛠 Automatic reproduction and fix',
+      f.stage === 'done' ? chip('draft PR ready', 'done') : f.stage === 'failed' ? chip('stopped', 'failed') : chip(f.stage, 'analyzing')),
+    h('div', { class: 'stages' },
+      chip(f.reproduced ? '🐞 bug reproduced by a browser test' : '🧪 writing the test…', f.reproduced ? 'done' : 'analyzing'),
+      c ? chip(`browser tests ${c.e2e.passed}✓ ${c.e2e.failed}✗`, c.e2e.ok ? 'done' : 'failed') : null,
+      c ? chip(`ng build ${c.build.skipped ? 'skipped' : c.build.ok ? '✓' : '✗'}`, c.build.ok ? 'done' : 'failed') : null,
+      c ? chip(`backend ${c.backend.skipped ? 'unchanged' : c.backend.ok ? '✓' : '✗'}`, c.backend.ok ? 'done' : 'failed') : null),
+    f.before || f.after ? h('div', { class: 'shots' },
+      f.before ? h('figure', { class: 'shot before' }, h('figcaption', {}, 'Before the fix (bug)'), h('a', { href: f.before, target: '_blank' }, h('img', { src: f.before, alt: 'before' }))) : h('div'),
+      f.after ? h('figure', { class: 'shot after' }, h('figcaption', {}, 'After the fix'), h('a', { href: f.after, target: '_blank' }, h('img', { src: f.after, alt: 'after' }))) : h('div')) : null,
+    f.failure && !f.after ? h('pre', { class: 'err' }, f.failure) : null,
+    f.error ? h('pre', { class: 'err' }, f.error) : null,
+    f.prUrl ? h('div', {}, h('a', { class: 'pr-link', href: f.prUrl, target: '_blank' }, `⇄ Open draft pull request${f.title ? `: ${f.title}` : ''}`)) : null,
+    f.files?.length ? h('div', { class: 'files' }, f.files.map((x) => h('code', {}, x))) : null);
 }
 
 function resultView(t) {
@@ -218,6 +259,7 @@ function resultView(t) {
     h('div', { class: 'row' }, h('span', { class: 'k' }, ''), h('div', { class: 'actions' },
       t.commentUrl ? h('a', { href: t.commentUrl, target: '_blank' }, 'View the comment in Jira ↗') : null,
       h('details', {}, h('summary', {}, 'Jira comment text'), h('pre', { class: 'comment' }, r.jiraComment)))),
+    fixView(t),
   );
 }
 

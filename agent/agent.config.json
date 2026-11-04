@@ -10,11 +10,14 @@
     "inProgress": "ai-analyzing",
     "done": "ai-analyzed",
     "failed": "ai-failed",
-    "skip": "no-ai"
+    "skip": "no-ai",
+    "fixProposed": "ai-fix-proposed"
   },
   "claude": {
     "command": "claude",
     "maxTurns": 40,
     "model": null
-  }
+  },
+  "fixTimeoutMinutes": 15,
+  "toolsDir": "../tools"
 }
