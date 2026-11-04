@@ -20,8 +20,8 @@
 | Subversion client | 1.14.5 (portable, `tools/svn`) | code analysis on SVN projects | TortoiseSVN needs the "command line client tools" option |
 | JDK / Maven | Temurin 21.0.13 / 3.9.9 (portable, `tools/`) | demo backend | not needed for the skills or agent |
 | Angular CLI | 18.2 | demo frontend | Angular 19+ needs Node ≥ 20.19 |
-| Playwright + Chromium | — | bug reproduction *(planned)* | ~150–300 MB download |
-| GitHub CLI (`gh`) | 2.101 | pull requests *(planned)* | GitHub only |
+| Playwright + Chromium | 1.64.1 | bug reproduction (MediAgenda `e2e/`) | browsers in `%LOCALAPPDATA%ms-playwright` |
+| GitHub CLI (`gh`) | 2.101 | draft pull requests | logged in as the repository owner |
 
 ### 1.2 Services and accounts
 
@@ -70,7 +70,7 @@ Likelihood and impact: L = low, M = medium, H = high.
 | R-11 | **Cost / usage limits** at scale | L | M | ~10 turns per ticket; `maxTurns` and timeout; `no-ai` label; poll only new tickets | Bojan | open |
 | R-12 | **Duplicate tickets** produce repeated noise | M | L | `duplicateOf` flagged on the dashboard and in the comment; no automatic linking yet | Bojan | mitigated |
 | R-13 | **Single workstation** is a single point of failure | H | L (POC) | acceptable for the POC; restart-safe watcher; move to a team VM for the MVP | Tech lead | accepted |
-| R-14 | **Automatic fixes** (planned) are wrong or unsafe | M | H | fix only on a branch, never merged by the agent; build + tests + reproduction test must pass; draft PR only; human review | Bojan | planned |
+| R-14 | **Automatic fixes** are wrong or unsafe | M | H | isolated worktree on a new branch; the watcher re-runs every check (test must fail before and pass after; no test edits in the fix); draft PR only; `mergeFix: off`; human review | Bojan | mitigated |
 
 ## 4. Issues already resolved during the POC
 

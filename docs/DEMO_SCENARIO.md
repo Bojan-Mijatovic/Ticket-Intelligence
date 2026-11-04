@@ -47,8 +47,8 @@ The demo project is **MediAgenda**, a fictional healthcare scheduling app (Angul
 | 2:15 | Opens the Jira ticket | the internal AI analysis comment, label `ai-analyzed` | "It's already in Jira, where the team works." |
 | 2:30 | Back to the dashboard, Teams panel | the message to Sara, ready to act on | "The right person knows, with context, without a meeting." |
 | 2:45 | Shows "Waiting for a human" | drafts: assign to Sara, reply to the reporter | "What the agent may do alone is a policy. Anything customer-facing waits for a person." |
-| 3:00 | *(planned)* Dashboard: reproduction | generated browser test runs; screenshot + request with two structureIds attached to Jira | "It proved the bug in the real app." |
-| 3:45 | *(planned)* Dashboard: fix | branch DEM-x, the diff, `ng build` ✓, `mvn test` ✓, reproduction test ✓, draft PR | "And proposed a tested fix. A developer reviews it, they don't start from zero." |
+| 3:00 | Dashboard: reproduction | generated browser test runs; screenshot + request with two structureIds attached to Jira | "It proved the bug in the real app." |
+| ~5:00 | Dashboard: fix | branch DEM-x, the diff, `ng build` ✓, `mvn test` ✓, reproduction test ✓, draft PR | "And proposed a tested fix. A developer reviews it, they don't start from zero." |
 | 4:30 | *(planned)* Moves the ticket to Done | a docs PR with the known-issue entry for this component | "Next time this kind of bug comes, the answer is already in the repo." |
 | 5:00 | Questions | | |
 
@@ -64,7 +64,7 @@ The demo project is **MediAgenda**, a fictional healthcare scheduling app (Angul
 | Problem | Fallback |
 |---|---|
 | Network / Jira unavailable | play the recording; the dashboard history still shows earlier runs |
-| Agent slower than usual | keep talking over the streamed steps; typical run 55–90 s |
+| Agent slower than usual | keep talking over the streamed steps; typical: analysis 55–90 s, reproduction 1.5–3.5 min, fix + checks 1.5 min (DEM-9: 6 min 24 s end to end) |
 | Agent fails (`ai-failed`) | remove the label in Jira; it is retried at the next poll; meanwhile show DEM-7's earlier result |
 | Ticket flagged as a duplicate | turn it into a talking point ("it also recognized the duplicate"), then continue |
 | Claude CLI session expired | run `claude` once in a terminal before the demo; fallback to the recording |

@@ -26,7 +26,7 @@ Ticket Intelligence gives every Jira ticket a fast, evidence-based first analysi
 | UC-1 | A developer new to a project runs `/analyze-ticket KEY "title"` in the project folder and gets a report: problem, code location, changes, likely cause, proposed fix, owner, next steps, escalation | Implemented |
 | UC-2 | A new ticket appears in Jira; within minutes the agent posts an internal analysis, notifies the owner and prepares drafts, with no human start | Implemented |
 | UC-3 | A resolved ticket is documented in `docs/knowledge/<component>.md` and committed for review | Implemented (manual start) |
-| UC-4 | The agent reproduces the bug in the running application, attaches evidence, implements a fix on a branch, runs the tests and opens a draft pull request | Planned |
+| UC-4 | The agent reproduces the bug in a browser test, attaches evidence, implements a fix on a branch, runs the tests and opens a draft pull request | Implemented (FE tickets) |
 | UC-5 | A customer email or Teams message mentioning a ticket gets a status answer | Later |
 
 ## 3. Architecture
@@ -91,8 +91,8 @@ Ticket Intelligence gives every Jira ticket a fast, evidence-based first analysi
 | FR-35 | Flag possible duplicates (`duplicateOf`) without linking or closing | Implemented |
 | FR-36 | Live dashboard: ticket feed with each agent step, results, Teams-style notifications, drafts, KPIs, policy | Implemented |
 | FR-37 | Post owner notifications to Teams through a Workflows webhook when `TEAMS_WEBHOOK_URL` is set | Implemented (not tested against a real channel) |
-| FR-38 | Reproduce the bug with a generated Playwright test against the running app; attach screenshot and network evidence to Jira | Planned |
-| FR-39 | Implement the fix on a branch named after the ticket; run `ng build`, `mvn test` and the reproduction test; open a draft PR (git) or attach a patch (SVN) | Planned |
+| FR-38 | Reproduce the bug with a generated Playwright test (mocked backend API); the watcher verifies that the test fails before the fix; attach screenshot and recorded API calls to Jira | Implemented |
+| FR-39 | Implement the fix on a branch named after the ticket in an isolated worktree; the watcher re-runs all browser tests, `ng build` and (if backend code changed) `mvn test`; push and open a draft PR (GitHub). SVN: patch file | Implemented for git/GitHub; SVN patch Later |
 | FR-40 | On transition to Done, run `/document-ticket` and open a documentation PR | Planned |
 
 ### 4.5 Documentation of resolved tickets
@@ -179,6 +179,7 @@ Scores only order lists; every recommendation must cite tickets, commits or file
 | Analysis quality | DEM-7 / DEM-8: correct cause (file:line), related tickets, owner; DEM-1 (meaningless ticket): low confidence, no notification |
 | git vs. SVN | identical components, commits and people on both demo repositories |
 | Autonomy | DEM-8 created → picked in 13 s → commented in 59 s, no human action |
+| Reproduce and fix | DEM-9 created → analysis 63 s → test written and failing (verified) → fix → 2 browser tests + `ng build` passing (verified) → draft PR #1 + Jira comment with 4 attachments; 6 min 24 s end to end, no human action |
 | Not yet validated | GitHub Copilot, real company tickets, real SVN server, real Teams channel |
 
 ## 10. Open questions
