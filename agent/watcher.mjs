@@ -113,7 +113,8 @@ createServer((req, res) => {
     return;
   }
   // Evidence screenshots: /evidence/<KEY>/before.png|after.png (only these names, only from state/work).
-  const ev = req.url.match(/^\/evidence\/([A-Z][A-Z0-9_]+-\d+)\/(before|after)\.png$/);
+  // The dashboard adds ?<timestamp> to bust the cache, so match the path without the query string.
+  const ev = req.url.split('?')[0].match(/^\/evidence\/([A-Z][A-Z0-9_]+-\d+)\/(before|after)\.png$/);
   if (ev) {
     const file = join(stateDir, 'work', ev[1], 'evidence', `${ev[2]}.png`);
     if (!existsSync(file)) {
