@@ -13,6 +13,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createEventLog } from './lib/events.mjs';
 import { createJira } from './lib/jira-actions.mjs';
+import { documentResolved } from './lib/document.mjs';
 import { processTicket } from './lib/pipeline.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -25,6 +26,9 @@ const jira = createJira();
 
 const agentLabels = Object.values(cfg.labels);
 const JQL = `project = ${cfg.project} AND created >= -${cfg.lookbackHours}h AND statusCategory != Done AND (labels is EMPTY OR labels not in (${agentLabels.join(', ')})) ORDER BY created ASC`;
+// Resolved tickets the agent analyzed and has not documented yet.
+const L = cfg.labels;
+const DONE_JQL = `project = ${cfg.project} AND statusCategory = Done AND labels = ${L.done} AND labels not in (${[L.documenting, L.documented, L.docFailed, L.skip].join(', ')}) AND updated >= -${cfg.lookbackHours}h ORDER BY updated ASC`;
 
 const status = { project: cfg.project, repo: repoDir, jiraUrl: jira.baseUrl, policy: policy.actions, lastPoll: null, nextPoll: null, queue: [], processing: null, startedAt: new Date().toISOString() };
 const clients = new Set();
@@ -38,9 +42,9 @@ const pushStatus = () => broadcast({ type: 'status', status });
 // ---------------------------------------------------------------- watching
 
 async function recoverStuckTickets() {
-  const stuck = await jira.search(`project = ${cfg.project} AND labels = ${cfg.labels.inProgress}`, 50);
+  const stuck = await jira.search(`project = ${cfg.project} AND labels in (${cfg.labels.inProgress}, ${cfg.labels.documenting})`, 50);
   for (const t of stuck) {
-    await jira.labels(t.key, { remove: [cfg.labels.inProgress] });
+    await jira.labels(t.key, { remove: [cfg.labels.inProgress, cfg.labels.documenting] });
     events.emit('recovered', { key: t.key, text: 'removed a stale in-progress label from an interrupted run' });
   }
 }
@@ -50,12 +54,13 @@ async function poll() {
   if (polling) return;
   polling = true;
   try {
-    const found = await jira.search(JQL, 20);
+    const found = (await jira.search(JQL, 20)).map((i) => ({ ...i, kind: 'analyze' }));
+    const resolved = policy.actions.documentOnDone === 'auto' ? (await jira.search(DONE_JQL, 20)).map((i) => ({ ...i, kind: 'document' })) : [];
     status.lastPoll = new Date().toISOString();
-    for (const issue of found) {
+    for (const issue of [...found, ...resolved]) {
       if (status.processing?.key === issue.key || status.queue.some((q) => q.key === issue.key)) continue;
       status.queue.push(issue);
-      events.emit('queued', { key: issue.key, text: issue.summary, url: jira.browseUrl(issue.key), priority: issue.priority, reporter: issue.reporter });
+      events.emit(issue.kind === 'document' ? 'resolved' : 'queued', { key: issue.key, text: issue.kind === 'document' ? 'ticket moved to Done: documentation queued' : issue.summary, url: jira.browseUrl(issue.key), priority: issue.priority, reporter: issue.reporter });
     }
   } catch (e) {
     events.emit('error', { text: `poll failed: ${e.message}` });
@@ -67,12 +72,25 @@ async function poll() {
   }
 }
 
+async function documentTicket(issue) {
+  const key = issue.key;
+  try {
+    await jira.labels(key, { add: [L.documenting] });
+    await documentResolved({ issue, repoDir, stateDir, cfg, jira, events });
+    await jira.labels(key, { add: [L.documented], remove: [L.documenting] });
+  } catch (e) {
+    events.emit('doc-failed', { key, text: e.message });
+    await jira.labels(key, { add: [L.docFailed], remove: [L.documenting] }).catch(() => {});
+  }
+}
+
 async function drain() {
   if (status.processing || !status.queue.length) return;
   const issue = status.queue.shift();
-  status.processing = { key: issue.key, since: new Date().toISOString() };
+  status.processing = { key: issue.key, kind: issue.kind, since: new Date().toISOString() };
   pushStatus();
-  await processTicket({ issue, cfg, policy, jira, events, repoDir, stateDir });
+  if (issue.kind === 'document') await documentTicket(issue);
+  else await processTicket({ issue, cfg, policy, jira, events, repoDir, stateDir });
   status.processing = null;
   pushStatus();
   drain();

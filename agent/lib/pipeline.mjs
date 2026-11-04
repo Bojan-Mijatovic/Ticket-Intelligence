@@ -3,7 +3,9 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runAnalysis } from './analyze.mjs';
+import { execFileSync } from 'node:child_process';
 import { reproduceAndFix } from './fix.mjs';
+import { createWorkspace, startDevServer } from './workspace.mjs';
 import { notifyOwner } from './notify.mjs';
 import { publishFix } from './publish.mjs';
 
@@ -21,18 +23,54 @@ export function fixBlocker({ issue, result, policy }) {
   return null;
 }
 
+/** Only the title-based rules: used before the analysis, to decide whether to warm up a workspace. */
+function mayFixByTitle({ issue, policy }) {
+  if (policy.actions.proposeFix !== 'auto') return false;
+  const tags = [...String(issue.summary).matchAll(/\[([^\]]+)\]/g)].map((m) => m[1].trim().toUpperCase());
+  const wanted = policy.proposeFixWhen?.titleTags ?? [];
+  return !wanted.length || wanted.some((t) => tags.includes(t.toUpperCase()));
+}
+
+let warmPort = 4400;
+/** Worktree + warm dev server, prepared while the analysis runs. Resolves to the workspace, or null. Never throws. */
+async function prepareWorkspace({ key, repoDir, stateDir, events }) {
+  let ws = null;
+  try {
+    ws = createWorkspace({ repoDir, key, stateDir });
+    events.emit('workspace', { key, text: `worktree on branch ${ws.branch}; warming the dev server while the analysis runs` });
+    const server = await startDevServer(ws, warmPort++);
+    events.emit('warmed', { key, text: `dev server ready in ${Math.round(server.warmMs / 1000)} s (port ${server.port})` });
+    return ws;
+  } catch (e) {
+    if (ws) discardWorkspace(ws, repoDir, key);
+    events.emit(e.code === 'BRANCH_EXISTS' ? 'fix-skipped' : 'error', { key, text: `workspace not prepared: ${e.message}` });
+    return null;
+  }
+}
+
+function discardWorkspace(ws, repoDir, key) {
+  ws.remove();
+  try {
+    execFileSync('git', ['branch', '-D', key], { cwd: repoDir, stdio: 'ignore' });
+  } catch {
+    /* never created or already gone */
+  }
+}
+
 /** Reproduce → fix → verify → draft PR. Returns true when a pull request was opened. Never throws. */
-async function maybeFix({ issue, result, cfg, policy, jira, events, repoDir, stateDir }) {
+async function maybeFix({ issue, result, cfg, policy, jira, events, repoDir, stateDir, prepared }) {
   const key = issue.key;
   const blocker = fixBlocker({ issue, result, policy });
+  const ws = prepared ? await prepared : null;
   if (blocker) {
+    if (ws) discardWorkspace(ws, repoDir, key);
     events.emit('fix-skipped', { key, text: `no automatic fix: ${blocker}` });
     return false;
   }
   try {
     const full = await jira.getIssue(key);
     const toolsDir = cfg.toolsDir ? resolve(AGENT_DIR, cfg.toolsDir) : null;
-    const fix = await reproduceAndFix({ issue: full, analysis: result, repoDir, stateDir, cfg, events, toolsDir });
+    const fix = await reproduceAndFix({ issue: full, analysis: result, repoDir, stateDir, cfg, events, toolsDir, prepared: ws });
     const pub = await publishFix({ key, analysis: result, result: fix, jira, events, stateDir });
     events.emit('fix-proposed', { key, text: `draft PR ready: ${fix.title}`, url: pub.prUrl, checks: fix.checks, files: fix.fix.files });
     return Boolean(pub.prUrl);
@@ -60,8 +98,12 @@ export async function processTicket({ issue, cfg, policy, jira, events, repoDir,
   const started = Date.now();
   events.emit('picked', { key, text: issue.summary, url: jira.browseUrl(key) });
 
+  let prepared = null;
   try {
     await jira.labels(key, { add: [cfg.labels.inProgress], remove: [cfg.labels.failed] });
+
+    // Warm up the fix workspace in parallel with the analysis (only for tickets the title rules allow).
+    prepared = mayFixByTitle({ issue, policy }) ? prepareWorkspace({ key, repoDir, stateDir, events }) : null;
 
     let result = given;
     let meta = { durationMs: 0, costUsd: 0, turns: 0 };
@@ -102,7 +144,8 @@ export async function processTicket({ issue, cfg, policy, jira, events, repoDir,
       events.emit('draft', { key, kind: 'reply', text: 'Reply to the reporter prepared', body: result.reporterReply });
     }
 
-    const fixed = await maybeFix({ issue, result, cfg, policy, jira, events, repoDir, stateDir });
+    const fixed = await maybeFix({ issue, result, cfg, policy, jira, events, repoDir, stateDir, prepared });
+    prepared = null; // handed over: maybeFix owns the workspace now
 
     const doneLabels = [cfg.labels.done, ...(fixed ? [cfg.labels.fixProposed] : [])];
     if (auto('addLabels')) await jira.labels(key, { add: doneLabels, remove: [cfg.labels.inProgress] });
@@ -112,6 +155,8 @@ export async function processTicket({ issue, cfg, policy, jira, events, repoDir,
     return result;
   } catch (e) {
     events.emit('failed', { key, text: e.message });
+    const ws = prepared ? await prepared : null;
+    if (ws) discardWorkspace(ws, repoDir, key);
     try {
       await jira.labels(key, { add: [cfg.labels.failed], remove: [cfg.labels.inProgress] });
     } catch {

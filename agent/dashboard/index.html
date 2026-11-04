@@ -175,7 +175,7 @@ function h(tag, attrs = {}, ...kids) {
 }
 const initials = (name = '?') => name.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
 const ago = (iso) => { if (!iso) return '–'; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`; };
-const ICON = { workspace: '⎇', reproducing: '🧪', reproduced: '🐞', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺' };
+const ICON = { resolved: '☑', documenting: '📝', documented: '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺' };
 
 const tickets = new Map();
 const teams = [];
@@ -210,8 +210,12 @@ function apply(ev) {
     case 'fix-proposed': t.fix = { ...(t.fix ?? {}), stage: 'done', title: ev.text.replace(/^draft PR ready: /, ''), prUrl: ev.url ?? t.fix?.prUrl, files: ev.files }; t.state = 'done'; break;
     case 'fix-failed': t.fix = { ...(t.fix ?? {}), stage: 'failed', error: ev.text }; break;
     case 'fix-skipped': t.fixSkipped = ev.text; break;
+    case 'resolved': t.docs = { stage: 'queued' }; break;
+    case 'documenting': t.docs = { stage: 'writing' }; break;
+    case 'documented': t.docs = { stage: 'done', url: ev.url, files: ev.files }; break;
+    case 'doc-failed': t.docs = { stage: 'failed', error: ev.text }; break;
   }
-  if (['picked', 'analyzing', 'progress', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'skipped', 'workspace', 'reproducing', 'reproduced', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-skipped'].includes(ev.type)) {
+  if (['picked', 'analyzing', 'progress', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'warmed', 'workspace', 'reproducing', 'reproduced', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-skipped'].includes(ev.type)) {
     t.steps.push({ at: ev.at, type: ev.type, text: ev.step ?? ev.text });
   }
 }
@@ -244,9 +248,20 @@ function fixView(t) {
     f.files?.length ? h('div', { class: 'files' }, f.files.map((x) => h('code', {}, x))) : null);
 }
 
+function docsView(t) {
+  const d = t.docs;
+  if (!d) return null;
+  return h('div', { class: 'fix' },
+    h('div', { class: 'fix-title' }, '📚 Knowledge base (ticket resolved)',
+      h('span', { class: `chip ${d.stage === 'done' ? 'done' : d.stage === 'failed' ? 'failed' : 'analyzing'}` }, d.stage === 'done' ? 'docs PR ready' : d.stage)),
+    d.error ? h('pre', { class: 'err' }, d.error) : null,
+    d.url ? h('div', {}, h('a', { class: 'pr-link', href: d.url, target: '_blank' }, '⇄ Open documentation pull request')) : null,
+    d.files?.length ? h('div', { class: 'files' }, d.files.map((x) => h('code', {}, x))) : null);
+}
+
 function resultView(t) {
   const r = t.result;
-  if (!r) return null;
+  if (!r) return t.docs ? docsView(t) : null;
   const confCls = r.confidence === 'high' ? 'done' : r.confidence === 'medium' ? 'analyzing' : 'failed';
   return h('div', { class: 'result' },
     t.duplicateOf ? h('div', { class: 'row' }, h('span', { class: 'k' }, 'Duplicate?'), h('span', {}, h('span', { class: 'chip analyzing' }, `possible duplicate of ${t.duplicateOf.key}`), ' ', t.duplicateOf.why ?? '')) : null,
@@ -260,6 +275,7 @@ function resultView(t) {
       t.commentUrl ? h('a', { href: t.commentUrl, target: '_blank' }, 'View the comment in Jira ↗') : null,
       h('details', {}, h('summary', {}, 'Jira comment text'), h('pre', { class: 'comment' }, r.jiraComment)))),
     fixView(t),
+    docsView(t),
   );
 }
 

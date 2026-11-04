@@ -9,7 +9,8 @@
     "replyToReporter": "draft",
     "transitionStatus": "off",
     "proposeFix": "auto",
-    "mergeFix": "off"
+    "mergeFix": "off",
+    "documentOnDone": "auto"
   },
   "notifyMinConfidence": "medium",
   "commentHeader": "(robot) *AI analysis* — automated first analysis. Please verify before acting on it.",
@@ -21,5 +22,6 @@
     ],
     "skipDuplicates": true
   },
-  "_fixComment": "proposeFix = reproduce with a browser test, fix on branch <KEY>, verify independently, open a DRAFT pull request. mergeFix is always off: a human merges."
+  "_fixComment": "proposeFix = reproduce with a browser test, fix on branch <KEY>, verify independently, open a DRAFT pull request. mergeFix is always off: a human merges.",
+  "_documentComment": "documentOnDone = when a ticket the agent analyzed moves to Done, write docs/knowledge on branch docs/<KEY> and open a DRAFT pull request."
 }

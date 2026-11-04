@@ -28,7 +28,7 @@ ${issue.description}
 Analysis already made (JSON):
 ${JSON.stringify({ summary: analysis.summary, likelyCause: analysis.likelyCause, files: analysis.files, proposedFix: analysis.proposedFix }, null, 2)}`;
 
-function reproducePrompt(issue, analysis, port) {
+function reproducePrompt(issue, analysis, testEnv) {
   return `You are running unattended: nobody will answer questions. The current directory is a git worktree of the application on branch ${issue.key}.
 
 ${ticketContext(issue, analysis)}
@@ -38,14 +38,14 @@ TASK (phase 1 of 2, reproduce): write ONE Playwright test file, e2e/tests/${issu
 - The test asserts the CORRECT behaviour, so it fails now because of the bug. Name it test('${issue.key}: <expected behaviour>', ...).
 - Right before the final assertions, call: await evidence(page, '${issue.key}', api)
 - Do not change any other file. Do not commit.
-- Run it from the e2e folder: CI=1 E2E_PORT=${port} npx playwright test tests/${issue.key}.spec.ts
+- Run it from the e2e folder: ${testEnv} npx playwright test tests/${issue.key}.spec.ts
   It must fail on an assertion that shows the bug, not on a timeout or a missing selector. If it fails for another reason, fix the test and run it again.
 
 Reply with ONLY one \`\`\`json block:
 { "testFile": "e2e/tests/${issue.key}.spec.ts", "reproduced": true, "failure": "one line: what the failing assertion shows", "notes": "anything the reviewer should know" }`;
 }
 
-function fixPrompt(issue, analysis, port, javaHint) {
+function fixPrompt(issue, analysis, testEnv, javaHint) {
   return `You are running unattended: nobody will answer questions. The current directory is a git worktree of the application on branch ${issue.key}.
 
 ${ticketContext(issue, analysis)}
@@ -54,7 +54,7 @@ TASK (phase 2 of 2, fix): the committed test e2e/tests/${issue.key}.spec.ts repr
 - Follow the proposed fix unless you find a smaller correct one. Keep existing behaviour working (for example the footer PULISCI button).
 - Do NOT modify anything under e2e/. Match the style of the surrounding code; a short comment referencing ${issue.key} only where it helps a reader.
 - Verify:
-  1. from the e2e folder: CI=1 E2E_PORT=${port} npx playwright test   (all tests must pass)
+  1. from the e2e folder: ${testEnv} npx playwright test   (all tests must pass)
   2. from the frontend folder: npx ng build   (must succeed)
   3. only if you changed backend code: from the backend folder: mvn -q test ${javaHint}
 - Do not commit.
@@ -68,12 +68,17 @@ const fail = (stage, message, extra = {}) => Object.assign(new Error(message), {
 /**
  * @returns {Promise<{ branch, wsPath, test: object, fix: object, checks: object, evidence: { before, after, beforeJson, afterJson } }>}
  */
-export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg, events, toolsDir }) {
+/**
+ * @param {object} [p.prepared]  a workspace created in advance (createWorkspace), possibly with a warm dev server
+ */
+export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg, events, toolsDir, prepared = null }) {
   const key = issue.key;
   const evidenceDir = join(stateDir, 'work', key, 'evidence');
   mkdirSync(evidenceDir, { recursive: true });
-  const ws = createWorkspace({ repoDir, key, stateDir });
-  events.emit('workspace', { key, text: `worktree on branch ${ws.branch} from origin/main` });
+  const ws = prepared ?? createWorkspace({ repoDir, key, stateDir });
+  if (!prepared) events.emit('workspace', { key, text: `worktree on branch ${ws.branch} from origin/main` });
+  // With a warm dev server the agent's test runs reuse it (no CI=1); otherwise each run starts its own server.
+  const testEnv = ws.server ? `E2E_PORT=${ws.server.port}` : 'CI=1 E2E_PORT=4390';
   const common = { cwd: ws.path, cfg, permissionMode: 'acceptEdits', disallowedTools: NO_GIT_WRITES, timeoutMinutes: cfg.fixTimeoutMinutes ?? 15 };
   const progress = (step) => events.emit('progress', { key, step });
   const specRel = `e2e/tests/${key}.spec.ts`;
@@ -86,7 +91,7 @@ export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg,
   try {
     // ---------------------------------------------------------------- phase 1: reproduce
     events.emit('reproducing', { key, text: 'agent writes a browser test from the ticket steps' });
-    const repro = await runClaude({ ...common, prompt: reproducePrompt(issue, analysis, 4390), transcriptFile: join(stateDir, 'work', key, 'transcript-reproduce.jsonl'), required: ['testFile', 'reproduced'], onProgress: progress });
+    const repro = await runClaude({ ...common, prompt: reproducePrompt(issue, analysis, testEnv), transcriptFile: join(stateDir, 'work', key, 'transcript-reproduce.jsonl'), required: ['testFile', 'reproduced'], onProgress: progress });
 
     const changed1 = ws.changedFiles('HEAD').filter((f) => !f.startsWith('e2e/evidence/') && !f.startsWith('e2e/test-results/'));
     if (changed1.length !== 1 || changed1[0] !== specRel) throw fail('reproduce', `phase 1 must only add ${specRel}; changed: ${changed1.join(', ') || 'nothing'}`);
@@ -102,7 +107,7 @@ export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg,
     // ---------------------------------------------------------------- phase 2: fix
     events.emit('fixing', { key, text: 'agent implements the fix' });
     const javaHint = toolsDir ? `(if mvn is not on PATH, use the JDK/Maven in ${toolsDir})` : '';
-    const fix = await runClaude({ ...common, prompt: fixPrompt(issue, analysis, 4391, javaHint), transcriptFile: join(stateDir, 'work', key, 'transcript-fix.jsonl'), required: ['summary', 'description'], onProgress: progress });
+    const fix = await runClaude({ ...common, prompt: fixPrompt(issue, analysis, testEnv, javaHint), transcriptFile: join(stateDir, 'work', key, 'transcript-fix.jsonl'), required: ['summary', 'description'], onProgress: progress });
 
     const changed2 = ws.changedFiles('HEAD').filter((f) => !f.startsWith('e2e/evidence/') && !f.startsWith('e2e/test-results/'));
     if (!changed2.length) throw fail('fix', 'the agent did not change any file');

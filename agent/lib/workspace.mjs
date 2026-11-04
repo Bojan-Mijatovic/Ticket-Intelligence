@@ -2,7 +2,7 @@
 // ticket, created from the remote main. The user's clone, its branch and any running app are never touched.
 // node_modules are linked (directory junctions on Windows) instead of reinstalled.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
@@ -16,6 +16,47 @@ function git(cwd, args) {
   }
 }
 
+/**
+ * Starts `ng serve` for the worktree and waits until it answers. The first compile in a fresh worktree is the slow
+ * part of a fix run (~2 min, no cache); doing it while the analysis runs hides that time. The agent's own test runs
+ * reuse this server; the watcher's independent checks still start their own.
+ */
+export async function startDevServer(ws, port, { timeoutMs = 300_000 } = {}) {
+  const child = spawn('npx', ['ng', 'serve', '--port', String(port)], {
+    cwd: join(ws.path, 'frontend'),
+    env: { ...process.env, NG_CLI_ANALYTICS: 'false' },
+    shell: process.platform === 'win32',
+    windowsHide: true,
+    stdio: 'ignore',
+  });
+  const stop = () => {
+    if (child.exitCode !== null) return;
+    if (process.platform === 'win32') {
+      try {
+        execFileSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+      } catch {
+        /* already gone */
+      }
+    } else child.kill();
+  };
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (child.exitCode !== null) throw new Error(`ng serve exited with ${child.exitCode}`);
+    try {
+      const res = await fetch(`http://localhost:${port}/`);
+      if (res.ok) {
+        ws.server = { port, stop, warmMs: Date.now() - started };
+        return ws.server;
+      }
+    } catch {
+      /* not up yet */
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  stop();
+  throw new Error(`ng serve did not answer on port ${port} within ${Math.round(timeoutMs / 1000)} s`);
+}
+
 export function branchExists(repoDir, branch) {
   const local = git(repoDir, ['branch', '--list', branch]);
   let remote = '';
@@ -27,9 +68,12 @@ export function branchExists(repoDir, branch) {
   return Boolean(local || remote);
 }
 
-export function createWorkspace({ repoDir, key, stateDir }) {
-  const branch = key;
-  const path = join(stateDir, 'work', key, 'repo');
+/**
+ * @param {string} [p.branch]  branch to create (default: the ticket key; e.g. "docs/DEM-9" for documentation)
+ * @param {string} [p.name]    folder name under state/work/<KEY>/ (default "repo")
+ */
+export function createWorkspace({ repoDir, key, stateDir, branch = key, name = 'repo' }) {
+  const path = join(stateDir, 'work', key, name);
   if (branchExists(repoDir, branch)) {
     const err = new Error(`branch ${branch} already exists (someone may be working on it); not touching it`);
     err.code = 'BRANCH_EXISTS';
@@ -58,7 +102,12 @@ export function createWorkspace({ repoDir, key, stateDir }) {
       const untracked = git(path, ['ls-files', '--others', '--exclude-standard']).split('\n');
       return [...new Set([...tracked, ...untracked].map((f) => f.trim()).filter(Boolean))];
     },
+    /** Warm Angular dev server for this worktree (see startDevServer); stopped by remove(). */
+    server: null,
     remove() {
+      // A running dev server keeps files open (Windows): stop it before deleting the worktree.
+      this.server?.stop();
+      this.server = null;
       // Unlink the junctions first, so removing the worktree can never delete the shared node_modules.
       for (const dep of LINKED_DEPS) {
         const link = join(path, dep);

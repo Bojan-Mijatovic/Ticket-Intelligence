@@ -11,7 +11,10 @@
     "done": "ai-analyzed",
     "failed": "ai-failed",
     "skip": "no-ai",
-    "fixProposed": "ai-fix-proposed"
+    "fixProposed": "ai-fix-proposed",
+    "documenting": "ai-documenting",
+    "documented": "ai-documented",
+    "docFailed": "ai-doc-failed"
   },
   "claude": {
     "command": "claude",

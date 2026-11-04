@@ -6,3 +6,4 @@ tools/
 *.local.json
 agent/state/
 demo/jira-keys.json
+demo/.demo-tickets.json

@@ -5,7 +5,7 @@
 //   node demo/new-ticket.mjs [--project DEM] [--screenshot path.png]
 //   node demo/new-ticket.mjs --delete DEM-7        removes a rehearsal ticket
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -17,6 +17,10 @@ const cfg = loadConfig();
 const args = process.argv.slice(2);
 const opt = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null);
 const PROJECT = opt('--project') ?? 'DEM';
+// Tickets created by this script, so reset-demo.mjs deletes only those (never the seeded history or other tickets).
+const TRACK = join(HERE, '.demo-tickets.json');
+const tracked = () => (existsSync(TRACK) ? JSON.parse(readFileSync(TRACK, 'utf8')) : []);
+const track = (keys) => writeFileSync(TRACK, `${JSON.stringify([...new Set(keys)], null, 2)}\n`);
 const auth = `Basic ${Buffer.from(`${process.env.JIRA_EMAIL}:${process.env.JIRA_API_TOKEN}`).toString('base64')}`;
 
 async function api(method, path, body, headers = {}) {
@@ -32,6 +36,7 @@ async function api(method, path, body, headers = {}) {
 
 if (opt('--delete')) {
   await api('DELETE', `/rest/api/2/issue/${opt('--delete')}`);
+  track(tracked().filter((k) => k !== opt('--delete')));
   console.log(`deleted ${opt('--delete')}`);
   process.exit(0);
 }
@@ -62,5 +67,6 @@ if (shot) {
   await api('POST', `/rest/api/2/issue/${res.key}/attachments`, form, { 'X-Atlassian-Token': 'no-check' });
 }
 
+track([...tracked(), res.key]);
 console.log(`${res.key}  ${cfg.baseUrl}/browse/${res.key}`);
 console.log(`Title: ${target.summary}`);
