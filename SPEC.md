@@ -89,11 +89,16 @@ Ticket Intelligence gives every Jira ticket a fast, evidence-based first analysi
 | FR-33 | Never process a ticket twice; recover tickets left `ai-analyzing` by an interrupted run | Implemented |
 | FR-34 | Notify only a real person and only at or above `notifyMinConfidence` | Implemented |
 | FR-35 | Flag possible duplicates (`duplicateOf`) without linking or closing | Implemented |
-| FR-36 | Live dashboard: ticket feed with each agent step, results, Teams-style notifications, drafts, KPIs, policy | Implemented |
+| FR-36 | Live dashboard: ticket feed with each agent step, results, Teams-style notifications, drafts, KPIs, policy; status chip says how a ticket ended (`PR ready`, `fix failed`, `analyzed · no fix` with the reason) | Implemented |
 | FR-37 | Post owner notifications to Teams through a Workflows webhook when `TEAMS_WEBHOOK_URL` is set | Implemented (not tested against a real channel) |
 | FR-38 | Reproduce the bug with a generated Playwright test (mocked backend API); the watcher verifies that the test fails before the fix; attach screenshot and recorded API calls to Jira | Implemented |
 | FR-39 | Implement the fix on a branch named after the ticket in an isolated worktree; the watcher re-runs all browser tests, `ng build` and (if backend code changed) `mvn test`; push and open a draft PR (GitHub). SVN: patch file | Implemented for git/GitHub; SVN patch Later |
 | FR-40 | On transition to Done, run `/document-ticket` headless on branch `docs/<KEY>` (only `docs/knowledge/*.md` may change, checked by the watcher) and open a draft documentation PR | Implemented |
+| FR-41 | Fix eligibility: `[FE]` in the title, or no tag at all and every file the analysis names (tests excluded) is under `frontend/` (`inferTagFromFiles`, `inferIgnoreFiles`); an explicit other tag is respected | Implemented |
+| FR-42 | Run again: from the dashboard (card button or key field), reset the agent's result labels and queue the ticket now; `no-ai` respected | Implemented |
+| FR-43 | Preview: switch the served application clone to a fix branch and wait for the dev server rebuild (dashboard button, `demo/preview.mjs`); the dashboard shows which branch the app serves | Implemented |
+| FR-44 | The analysis always reads `origin/main` (detached worktree `state/analysis-repo`), never the branch the application clone is on | Implemented |
+| FR-45 | Single watcher instance (`state/watcher.pid`); `--replace` stops the running one; preflight fails when the watcher runs older agent code | Implemented |
 
 ### 4.5 Documentation of resolved tickets
 
@@ -134,7 +139,7 @@ A result that is not valid JSON or misses a required field fails the run (`ai-fa
 
 ### 5.3 Events (`agent/state/events.jsonl`, dashboard stream)
 
-`started`, `recovered`, `queued`, `picked`, `analyzing`, `progress`, `analyzed`, `duplicate`, `commented`, `notified`, `skipped`, `draft`, `done`, `failed`, `error`. Each event has `at`, `type`, and usually `key` and `text`.
+`started`, `recovered`, `queued` (`rerun: true` when started with Run again), `picked`, `analyzing`, `progress`, `analyzed`, `duplicate`, `commented`, `notified`, `skipped`, `draft`, `done`, `failed`, `error`, `preview`; fix stage: `workspace`, `warmed`, `reproducing`, `reproduced`, `fixing`, `verifying`, `verified`, `pushed`, `pr`, `fix-proposed`, `fix-failed`, `fix-skipped`; documentation: `resolved`, `documenting`, `documented`, `doc-failed`. Each event has `at`, `type`, and usually `key` and `text`.
 
 ### 5.4 Configuration
 

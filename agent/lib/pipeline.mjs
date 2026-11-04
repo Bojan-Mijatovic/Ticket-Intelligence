@@ -5,30 +5,65 @@ import { fileURLToPath } from 'node:url';
 import { runAnalysis } from './analyze.mjs';
 import { execFileSync } from 'node:child_process';
 import { reproduceAndFix } from './fix.mjs';
-import { createWorkspace, startDevServer } from './workspace.mjs';
+import { analysisCheckout, createWorkspace, startDevServer } from './workspace.mjs';
 import { notifyOwner } from './notify.mjs';
 import { publishFix } from './publish.mjs';
 
 const RANK = { low: 0, medium: 1, high: 2 };
 const AGENT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..'); // config paths are relative to agent/
 
+const titleTags = (summary) => [...String(summary).matchAll(/\[([^\]]+)\]/g)].map((m) => m[1].trim().toUpperCase());
+
+/**
+ * A wanted tag that the analysis implies although the title lacks it: `inferTagFromFiles` maps a tag to a folder
+ * (e.g. FE → frontend/); the tag counts when every file the analysis names is inside that folder.
+ */
+function inferredTag({ result, when }) {
+  const under = (f, folder) => {
+    const dir = folder.replace(/\/?$/, '/');
+    return f.startsWith(dir) || f.includes(`/${dir}`);
+  };
+  // Test folders (inferIgnoreFiles, e.g. e2e/) say nothing about which side the change belongs to.
+  const files = (result?.files ?? []).map((f) => String(f).replace(/\\/g, '/')).filter((f) => !(when.inferIgnoreFiles ?? []).some((d) => under(f, d)));
+  if (!files.length) return null;
+  for (const [tag, folder] of Object.entries(when.inferTagFromFiles ?? {})) {
+    if (files.every((f) => under(f, folder))) return tag.toUpperCase();
+  }
+  return null;
+}
+
 /** Why the agent should not propose a fix for this ticket, or null when it may. */
 export function fixBlocker({ issue, result, policy }) {
   if (policy.actions.proposeFix !== 'auto') return 'proposeFix is not enabled in policy.json';
   const when = policy.proposeFixWhen ?? {};
   if ((RANK[result.confidence] ?? 0) < (RANK[when.minConfidence] ?? 2)) return `confidence is ${result.confidence}`;
-  const tags = [...String(issue.summary).matchAll(/\[([^\]]+)\]/g)].map((m) => m[1].trim().toUpperCase());
-  if (when.titleTags?.length && !when.titleTags.some((t) => tags.includes(t.toUpperCase()))) return `title has no ${when.titleTags.map((t) => `[${t}]`).join('/')} tag`;
+  const wanted = (when.titleTags ?? []).map((t) => t.toUpperCase());
+  const tags = titleTags(issue.summary);
+  if (wanted.length && !wanted.some((t) => tags.includes(t))) {
+    // An explicit tag (e.g. [BE]) is the reporter's decision; inference applies only to titles without any tag.
+    if (tags.length) return `title is tagged ${tags.map((t) => `[${t}]`).join('')}, not ${wanted.map((t) => `[${t}]`).join('/')}`;
+    const tag = inferredTag({ result, when });
+    if (!tag || !wanted.includes(tag)) {
+      const folders = Object.values(when.inferTagFromFiles ?? {});
+      return `title has no ${wanted.map((t) => `[${t}]`).join('/')} tag${folders.length ? ` and the analysis does not place the change only in ${folders.join(' or ')}` : ''}`;
+    }
+  }
   if (when.skipDuplicates && result.duplicateOf?.key) return `possible duplicate of ${result.duplicateOf.key}`;
   return null;
 }
 
-/** Only the title-based rules: used before the analysis, to decide whether to warm up a workspace. */
+/**
+ * Before the analysis: whether a fix is possible at all, to decide whether to warm up a workspace. A title with a
+ * wanted tag warms up; an untagged title too when tags can be inferred from the analysis; a title tagged only with
+ * something else (e.g. [BE]) does not.
+ */
 function mayFixByTitle({ issue, policy }) {
   if (policy.actions.proposeFix !== 'auto') return false;
-  const tags = [...String(issue.summary).matchAll(/\[([^\]]+)\]/g)].map((m) => m[1].trim().toUpperCase());
-  const wanted = policy.proposeFixWhen?.titleTags ?? [];
-  return !wanted.length || wanted.some((t) => tags.includes(t.toUpperCase()));
+  const when = policy.proposeFixWhen ?? {};
+  const wanted = (when.titleTags ?? []).map((t) => t.toUpperCase());
+  const tags = titleTags(issue.summary);
+  if (!wanted.length || wanted.some((t) => tags.includes(t))) return true;
+  return Object.keys(when.inferTagFromFiles ?? {}).length > 0 && !tags.length;
 }
 
 let warmPort = 4400;
@@ -109,7 +144,9 @@ export async function processTicket({ issue, cfg, policy, jira, events, repoDir,
     let meta = { durationMs: 0, costUsd: 0, turns: 0 };
     if (!result) {
       events.emit('analyzing', { key, text: 'headless agent started' });
-      ({ result, meta } = await runAnalysis({ key, repoDir, stateDir, cfg, onProgress: (step) => events.emit('progress', { key, step }) }));
+      // Analyze origin/main, not whatever branch the application clone is on (a preview, a developer's branch).
+      const analysisDir = analysisCheckout({ repoDir, stateDir });
+      ({ result, meta } = await runAnalysis({ key, repoDir: analysisDir, stateDir, cfg, onProgress: (step) => events.emit('progress', { key, step }) }));
     }
     events.emit('analyzed', {
       key,

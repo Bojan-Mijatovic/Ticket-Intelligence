@@ -3,7 +3,7 @@
 //   node demo/preflight.mjs
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,7 +53,7 @@ await check('GitHub CLI logged in', () => sh('gh', ['api', 'user', '--jq', '.log
 await check('MediAgenda clone on main, clean, up to date', () => {
   sh('git', ['fetch', '-q', '--prune', 'origin']);
   const branch = sh('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
-  if (branch !== 'main') throw new Error(`on branch ${branch}`);
+  if (branch !== 'main') throw new Error(`on branch ${branch} (a preview?): node demo/preview.mjs main`);
   if (sh('git', ['status', '--porcelain'])) throw new Error('uncommitted changes');
   if (sh('git', ['rev-parse', 'HEAD']) !== sh('git', ['rev-parse', 'origin/main'])) throw new Error('not equal to origin/main');
   return sh('git', ['log', '--oneline', '-1']);
@@ -72,6 +72,21 @@ await check('Playwright and node_modules installed', () => {
   return 'frontend + e2e';
 });
 await check(`Watcher dashboard on :${agentCfg.dashboardPort}`, () => httpOk(`http://localhost:${agentCfg.dashboardPort}/`));
+await check('Watcher runs the current agent code', async () => {
+  const res = await fetch(`http://localhost:${agentCfg.dashboardPort}/api/status`);
+  if (!res.ok) throw new Error('the running watcher is older than this check (no /api/status); restart: node agent/watcher.mjs --replace');
+  const s = await res.json();
+  const AGENT = join(ROOT, 'agent');
+  const files = ['watcher.mjs', 'policy.json', 'agent.config.json', ...readdirSync(join(AGENT, 'lib')).map((f) => join('lib', f))];
+  const newest = files.map((f) => ({ f, t: statSync(join(AGENT, f)).mtimeMs })).sort((a, b) => b.t - a.t)[0];
+  if (newest.t > Date.parse(s.startedAt)) throw new Error(`agent/${newest.f.replace(/\\/g, '/')} changed after the watcher started; restart: node agent/watcher.mjs --replace`);
+  return `PID ${s.pid}, started ${new Date(s.startedAt).toLocaleTimeString('en-GB')}`;
+});
+await check('GitHub pull request links open in the demo browser', () => {
+  const slug = sh('git', ['remote', 'get-url', 'origin']).match(/github\.com[/:]([^/]+)\/([^/.]+)/)?.slice(1, 3).join('/');
+  const visibility = sh('gh', ['repo', 'view', slug, '--json', 'visibility', '--jq', '.visibility']);
+  return visibility === 'PRIVATE' ? `${slug} is private: the browser must be signed in to GitHub as ${sh('gh', ['api', 'user', '--jq', '.login'])} (otherwise 404)` : `${slug} is public`;
+});
 await check('MediAgenda frontend on :4200 (for the opening)', () => httpOk('http://localhost:4200/agenda'), { optional: true });
 await check('MediAgenda backend on :8080', () => httpOk('http://localhost:8080/api/structures?q=svil'), { optional: true });
 

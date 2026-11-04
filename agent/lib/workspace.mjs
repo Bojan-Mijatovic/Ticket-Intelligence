@@ -4,7 +4,7 @@
 
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const LINKED_DEPS = ['frontend/node_modules', 'e2e/node_modules'];
 
@@ -55,6 +55,30 @@ export async function startDevServer(ws, port, { timeoutMs = 300_000 } = {}) {
   }
   stop();
   throw new Error(`ng serve did not answer on port ${port} within ${Math.round(timeoutMs / 1000)} s`);
+}
+
+/**
+ * A read-only checkout of origin/main for the analysis (state/analysis-repo, detached HEAD), so the analysis never
+ * sees whatever branch the application clone happens to be on (e.g. a fix shown with demo/preview.mjs). Same
+ * repository, so history, branches and remotes are all visible. Non-git repositories (SVN) are used as they are.
+ */
+export function analysisCheckout({ repoDir, stateDir }) {
+  try {
+    git(repoDir, ['rev-parse', '--is-inside-work-tree']);
+  } catch {
+    return repoDir;
+  }
+  const path = resolve(stateDir, 'analysis-repo'); // absolute: git resolves relative paths against repoDir
+  git(repoDir, ['fetch', '-q', 'origin', 'main']);
+  if (!existsSync(join(path, '.git'))) {
+    git(repoDir, ['worktree', 'prune']);
+    mkdirSync(dirname(path), { recursive: true });
+    git(repoDir, ['worktree', 'add', '-q', '--detach', path, 'origin/main']);
+  } else {
+    git(path, ['checkout', '-q', '--detach', '--force', 'origin/main']);
+    git(path, ['clean', '-q', '-fd']);
+  }
+  return path;
 }
 
 export function branchExists(repoDir, branch) {

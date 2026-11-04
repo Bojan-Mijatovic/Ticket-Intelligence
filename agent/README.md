@@ -14,10 +14,22 @@ Jira project ──poll──▶ watcher ──▶ headless agent (claude -p + a
 ## Run
 
 ```
-node agent/watcher.mjs
+node agent/watcher.mjs              # start
+node agent/watcher.mjs --replace    # restart: stops the running watcher first (needed after a code change)
 ```
 
+Only one watcher runs at a time: a second start stops with the PID of the running one (`state/watcher.pid`). After changing anything in `agent/` (except the dashboard page, which is read on every request), restart with `--replace`; `demo/preflight.mjs` reports a watcher that runs older code.
+
 Open http://localhost:7070, then create a ticket in the Jira project. The agent picks it up within `pollSeconds` (or at once with **Check now**).
+
+On the dashboard:
+
+| Control | What it does |
+|---|---|
+| **Check now** | poll Jira now |
+| **Run ticket** (key field) / **↻ Run again** (on a card) | run the whole flow again for a ticket, e.g. after its title or description was edited: the agent's result labels are removed and it is queued now (`no-ai` is respected) |
+| **👁 Preview in app** (on a card with a PR) | switch the app on http://localhost:4200 to the ticket's branch and wait until `ng serve` has rebuilt; the header chip shows which branch the app serves, with **back to main** |
+| ticket status chip | `PR ready`, `fix failed`, `analyzed · no fix` (hover or the subtitle says why), or `analyzed` |
 
 Requirements: the Claude Code CLI (`npm install -g @anthropic-ai/claude-code`, logged in), the skills installed (`node install.mjs`), and a real Jira configured in `~/.claude/skills/analyze-ticket/.env`.
 
@@ -37,8 +49,8 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 | Label | Meaning |
 |---|---|
 | `ai-analyzing` | being analyzed now (removed automatically if the watcher was interrupted) |
-| `ai-analyzed` | done; remove the label to have the ticket analyzed again |
-| `ai-failed` | the analysis failed; see the dashboard; remove the label to retry |
+| `ai-analyzed` | done; **Run again** on the dashboard (or removing the label) has the ticket processed again |
+| `ai-failed` | the analysis failed; see the dashboard; **Run again** (or remove the label) to retry |
 | `ai-fix-proposed` | a draft pull request with a verified fix exists |
 | `no-ai` | set by a human: the agent never touches this ticket |
 
@@ -78,7 +90,13 @@ Without configuration, owner notifications are shown on the dashboard as Teams-s
 
 ## Automatic reproduction and fix
 
-For tickets that pass `proposeFixWhen` in `policy.json` (by default: `[FE]` in the title, `high` confidence, not a duplicate), the agent continues after the analysis:
+For tickets that pass `proposeFixWhen` in `policy.json`, the agent continues after the analysis. By default:
+
+- `[FE]` in the title, **or** a title without any tag where every file the analysis names is under `frontend/` (`inferTagFromFiles`). An explicit other tag such as `[BE]` is respected: no fix.
+- `high` confidence;
+- not a duplicate.
+
+The steps:
 
 | Step | Who | Check |
 |---|---|---|
@@ -95,7 +113,19 @@ node agent/fix-one.mjs DEM-7 --local     # reproduce + fix + verify, no push / P
 node agent/fix-one.mjs DEM-7             # full run for one ticket (uses its saved analysis)
 ```
 
-To keep this fast, the worktree and an Angular dev server are prepared **while the analysis runs** (only for tickets the title rules allow; discarded if no fix follows). The agent's own test runs reuse that warm server; the watcher's checks always start their own.
+To keep this fast, the worktree and an Angular dev server are prepared **while the analysis runs** (for `[FE]` titles and titles without a tag; discarded if no fix follows). The agent's own test runs reuse that warm server; the watcher's checks always start their own.
+
+### Seeing the fix in the app
+
+The fix lives on branch `<KEY>`; the app on :4200 serves the clone in `demo/mediagenda`, normally on `main`. To look at a fix there:
+
+```
+node demo/preview.mjs DEM-12     # or 👁 Preview in app on the dashboard
+node demo/preview.mjs main       # back (preflight requires main before a demo)
+node demo/preview.mjs            # which branch the app shows
+```
+
+Each fix branch starts from `main`, so previewing one shows only that fix, not earlier ones. The MediAgenda repository is private: a browser that is not signed in to GitHub as the repository owner gets **404** on pull request links.
 
 ## Done → documentation
 

@@ -20,8 +20,15 @@
     "titleTags": [
       "FE"
     ],
+    "inferTagFromFiles": {
+      "FE": "frontend/"
+    },
+    "inferIgnoreFiles": [
+      "e2e/"
+    ],
     "skipDuplicates": true
   },
+  "_proposeFixWhenComment": "A title without [FE] still qualifies when every file the analysis names is under frontend/ (inferTagFromFiles).",
   "_fixComment": "proposeFix = reproduce with a browser test, fix on branch <KEY>, verify independently, open a DRAFT pull request. mergeFix is always off: a human merges.",
   "_documentComment": "documentOnDone = when a ticket the agent analyzed moves to Done, write docs/knowledge on branch docs/<KEY> and open a DRAFT pull request."
 }

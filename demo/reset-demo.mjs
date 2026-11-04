@@ -3,6 +3,7 @@
 //
 //   node demo/reset-demo.mjs          show what would be done
 //   node demo/reset-demo.mjs --yes    do it
+//   ... --also DEM-11,DEM-12           also delete tickets made by hand in Jira (the dry run lists candidates)
 //
 // What it touches, and only that:
 //   - MediAgenda pull requests whose branch is <KEY> or docs/<KEY> (agent branches): closed, branches deleted
@@ -23,6 +24,13 @@ const STATE = join(ROOT, 'agent', 'state');
 const TRACK = join(HERE, '.demo-tickets.json');
 const APPLY = process.argv.includes('--yes');
 const AGENT_BRANCH = /^(docs\/)?[A-Z][A-Z0-9_]+-\d+$/;
+// Tickets made by hand in Jira to delete as well: --also DEM-11,DEM-12 (checked before anything is changed).
+const also = (process.argv.includes('--also') ? process.argv[process.argv.indexOf('--also') + 1] ?? '' : '').split(',').map((k) => k.trim().toUpperCase()).filter(Boolean);
+const badKey = also.find((k) => !/^[A-Z][A-Z0-9_]+-\d+$/.test(k));
+if (badKey) {
+  console.error(`--also expects ticket keys separated by commas, e.g. --also DEM-11,DEM-12 (got ${badKey})`);
+  process.exit(1);
+}
 
 const sh = (cmd, args, cwd = APP) => execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const step = (text, fn) => {
@@ -54,12 +62,30 @@ step('local clone: switch to main, prune worktrees, fast-forward to origin/main'
 const localBranches = sh('git', ['branch', '--format=%(refname:short)']).split('\n').filter((b) => AGENT_BRANCH.test(b));
 for (const b of localBranches) step(`delete local branch ${b}`, () => sh('git', ['branch', '-D', '-q', b]));
 
-// 3. Jira tickets created for the demo
+// 3. Jira tickets created for the demo: those from new-ticket.mjs, plus tickets made by hand named with --also
 const tickets = existsSync(TRACK) ? JSON.parse(readFileSync(TRACK, 'utf8')) : [];
 for (const key of tickets) {
   step(`delete Jira ticket ${key} (created by new-ticket.mjs)`, () => sh('node', [join(HERE, 'new-ticket.mjs'), '--delete', key], ROOT));
 }
+for (const key of also.filter((k) => !tickets.includes(k))) {
+  step(`delete Jira ticket ${key} (named with --also)`, () => sh('node', [join(HERE, 'new-ticket.mjs'), '--delete', key], ROOT));
+}
 if (APPLY && tickets.length) writeFileSync(TRACK, '[]\n');
+
+// Tickets made by hand in Jira are never deleted unless named. List the likely ones: processed by the agent,
+// numbered after the seeded history (demo/jira-keys.json), and not created by new-ticket.mjs.
+try {
+  const { createJira } = await import('../agent/lib/jira-actions.mjs');
+  const cfg = JSON.parse(readFileSync(join(ROOT, 'agent', 'agent.config.json'), 'utf8'));
+  const seeded = existsSync(join(HERE, 'jira-keys.json')) ? Object.values(JSON.parse(readFileSync(join(HERE, 'jira-keys.json'), 'utf8'))) : [];
+  const lastSeeded = Math.max(0, ...seeded.map((k) => Number(k.split('-')[1])));
+  const handled = (await createJira().search(`project = ${cfg.project} AND labels in (${cfg.labels.done}, ${cfg.labels.failed}) ORDER BY key ASC`, 50))
+    .map((t) => t.key)
+    .filter((k) => Number(k.split('-')[1]) > lastSeeded && !tickets.includes(k) && !also.includes(k));
+  if (handled.length) console.log(`  note: tickets made by hand that the agent worked on are kept: ${handled.join(', ')}\n        to delete them as well: node demo/reset-demo.mjs --yes --also ${handled.join(',')}`);
+} catch (e) {
+  console.log(`  note: could not list hand-made tickets (${e.message.split('\n')[0]})`);
+}
 
 // 4. Agent state
 if (existsSync(join(STATE, 'events.jsonl'))) {

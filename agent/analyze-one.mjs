@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runAnalysis } from './lib/analyze.mjs';
+import { analysisCheckout } from './lib/workspace.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const cfg = JSON.parse(readFileSync(join(HERE, 'agent.config.json'), 'utf8'));
@@ -16,10 +17,11 @@ if (!key) {
 }
 
 const started = Date.now();
+const stateDir = join(HERE, 'state');
 const { result, meta } = await runAnalysis({
   key,
-  repoDir: resolve(HERE, cfg.repo),
-  stateDir: join(HERE, 'state'),
+  repoDir: analysisCheckout({ repoDir: resolve(HERE, cfg.repo), stateDir }), // origin/main, like the watcher
+  stateDir,
   cfg,
   onProgress: (step) => console.log(`  [${Math.round((Date.now() - started) / 1000)}s] ${step}`),
 });

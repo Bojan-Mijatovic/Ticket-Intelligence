@@ -41,6 +41,11 @@
   button { font: inherit; font-weight: 600; font-size: 13px; border-radius: 8px; padding: 7px 14px; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   button:disabled { opacity: 0.5; cursor: default; }
+  button.small { padding: 4px 10px; font-size: 12px; }
+  .run-form { display: inline-flex; gap: 6px; }
+  .run-form input { font: inherit; font-size: 13px; width: 96px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+  .pill.warn { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
 
   main { padding: 20px 24px 40px; max-width: 1480px; margin: 0 auto; }
   .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
@@ -128,6 +133,10 @@
   <span class="meta" id="project"></span>
   <span class="spacer"></span>
   <span class="meta" id="poll"></span>
+  <span class="pill" id="app-branch" title="Branch the MediAgenda app on http://localhost:4200 shows"></span>
+  <form class="run-form" id="run-form" title="Run the agent on a ticket now (again, if it was processed before)">
+    <input id="run-key" placeholder="DEM-12" autocomplete="off" aria-label="Ticket key"><button type="submit">Run ticket</button>
+  </form>
   <button class="primary" id="check">Check now</button>
 </header>
 
@@ -195,7 +204,7 @@ function apply(ev) {
   if (ev.priority) t.priority = ev.priority;
   switch (ev.type) {
     case 'queued': t.title = ev.text; t.state = 'queued'; break;
-    case 'picked': t.title = ev.text || t.title; t.state = 'analyzing'; t.startedAt = ev.at; t.steps = []; t.result = null; break;
+    case 'picked': t.title = ev.text || t.title; t.state = 'analyzing'; t.startedAt = ev.at; t.steps = []; t.result = null; t.fix = null; t.fixSkipped = null; t.duplicateOf = null; t.error = null; t.expanded = false; break;
     case 'analyzed': t.result = ev.result; t.meta = ev.meta; break;
     case 'commented': t.commentUrl = ev.url; break;
     case 'notified': teams.unshift({ ...ev.card, at: ev.at, channel: ev.channel }); break;
@@ -244,7 +253,12 @@ function fixView(t) {
       f.after ? h('figure', { class: 'shot after' }, h('figcaption', {}, 'After the fix'), h('a', { href: f.after, target: '_blank' }, h('img', { src: f.after, alt: 'after' }))) : h('div')) : null,
     f.failure && !f.after ? h('pre', { class: 'err' }, f.failure) : null,
     f.error ? h('pre', { class: 'err' }, f.error) : null,
-    f.prUrl ? h('div', {}, h('a', { class: 'pr-link', href: f.prUrl, target: '_blank' }, `⇄ Open draft pull request${f.title ? `: ${f.title}` : ''}`)) : null,
+    f.prUrl ? h('div', {}, h('a', { class: 'pr-link', href: f.prUrl, target: '_blank' }, `⇄ Open draft pull request${f.title ? `: ${f.title}` : ''}`),
+      status?.github?.private ? h('div', { class: 'hint' }, `Private repository: sign in to GitHub as ${status.github.login} to open the link (signed out, GitHub shows 404).`) : null) : null,
+    f.prUrl ? h('div', { class: 'actions' },
+      status?.appBranch === t.key
+        ? [h('span', { class: 'chip done' }, `the app on :4200 shows ${t.key}`), h('button', { class: 'small', onclick: (e) => preview('main', e.target) }, 'Back to main')]
+        : h('button', { class: 'small', onclick: (e) => preview(t.key, e.target), title: 'Switch the app on http://localhost:4200 to this branch' }, '👁 Preview in app (:4200)')) : null,
     f.files?.length ? h('div', { class: 'files' }, f.files.map((x) => h('code', {}, x))) : null);
 }
 
@@ -279,6 +293,39 @@ function resultView(t) {
   );
 }
 
+/** What the ticket ended with, in words: a PR, a failed fix, or only an analysis (and why no fix). */
+function stateChip(t) {
+  if (t.state !== 'done') return h('span', { class: `chip ${t.state}` }, t.state);
+  if (t.fix?.stage === 'done') return h('span', { class: 'chip done' }, 'PR ready');
+  if (t.fix?.stage === 'failed') return h('span', { class: 'chip failed' }, 'fix failed');
+  if (t.fixSkipped) return h('span', { class: 'chip analyzing', title: t.fixSkipped }, 'analyzed · no fix');
+  return h('span', { class: 'chip done' }, 'analyzed');
+}
+
+async function post(url, body) {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok || out.ok === false) throw new Error(out.error ?? `HTTP ${res.status}`);
+  return out;
+}
+
+async function runTicket(key, button) {
+  if (button) { button.disabled = true; button.textContent = 'Queuing…'; }
+  try { await post('/api/run', { key }); if (button) button.textContent = 'Queued ✓'; }
+  catch (e) { alert(`Could not run ${key}: ${e.message}`); if (button) { button.disabled = false; button.textContent = '↻ Run again'; } }
+}
+
+async function preview(branch, button) {
+  const label = button?.textContent;
+  if (button) { button.disabled = true; button.textContent = 'Switching the app… (until ng serve has rebuilt)'; }
+  try {
+    const r = await post('/api/preview', { branch });
+    if (status) status.appBranch = r.branch;
+    render(); renderStatus();
+    if (r.branch !== 'main') window.open('http://localhost:4200/agenda', 'mediagenda');
+  } catch (e) { alert(`Preview failed: ${e.message}`); if (button) { button.disabled = false; button.textContent = label; } }
+}
+
 function render() {
   const list = [...tickets.values()].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
   const box = $('#tickets');
@@ -287,11 +334,13 @@ function render() {
     const el = h('div', { class: `panel ticket ${t.fresh ? 'new' : ''}` },
       h('div', { class: 't-head' },
         h('a', { class: 't-key', href: t.url ?? '#', target: '_blank' }, t.key),
-        h('div', { class: 't-title' }, t.title, h('div', { class: 't-sub' }, t.state === 'done' ? `analyzed in ${Math.round((t.totalMs ?? 0) / 1000)} s · ${ago(t.doneAt)}` : t.state === 'analyzing' ? `analyzing for ${Math.round((Date.now() - Date.parse(t.startedAt)) / 1000)} s` : t.state === 'failed' ? t.error : `queued ${ago(t.startedAt)}`)),
+        h('div', { class: 't-title' }, t.title, h('div', { class: 't-sub' }, t.state === 'done' ? `finished in ${Math.round((t.totalMs ?? 0) / 1000)} s · ${ago(t.doneAt)}${t.fixSkipped ? ` · ${t.fixSkipped.replace(/^no automatic fix: /, 'no fix: ')}` : ''}` : t.state === 'analyzing' || t.state === 'fixing' ? `working for ${Math.round((Date.now() - Date.parse(t.startedAt)) / 1000)} s` : t.state === 'failed' ? t.error : `queued ${ago(t.startedAt)}`)),
         t.priority ? h('span', { class: `chip ${/high|highest|critical/i.test(t.priority) ? 'high' : ''}` }, t.priority) : null,
-        h('span', { class: `chip ${t.state}` }, t.state)),
-      showSteps && t.steps.length ? h('div', { class: 'steps' }, t.steps.map((s) => stepRow(t, s)), t.state === 'analyzing' ? h('div', { class: 'step' }, h('span'), h('span'), h('span', { class: 'typing m' }, 'working')) : null) : null,
-      t.state === 'done' && !t.expanded ? h('div', { class: 'actions', style: 'margin-top:8px' }, h('button', { onclick: () => { t.expanded = true; render(); } }, `Show ${t.steps.length} agent steps`)) : null,
+        stateChip(t)),
+      showSteps && t.steps.length ? h('div', { class: 'steps' }, t.steps.map((s) => stepRow(t, s)), t.state === 'analyzing' || t.state === 'fixing' ? h('div', { class: 'step' }, h('span'), h('span'), h('span', { class: 'typing m' }, 'working')) : null) : null,
+      t.state === 'done' || t.state === 'failed' ? h('div', { class: 'actions', style: 'margin-top:8px' },
+        t.state === 'done' && !t.expanded ? h('button', { onclick: () => { t.expanded = true; render(); } }, `Show ${t.steps.length} agent steps`) : null,
+        h('button', { onclick: (e) => runTicket(t.key, e.target), title: 'Edited the ticket? Run the whole flow again (agent labels are reset)' }, '↻ Run again')) : null,
       resultView(t));
     t.fresh = false;
     return el;
@@ -329,6 +378,10 @@ function renderStatus() {
   else { pill.className = 'pill live'; $('#state-text').textContent = 'watching'; }
   if (status) {
     $('#project').textContent = `Jira project ${status.project}`;
+    const onMain = status.appBranch === 'main';
+    $('#app-branch').className = `pill ${onMain ? '' : 'warn'}`;
+    $('#app-branch').replaceChildren(`app :4200 → ${status.appBranch ?? '?'}`,
+      onMain ? '' : h('button', { class: 'small', style: 'padding:0 6px;margin-left:4px', onclick: (e) => preview('main', e.target) }, 'back to main'));
     const next = status.nextPoll ? Math.max(0, Math.round((Date.parse(status.nextPoll) - Date.now()) / 1000)) : null;
     $('#poll').textContent = `last check ${ago(status.lastPoll)}${next != null ? ` · next in ${next}s` : ''}`;
     $('#policy').replaceChildren(h('span', { class: 'meta', style: 'width:100%' }, 'Policy'), ...Object.entries(status.policy ?? {}).map(([k, v]) =>
@@ -353,6 +406,14 @@ $('#check').addEventListener('click', async (e) => {
   e.target.disabled = true; e.target.textContent = 'Checking…';
   await fetch('/api/poll', { method: 'POST' }).catch(() => {});
   setTimeout(() => { e.target.disabled = false; e.target.textContent = 'Check now'; }, 1500);
+});
+$('#run-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = $('#run-key');
+  const key = input.value.trim().toUpperCase();
+  if (!key) return;
+  await runTicket(key);
+  input.value = '';
 });
 setInterval(() => { renderStatus(); if (status?.processing) render(); }, 1000);
 connect();
