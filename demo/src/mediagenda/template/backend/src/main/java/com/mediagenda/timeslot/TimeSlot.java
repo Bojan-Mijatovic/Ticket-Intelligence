@@ -40,6 +40,28 @@ public class TimeSlot {
 
     protected TimeSlot() {}
 
+    /** A new recurring slot, created from the "Nuova fascia oraria" form (CUP_DEMO-2590). */
+    static TimeSlot create(Long id, String agendaName, String slotCode, LocalDate startDate, LocalDate endDate, String frequency,
+                           String weekday, LocalTime startTime, LocalTime endTime, String priority, int priorityRank,
+                           LocalDate calendarEndDate, String resourceCode, String structureId) {
+        TimeSlot t = new TimeSlot();
+        t.id = id;
+        t.agendaName = agendaName;
+        t.slotCode = slotCode;
+        t.startDate = startDate;
+        t.endDate = endDate;
+        t.frequency = frequency;
+        t.weekday = weekday;
+        t.startTime = startTime;
+        t.endTime = endTime;
+        t.priority = priority;
+        t.priorityRank = priorityRank;
+        t.calendarEndDate = calendarEndDate;
+        t.resourceCode = resourceCode;
+        t.structureId = structureId;
+        return t;
+    }
+
     public Long getId() { return id; }
     public String getAgendaName() { return agendaName; }
     public String getSlotCode() { return slotCode; }

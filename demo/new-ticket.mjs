@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// Opens the demo target ticket (the CUP_DEMO-2629 scenario) in the real Jira project, as a reporter would.
-// Used for rehearsals and for the live demo.
+// Opens a demo ticket in the real Jira project, as a reporter would. Used for rehearsals, the live demo and
+// scoring the agent (docs/AGENT_TRAINING.md).
 //
-//   node demo/new-ticket.mjs [--project DEM] [--screenshot path.png]
+//   node demo/new-ticket.mjs [--project DEM] [--screenshot path.png]   the demo target (CUP_DEMO-2629 scenario)
+//   node demo/new-ticket.mjs --scenario birth-date                     a scenario from demo/scenarios.json
 //   node demo/new-ticket.mjs --delete DEM-7        removes a rehearsal ticket
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -43,18 +44,29 @@ if (opt('--delete')) {
 
 const keys = existsSync(join(HERE, 'jira-keys.json')) ? JSON.parse(readFileSync(join(HERE, 'jira-keys.json'), 'utf8')) : {};
 const mapKeys = (s) => String(s ?? '').replace(/CUP_DEMO-\d+/g, (k) => keys[k] ?? k);
-const target = JSON.parse(readFileSync(join(SKILL, 'fixtures', 'mock-jira.json'), 'utf8')).issues.find((i) => i.key === 'CUP_DEMO-2629');
+// The ticket: a scenario from scenarios.json (--scenario <name>), by default the demo target CUP_DEMO-2629.
+const { scenarios } = JSON.parse(readFileSync(join(HERE, 'scenarios.json'), 'utf8'));
+const name = opt('--scenario') ?? 'struttura';
+const scenario = scenarios[name];
+if (!scenario) {
+  console.error(`unknown scenario "${name}"; available: ${Object.keys(scenarios).join(', ')}`);
+  process.exit(1);
+}
+const fixture = scenario.fixture ? JSON.parse(readFileSync(join(SKILL, 'fixtures', 'mock-jira.json'), 'utf8')).issues.find((i) => i.key === scenario.fixture) : null;
+const target = fixture
+  ? { summary: fixture.summary, description: fixture.description, issueType: 'Bug', priority: 'High', labels: fixture.environments ?? [] }
+  : scenario;
 
 const fields = {
   project: { key: PROJECT },
   summary: target.summary,
   description: mapKeys(target.description),
-  issuetype: { name: 'Bug' },
-  labels: target.environments ?? [],
+  issuetype: { name: target.issueType ?? 'Bug' },
+  labels: target.labels ?? [],
 };
 let res;
 try {
-  res = await api('POST', '/rest/api/2/issue', { fields: { ...fields, priority: { name: 'High' } } });
+  res = await api('POST', '/rest/api/2/issue', { fields: { ...fields, priority: { name: target.priority ?? 'High' } } });
 } catch (e) {
   if (!/priority/i.test(e.message)) throw e;
   res = await api('POST', '/rest/api/2/issue', { fields });
@@ -68,5 +80,9 @@ if (shot) {
 }
 
 track([...tracked(), res.key]);
+// Which scenario each ticket is, for demo/score-run.mjs.
+const RUNS = join(HERE, '.scenario-runs.json');
+const runs = existsSync(RUNS) ? JSON.parse(readFileSync(RUNS, 'utf8')) : {};
+writeFileSync(RUNS, `${JSON.stringify({ ...runs, [res.key]: name }, null, 2)}\n`);
 console.log(`${res.key}  ${cfg.baseUrl}/browse/${res.key}`);
-console.log(`Title: ${target.summary}`);
+console.log(`Title: ${target.summary}  (scenario ${name})`);

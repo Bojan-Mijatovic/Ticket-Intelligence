@@ -71,6 +71,13 @@ for (const key of also.filter((k) => !tickets.includes(k))) {
   step(`delete Jira ticket ${key} (named with --also)`, () => sh('node', [join(HERE, 'new-ticket.mjs'), '--delete', key], ROOT));
 }
 if (APPLY && tickets.length) writeFileSync(TRACK, '[]\n');
+// Scenario of each deleted ticket (demo/score-run.mjs): forget the deleted ones.
+const RUNS = join(HERE, '.scenario-runs.json');
+if (APPLY && existsSync(RUNS)) {
+  const runs = JSON.parse(readFileSync(RUNS, 'utf8'));
+  for (const key of [...tickets, ...also]) delete runs[key];
+  writeFileSync(RUNS, `${JSON.stringify(runs, null, 2)}\n`);
+}
 
 // Tickets made by hand in Jira are never deleted unless named. List the likely ones: processed by the agent,
 // numbered after the seeded history (demo/jira-keys.json), and not created by new-ticket.mjs.

@@ -3,19 +3,72 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { API } from '../../core/http/api';
 
+export type BookingStatus = 'CONFERMATA' | 'ANNULLATA' | 'COMPLETATA';
+export type Priority = 'U' | 'B' | 'D' | 'P';
+
 export interface Booking {
   id: string;
+  appointmentAt: string;
+  status: BookingStatus;
+  priority: Priority | null;
+  patientId: number;
+  patientName: string;
+  fiscalCode: string;
+  timeSlotId: number;
+  agendaName: string;
+  structureId: string;
+  resourceCode: string;
+  prescriptionCode: string | null;
+  notes: string | null;
+  cancelReason: string | null;
+}
+
+/** Body of POST /api/bookings. */
+export interface BookingRequest {
   patientId: number;
   timeSlotId: number;
   appointmentAt: string;
-  status: string;
+  priority: Priority;
+  prescriptionCode: string | null;
+  notes: string | null;
 }
+
+/** A free appointment time (GET /api/agenda/availability). */
+export interface AvailableTime {
+  timeSlotId: number;
+  startAt: string;
+  agendaName: string;
+  priority: string;
+  structureId: string;
+}
+
+/** Priority classes of the prescription, as printed on it. */
+export const PRIORITIES: { code: Priority; label: string }[] = [
+  { code: 'U', label: 'U - Urgente (entro 72 ore)' },
+  { code: 'B', label: 'B - Breve (entro 10 giorni)' },
+  { code: 'D', label: 'D - Differibile (entro 30/60 giorni)' },
+  { code: 'P', label: 'P - Programmata (entro 120 giorni)' },
+];
 
 @Injectable({ providedIn: 'root' })
 export class BookingApiService {
   private readonly http = inject(HttpClient);
 
-  list(): Observable<Booking[]> {
-    return this.http.get<Booking[]>(`${API}/bookings`);
+  /** All bookings, or only those with the given status. */
+  list(status = ''): Observable<Booking[]> {
+    return this.http.get<Booking[]>(`${API}/bookings`, { params: status ? { status } : {} });
+  }
+
+  create(booking: BookingRequest): Observable<Booking> {
+    return this.http.post<Booking>(`${API}/bookings`, booking);
+  }
+
+  /** CUP_DEMO-2533: CONFERMATA → ANNULLATA. */
+  cancel(id: string, reason: string): Observable<Booking> {
+    return this.http.post<Booking>(`${API}/bookings/${id}/cancel`, { reason });
+  }
+
+  availability(resourceCode: string, date: string): Observable<AvailableTime[]> {
+    return this.http.get<AvailableTime[]>(`${API}/agenda/availability`, { params: { resourceCode, date } });
   }
 }

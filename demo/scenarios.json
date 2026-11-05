@@ -1,0 +1,68 @@
+{
+  "_note": "Tickets with a known root cause, created live with: node demo/new-ticket.mjs --scenario <name>. 'expected' is the answer key used to score the agent (docs/AGENT_TRAINING.md). It lives outside the MediAgenda repository on purpose: the agent never sees it.",
+  "scenarios": {
+    "struttura": {
+      "fixture": "CUP_DEMO-2629",
+      "expected": {
+        "component": "frontend/src/app/features/agenda (AgendaSearchStore + StructureAutocompleteComponent)",
+        "cause": "clearing the Struttura field by hand does not remove the structure from AgendaSearchStore.selectedStructureIds, so the next search sends two structureIds",
+        "files": ["frontend/src/app/features/agenda/state/agenda-search.store.ts", "frontend/src/app/shared/components/structure-autocomplete/structure-autocomplete.component.ts"],
+        "introducedBy": "CUP_DEMO-2398 (store appends every selected structure); CUP_DEMO-2511 fixed only the PULISCI button",
+        "related": ["CUP_DEMO-2511", "CUP_DEMO-2398"],
+        "owner": "Sara Colombo",
+        "agentFix": true
+      }
+    },
+    "birth-date": {
+      "summary": "[FE] - Pazienti: the birth date is saved one day earlier",
+      "description": "In Anagrafica paziente I type the birth date 14/06/1991 and press SALVA. When I open the patient again the date is 13/06/1991.\nEvery time the same patient is saved, the date moves back one more day. It happens on every operator PC in Milano and Lodi.\n\nHow to reproduce:\n1 - Pazienti > NUOVO PAZIENTE\n2 - fill in the fields, Data di nascita 14/06/1991\n3 - SALVA, then open the patient (Modifica): Data di nascita shows 13/06/1991",
+      "issueType": "Bug",
+      "priority": "High",
+      "labels": ["COLLAUDO"],
+      "expected": {
+        "component": "frontend/src/app/shared/utils/dates.ts",
+        "cause": "toIsoDate() uses Date.toISOString(), i.e. UTC: local midnight in Italy (UTC+1/+2) is the previous day in UTC",
+        "files": ["frontend/src/app/shared/utils/dates.ts", "frontend/src/app/features/patients/patient-form.component.ts"],
+        "introducedBy": "CUP_DEMO-2612 (Sara Colombo, 2026-10-20): birth date typed as dd/MM/yyyy",
+        "related": ["CUP_DEMO-2612", "CUP_DEMO-2441"],
+        "owner": "Sara Colombo",
+        "fix": "build the ISO string from getFullYear/getMonth/getDate (local), not from toISOString()",
+        "agentFix": true
+      }
+    },
+    "cancelled-slot": {
+      "summary": "[BE] - Prenotazioni: a cancelled appointment is never offered again",
+      "description": "PR-2026-00590 (Costa Andrea, CARDIOLOGIA CASALE, 17/11 at 14:10) was cancelled on 2 November at the patient's request.\nIn Nuova prenotazione, for CA_CARDIOLOGIA on 17/11 the 14:10 appointment is still missing; all the other times are there.\nIn September cancelled times were offered again (we tested it then).",
+      "issueType": "Bug",
+      "priority": "High",
+      "labels": ["COLLAUDO"],
+      "expected": {
+        "component": "backend/src/main/java/com/mediagenda/timeslot (AvailabilityService) + booking/BookingRepository",
+        "cause": "BookingRepository.findBookedTimes() does not filter out ANNULLATA bookings, so a cancelled time still counts as booked",
+        "files": ["backend/src/main/java/com/mediagenda/booking/BookingRepository.java", "backend/src/main/java/com/mediagenda/timeslot/AvailabilityService.java"],
+        "introducedBy": "CUP_DEMO-2620 (Luca Bianchi, 2026-10-22): one query for the booked times; regression of CUP_DEMO-2533 (Marta asked about it in the review)",
+        "related": ["CUP_DEMO-2620", "CUP_DEMO-2533", "CUP_DEMO-2470"],
+        "owner": "Luca Bianchi",
+        "fix": "add \"and b.status <> 'ANNULLATA'\" to findBookedTimes (or pass the status), plus a test: cancel → time offered again",
+        "agentFix": false
+      }
+    },
+    "annullate-filter": {
+      "summary": "[FE] - Prenotazioni: the Annullate filter shows no bookings",
+      "description": "In Prenotazioni, with Stato = Annullate the table says \"Nessuna prenotazione\", but PR-2026-00590 is cancelled: it is shown as ANNULLATA with Stato = Tutte.\nConfermate and Completate work.",
+      "issueType": "Bug",
+      "priority": "Medium",
+      "labels": ["SVIL"],
+      "expected": {
+        "component": "frontend/src/app/features/booking (BookingListComponent)",
+        "cause": "the option value of Annullate is 'ANNULLATE', but the status is 'ANNULLATA': GET /api/bookings?status=ANNULLATE returns nothing",
+        "files": ["frontend/src/app/features/booking/booking-list.component.ts"],
+        "introducedBy": "CUP_DEMO-2533 (Marta Ricci, 2026-09-10): status filter",
+        "related": ["CUP_DEMO-2533"],
+        "owner": "Marta Ricci",
+        "fix": "option value=\"ANNULLATA\" (better: options built from the BookingStatus type)",
+        "agentFix": true
+      }
+    }
+  }
+}

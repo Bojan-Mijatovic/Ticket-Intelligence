@@ -1,24 +1,307 @@
 {
   "structures": [
-    { "id": "SVIL_MS_VISITE", "name": "Poliambulatorio Visite Specialistiche", "city": "Milano" },
-    { "id": "TEST_GEN_25", "name": "Centro Diagnostico Generale 25", "city": "Bergamo" },
-    { "id": "UP18491", "name": "Presidio Ospedaliero Lodi", "city": "Lodi" },
-    { "id": "CA_PRESIDIO", "name": "Presidio Ospedaliero Casale", "city": "Casale" }
+    {
+      "id": "SVIL_MS_VISITE",
+      "name": "Poliambulatorio Visite Specialistiche",
+      "city": "Milano"
+    },
+    {
+      "id": "TEST_GEN_25",
+      "name": "Centro Diagnostico Generale 25",
+      "city": "Bergamo"
+    },
+    {
+      "id": "UP18491",
+      "name": "Presidio Ospedaliero Lodi",
+      "city": "Lodi"
+    },
+    {
+      "id": "CA_PRESIDIO",
+      "name": "Presidio Ospedaliero Casale",
+      "city": "Casale"
+    }
   ],
   "resources": [
-    { "code": "MS_DERMATOLOGIA", "description": "DERMATOLOGIA MILANO", "structureId": "SVIL_MS_VISITE", "active": true },
-    { "code": "MS_ORTOPEDIA", "description": "ORTOPEDIA MILANO", "structureId": "SVIL_MS_VISITE", "active": true },
-    { "code": "TG_RADIOLOGIA", "description": "RADIOLOGIA BERGAMO", "structureId": "TEST_GEN_25", "active": true },
-    { "code": "TG_LABORATORIO", "description": "LABORATORIO ANALISI", "structureId": "TEST_GEN_25", "active": true },
-    { "code": "LO_OCULISTICA", "description": "OCULISTICA LODI", "structureId": "UP18491", "active": true },
-    { "code": "CA_CARDIOLOGIA", "description": "CARDIOLOGIA CASALE", "structureId": "CA_PRESIDIO", "active": true }
+    {
+      "code": "MS_DERMATOLOGIA",
+      "description": "DERMATOLOGIA MILANO",
+      "structureId": "SVIL_MS_VISITE",
+      "active": true
+    },
+    {
+      "code": "MS_ORTOPEDIA",
+      "description": "ORTOPEDIA MILANO",
+      "structureId": "SVIL_MS_VISITE",
+      "active": true
+    },
+    {
+      "code": "TG_RADIOLOGIA",
+      "description": "RADIOLOGIA BERGAMO",
+      "structureId": "TEST_GEN_25",
+      "active": true
+    },
+    {
+      "code": "TG_LABORATORIO",
+      "description": "LABORATORIO ANALISI",
+      "structureId": "TEST_GEN_25",
+      "active": true
+    },
+    {
+      "code": "LO_OCULISTICA",
+      "description": "OCULISTICA LODI",
+      "structureId": "UP18491",
+      "active": true
+    },
+    {
+      "code": "CA_CARDIOLOGIA",
+      "description": "CARDIOLOGIA CASALE",
+      "structureId": "CA_PRESIDIO",
+      "active": true
+    }
   ],
   "timeSlots": [
-    { "id": 143201, "agendaName": "AMBULATORIO DI DERMATOLOGIA", "slotCode": "541200|0900|1200", "startDate": "2026-01-01", "endDate": "2030-12-31", "frequency": "09:00-12:00, ogni lunedì", "weekday": "lunedì", "startTime": "09:00:00", "endTime": "12:00:00", "priority": "P - PROGRAMMATO", "priorityRank": 5, "calendarEndDate": "2030-12-30", "resourceCode": "MS_DERMATOLOGIA", "structureId": "SVIL_MS_VISITE" },
-    { "id": 143210, "agendaName": "AMBULATORIO DI ORTOPEDIA", "slotCode": "541310|0830|1230", "startDate": "2026-03-01", "endDate": "2030-12-31", "frequency": "08:30-12:30, ogni martedì", "weekday": "martedì", "startTime": "08:30:00", "endTime": "12:30:00", "priority": "B - BREVE", "priorityRank": 3, "calendarEndDate": "2030-12-31", "resourceCode": "MS_ORTOPEDIA", "structureId": "SVIL_MS_VISITE" },
-    { "id": 144501, "agendaName": "RADIOLOGIA TRADIZIONALE", "slotCode": "552010|0800|1300", "startDate": "2026-01-01", "endDate": "2030-12-31", "frequency": "08:00-13:00, ogni lunedì", "weekday": "lunedì", "startTime": "08:00:00", "endTime": "13:00:00", "priority": "U - URGENTE", "priorityRank": 1, "calendarEndDate": "2030-12-30", "resourceCode": "TG_RADIOLOGIA", "structureId": "TEST_GEN_25" },
-    { "id": 144520, "agendaName": "PRELIEVI", "slotCode": "552300|0730|1000", "startDate": "2026-01-01", "endDate": "2030-12-31", "frequency": "07:30-10:00, ogni giorno", "weekday": "lunedì", "startTime": "07:30:00", "endTime": "10:00:00", "priority": "P - PROGRAMMATO", "priorityRank": 5, "calendarEndDate": "2030-12-30", "resourceCode": "TG_LABORATORIO", "structureId": "TEST_GEN_25" },
-    { "id": 146524, "agendaName": "CAMPO PACHIM - AMBULATORIO OCULISTICO DI REPARTO", "slotCode": "536135|0900|1130", "startDate": "2026-01-01", "endDate": "2030-12-31", "frequency": "09:00-11:30, ogni mercoledì", "weekday": "mercoledì", "startTime": "09:00:00", "endTime": "11:30:00", "priority": "P - PROGRAMMATO", "priorityRank": 5, "calendarEndDate": "2030-12-18", "resourceCode": "LO_OCULISTICA", "structureId": "UP18491" },
-    { "id": 143278, "agendaName": "AMBULATORIO DI CARDIOLOGIA", "slotCode": "567455|1330|1630", "startDate": "2026-07-01", "endDate": "2030-12-31", "frequency": "13:30-16:30, ogni martedì", "weekday": "martedì", "startTime": "13:30:00", "endTime": "16:30:00", "priority": "P - PROGRAMMATO", "priorityRank": 5, "calendarEndDate": "2030-12-31", "resourceCode": "CA_CARDIOLOGIA", "structureId": "CA_PRESIDIO" }
+    {
+      "id": 143201,
+      "agendaName": "AMBULATORIO DI DERMATOLOGIA",
+      "slotCode": "541200|0900|1200",
+      "startDate": "2026-01-01",
+      "endDate": "2030-12-31",
+      "frequency": "09:00-12:00, ogni lunedì",
+      "weekday": "lunedì",
+      "startTime": "09:00:00",
+      "endTime": "12:00:00",
+      "priority": "P - PROGRAMMATO",
+      "priorityRank": 5,
+      "calendarEndDate": "2030-12-30",
+      "resourceCode": "MS_DERMATOLOGIA",
+      "structureId": "SVIL_MS_VISITE"
+    },
+    {
+      "id": 143210,
+      "agendaName": "AMBULATORIO DI ORTOPEDIA",
+      "slotCode": "541310|0830|1230",
+      "startDate": "2026-03-01",
+      "endDate": "2030-12-31",
+      "frequency": "08:30-12:30, ogni martedì",
+      "weekday": "martedì",
+      "startTime": "08:30:00",
+      "endTime": "12:30:00",
+      "priority": "B - BREVE",
+      "priorityRank": 3,
+      "calendarEndDate": "2030-12-31",
+      "resourceCode": "MS_ORTOPEDIA",
+      "structureId": "SVIL_MS_VISITE"
+    },
+    {
+      "id": 144501,
+      "agendaName": "RADIOLOGIA TRADIZIONALE",
+      "slotCode": "552010|0800|1300",
+      "startDate": "2026-01-01",
+      "endDate": "2030-12-31",
+      "frequency": "08:00-13:00, ogni lunedì",
+      "weekday": "lunedì",
+      "startTime": "08:00:00",
+      "endTime": "13:00:00",
+      "priority": "U - URGENTE",
+      "priorityRank": 1,
+      "calendarEndDate": "2030-12-30",
+      "resourceCode": "TG_RADIOLOGIA",
+      "structureId": "TEST_GEN_25"
+    },
+    {
+      "id": 144520,
+      "agendaName": "PRELIEVI",
+      "slotCode": "552300|0730|1000",
+      "startDate": "2026-01-01",
+      "endDate": "2030-12-31",
+      "frequency": "07:30-10:00, ogni giorno",
+      "weekday": "lunedì",
+      "startTime": "07:30:00",
+      "endTime": "10:00:00",
+      "priority": "P - PROGRAMMATO",
+      "priorityRank": 5,
+      "calendarEndDate": "2030-12-30",
+      "resourceCode": "TG_LABORATORIO",
+      "structureId": "TEST_GEN_25"
+    },
+    {
+      "id": 146524,
+      "agendaName": "CAMPO PACHIM - AMBULATORIO OCULISTICO DI REPARTO",
+      "slotCode": "536135|0900|1130",
+      "startDate": "2026-01-01",
+      "endDate": "2030-12-31",
+      "frequency": "09:00-11:30, ogni mercoledì",
+      "weekday": "mercoledì",
+      "startTime": "09:00:00",
+      "endTime": "11:30:00",
+      "priority": "P - PROGRAMMATO",
+      "priorityRank": 5,
+      "calendarEndDate": "2030-12-18",
+      "resourceCode": "LO_OCULISTICA",
+      "structureId": "UP18491"
+    },
+    {
+      "id": 143278,
+      "agendaName": "AMBULATORIO DI CARDIOLOGIA",
+      "slotCode": "567455|1330|1630",
+      "startDate": "2026-07-01",
+      "endDate": "2030-12-31",
+      "frequency": "13:30-16:30, ogni martedì",
+      "weekday": "martedì",
+      "startTime": "13:30:00",
+      "endTime": "16:30:00",
+      "priority": "P - PROGRAMMATO",
+      "priorityRank": 5,
+      "calendarEndDate": "2030-12-31",
+      "resourceCode": "CA_CARDIOLOGIA",
+      "structureId": "CA_PRESIDIO"
+    }
+  ],
+  "patients": [
+    {
+      "id": 1,
+      "fiscalCode": "RSSMRA80A01F205X",
+      "firstName": "Mario",
+      "lastName": "Rossi",
+      "birthDate": "1980-01-01",
+      "sex": "M",
+      "city": "Milano",
+      "phone": null,
+      "email": null
+    },
+    {
+      "id": 2,
+      "fiscalCode": "BNCLRA85C45L219Y",
+      "firstName": "Laura",
+      "lastName": "Bianchi",
+      "birthDate": "1985-03-05",
+      "sex": "F",
+      "city": "Milano",
+      "phone": null,
+      "email": null
+    },
+    {
+      "id": 3,
+      "fiscalCode": "VRDGPP72D12H501Z",
+      "firstName": "Giuseppe",
+      "lastName": "Verdi",
+      "birthDate": "1972-04-12",
+      "sex": "M",
+      "city": "Bergamo",
+      "phone": null,
+      "email": null
+    },
+    {
+      "id": 4,
+      "fiscalCode": "FRRGLI90E50A794K",
+      "firstName": "Giulia",
+      "lastName": "Ferrari",
+      "birthDate": "1990-05-10",
+      "sex": "F",
+      "city": "Lodi",
+      "phone": null,
+      "email": null
+    },
+    {
+      "id": 5,
+      "fiscalCode": "RMNLCU66H20D969W",
+      "firstName": "Luca",
+      "lastName": "Romano",
+      "birthDate": "1966-06-20",
+      "sex": "M",
+      "city": "Casale Monferrato",
+      "phone": null,
+      "email": null
+    },
+    {
+      "id": 7,
+      "fiscalCode": "CSTNDR93P10L736Q",
+      "firstName": "Andrea",
+      "lastName": "Costa",
+      "birthDate": "1993-09-10",
+      "sex": "M",
+      "city": "Bergamo",
+      "phone": null,
+      "email": null
+    }
+  ],
+  "bookings": [
+    {
+      "id": "PR-2026-00412",
+      "patientId": 1,
+      "timeSlotId": 143201,
+      "appointmentAt": "2026-09-07T09:20:00",
+      "status": "COMPLETATA",
+      "priority": "P",
+      "prescriptionCode": null,
+      "notes": null,
+      "cancelReason": null
+    },
+    {
+      "id": "PR-2026-00498",
+      "patientId": 2,
+      "timeSlotId": 143210,
+      "appointmentAt": "2026-10-06T10:00:00",
+      "status": "COMPLETATA",
+      "priority": "P",
+      "prescriptionCode": null,
+      "notes": null,
+      "cancelReason": null
+    },
+    {
+      "id": "PR-2026-00533",
+      "patientId": 3,
+      "timeSlotId": 144501,
+      "appointmentAt": "2026-10-19T08:40:00",
+      "status": "COMPLETATA",
+      "priority": "P",
+      "prescriptionCode": null,
+      "notes": null,
+      "cancelReason": null
+    },
+    {
+      "id": "PR-2026-00561",
+      "patientId": 4,
+      "timeSlotId": 146524,
+      "appointmentAt": "2026-11-04T09:30:00",
+      "status": "CONFERMATA",
+      "priority": "P",
+      "prescriptionCode": "0301A4000112233",
+      "notes": null,
+      "cancelReason": null
+    },
+    {
+      "id": "PR-2026-00570",
+      "patientId": 5,
+      "timeSlotId": 143278,
+      "appointmentAt": "2026-11-10T14:00:00",
+      "status": "CONFERMATA",
+      "priority": "P",
+      "prescriptionCode": null,
+      "notes": null,
+      "cancelReason": null
+    },
+    {
+      "id": "PR-2026-00575",
+      "patientId": 1,
+      "timeSlotId": 144520,
+      "appointmentAt": "2026-11-16T08:00:00",
+      "status": "CONFERMATA",
+      "priority": "P",
+      "prescriptionCode": null,
+      "notes": null,
+      "cancelReason": null
+    },
+    {
+      "id": "PR-2026-00590",
+      "patientId": 7,
+      "timeSlotId": 143278,
+      "appointmentAt": "2026-11-17T14:10:00",
+      "status": "ANNULLATA",
+      "priority": "P",
+      "prescriptionCode": null,
+      "notes": null,
+      "cancelReason": "Richiesta del paziente"
+    }
   ]
 }

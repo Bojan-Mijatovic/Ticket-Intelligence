@@ -20,7 +20,8 @@ const cfg = loadConfig();
 const args = process.argv.slice(2);
 const PROJECT = args.includes('--project') ? args[args.indexOf('--project') + 1] : 'DEM';
 const KEYS_FILE = join(HERE, 'jira-keys.json');
-const SEED_ORDER = ['CUP_DEMO-2398', 'CUP_DEMO-2580', 'CUP_DEMO-2602', 'CUP_DEMO-2511', 'CUP_DEMO-2615'];
+// Oldest first, so the Jira keys follow the story; tickets already in jira-keys.json are skipped.
+const SEED_ORDER = ['CUP_DEMO-2398', 'CUP_DEMO-2580', 'CUP_DEMO-2602', 'CUP_DEMO-2511', 'CUP_DEMO-2615', 'CUP_DEMO-2441', 'CUP_DEMO-2470', 'CUP_DEMO-2590', 'CUP_DEMO-2533', 'CUP_DEMO-2612', 'CUP_DEMO-2620'];
 
 if (cfg.mock || !cfg.baseUrl) {
   console.error('Jira is not configured (JIRA_MOCK=1 or no JIRA_BASE_URL in .env).');
@@ -96,11 +97,20 @@ for (const oldKey of SEED_ORDER) {
   created.push(`${oldKey} -> ${res.key}${status ? ` (${status})` : ''}  ${issue.summary}`);
 }
 
-// Link the two tickets the target refers to, like a real team would.
-try {
-  await api('POST', '/rest/api/2/issueLink', { type: { name: 'Relates' }, inwardIssue: { key: keys['CUP_DEMO-2511'] }, outwardIssue: { key: keys['CUP_DEMO-2398'] } });
-} catch (e) {
-  console.warn(`link skipped: ${e.message}`);
+// Link related tickets, like a real team would (only links that involve a ticket created in this run).
+const LINKS = [
+  ['CUP_DEMO-2511', 'CUP_DEMO-2398'],
+  ['CUP_DEMO-2533', 'CUP_DEMO-2470'],
+  ['CUP_DEMO-2620', 'CUP_DEMO-2470'],
+  ['CUP_DEMO-2612', 'CUP_DEMO-2441'],
+];
+const createdNow = new Set(created.map((line) => line.split(' ')[0]));
+for (const [a, b] of LINKS.filter(([a, b]) => createdNow.has(a) || createdNow.has(b))) {
+  try {
+    await api('POST', '/rest/api/2/issueLink', { type: { name: 'Relates' }, inwardIssue: { key: keys[a] }, outwardIssue: { key: keys[b] } });
+  } catch (e) {
+    console.warn(`link ${a} → ${b} skipped: ${e.message}`);
+  }
 }
 
 console.log(created.length ? `Created:\n  ${created.join('\n  ')}` : 'Nothing new to create.');

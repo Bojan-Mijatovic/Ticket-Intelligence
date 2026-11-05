@@ -31,6 +31,7 @@ Everything is **read-only** until you approve. The only write actions are the Ji
 | [docs/EXIT_CRITERIA.md](docs/EXIT_CRITERIA.md) | gate from discovery to the next build steps |
 | [docs/COPILOT_TEST.md](docs/COPILOT_TEST.md) | test plan for GitHub Copilot on company projects |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | post-POC plan: approval from Teams, Mission Control, night shift, AI reviewer, hotspots, ask, reports, reply on merge |
+| [docs/AGENT_TRAINING.md](docs/AGENT_TRAINING.md) | how the agent is improved: levers, scenarios with a known answer (`demo/scenarios.json`), scoring (`demo/score-run.mjs`) |
 
 ## Installation (once)
 

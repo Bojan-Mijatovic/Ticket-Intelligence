@@ -1,25 +1,33 @@
 import { DatePipe } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { PageResponse, Patient, PatientApiService } from './patient-api.service';
 
 @Component({
   selector: 'app-patient-search',
   standalone: true,
-  imports: [FormsModule, DatePipe],
+  imports: [FormsModule, DatePipe, RouterLink],
   template: `
     <section class="card">
-      <h1 class="page-title">Pazienti</h1>
+      <div class="toolbar">
+        <h1 class="page-title">Pazienti</h1>
+        <a class="btn-primary" routerLink="/pazienti/nuovo" id="new-patient">NUOVO PAZIENTE</a>
+      </div>
       <form class="row" (ngSubmit)="search(0)">
         <input type="search" name="q" placeholder="Cognome o codice fiscale" [(ngModel)]="query" />
         <button type="submit" class="btn-primary">RICERCA</button>
       </form>
       @if (result(); as r) {
         <table class="table">
-          <thead><tr><th>Cognome</th><th>Nome</th><th>Codice fiscale</th><th>Data di nascita</th></tr></thead>
+          <thead><tr><th>Cognome</th><th>Nome</th><th>Codice fiscale</th><th>Data di nascita</th><th>Comune</th><th></th></tr></thead>
           <tbody>
             @for (p of r.items; track p.id) {
-              <tr><td>{{ p.lastName }}</td><td>{{ p.firstName }}</td><td>{{ p.fiscalCode }}</td><td>{{ p.birthDate | date: 'dd/MM/yyyy' }}</td></tr>
+              <tr>
+                <td>{{ p.lastName }}</td><td>{{ p.firstName }}</td><td>{{ p.fiscalCode }}</td>
+                <td>{{ p.birthDate | date: 'dd/MM/yyyy' }}</td><td>{{ p.city }}</td>
+                <td><a class="btn-text" [routerLink]="['/pazienti', p.id]">Modifica</a></td>
+              </tr>
             }
           </tbody>
         </table>
@@ -34,6 +42,7 @@ import { PageResponse, Patient, PatientApiService } from './patient-api.service'
   styles: `
     .row { display: flex; gap: 8px; margin-bottom: 12px; }
     .pager { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+    a.btn-primary, a.btn-text { text-decoration: none; display: inline-block; }
   `,
 })
 export class PatientSearchComponent {

@@ -433,6 +433,610 @@
           ]
         }
       ]
+    },
+    {
+      "status": "Done",
+      "resolution": "Done",
+      "key": "CUP_DEMO-2441",
+      "summary": "[BE][FE] - Pazienti: patient registry form (new patient and edit)",
+      "description": "Operators must be able to register a new patient and correct the data of an existing one without asking IT.\n\nAnagrafica paziente form: fiscal code (format check, upper case), last name, first name, sex, birth date (not in the future), city, phone, e-mail.\nA fiscal code that is already registered must be refused with a clear message.\nFrom the Pazienti list: button NUOVO PAZIENTE and a Modifica link on each row.",
+      "priority": "Medium",
+      "issueType": "Story",
+      "environments": [
+        "SVIL"
+      ],
+      "components": [
+        "Backend",
+        "Frontend"
+      ],
+      "reporter": {
+        "id": "u-paolo",
+        "name": "Paolo Ferri"
+      },
+      "assignee": {
+        "id": "u-davide",
+        "name": "Davide Greco"
+      },
+      "created": "2026-04-14T08:30:00.000+0000",
+      "resolved": "2026-04-29T16:00:00",
+      "comments": [
+        {
+          "author": {
+            "id": "u-davide",
+            "name": "Davide Greco"
+          },
+          "created": "2026-04-20T10:30:00.000+0000",
+          "body": "BE done: POST /api/patients, PUT /api/patients/{id}, GET /api/patients/{id}. Validation in PatientRequest; duplicate fiscal code → 409. Flyway V5 adds sex, city, phone, email."
+        },
+        {
+          "author": {
+            "id": "u-sara",
+            "name": "Sara Colombo"
+          },
+          "created": "2026-04-28T15:50:00.000+0000",
+          "body": "FE done: patient-form.component (reactive form, /pazienti/nuovo and /pazienti/:id). Shared form styles in styles.scss and validators in shared/validators/form-validators.ts, so the next forms can reuse them."
+        }
+      ],
+      "worklogs": [
+        {
+          "author": {
+            "id": "u-davide",
+            "name": "Davide Greco"
+          },
+          "started": "2026-04-20T08:00:00.000+0000",
+          "seconds": 14400
+        },
+        {
+          "author": {
+            "id": "u-sara",
+            "name": "Sara Colombo"
+          },
+          "started": "2026-04-27T09:00:00.000+0000",
+          "seconds": 21600
+        }
+      ],
+      "resolutionDate": "2026-04-29T16:00:00.000+0000",
+      "updated": "2026-04-29T16:00:00.000+0000",
+      "changelog": [
+        {
+          "author": {
+            "id": "u-paolo",
+            "name": "Paolo Ferri"
+          },
+          "created": "2026-04-14T08:30:00.000+0000",
+          "items": [
+            {
+              "field": "assignee",
+              "from": null,
+              "to": "Davide Greco"
+            }
+          ]
+        },
+        {
+          "author": {
+            "id": "u-davide",
+            "name": "Davide Greco"
+          },
+          "created": "2026-04-29T16:00:00.000+0000",
+          "items": [
+            {
+              "field": "status",
+              "from": "In Progress",
+              "to": "Done"
+            },
+            {
+              "field": "resolution",
+              "from": null,
+              "to": "Done"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "status": "Done",
+      "resolution": "Done",
+      "key": "CUP_DEMO-2470",
+      "summary": "[BE][FE] - Prenotazioni: new booking form with free appointment times",
+      "description": "Booking from the application instead of the old CUP terminal.\n\nNuova prenotazione: pick the patient, the structure, the provider (\"erogatore\") and the day; the form shows the free 20-minute appointments of the provider on that day. Priority class of the prescription (U/B/D/P) and the NRE (electronic prescription number) are recorded with the booking.\nA time that is already booked must not be offered, and must be refused if two operators pick it at the same time.\nThe Prenotazioni list shows the patient name and the agenda instead of the ids.",
+      "priority": "High",
+      "issueType": "Story",
+      "environments": [
+        "SVIL"
+      ],
+      "components": [
+        "Backend",
+        "Frontend",
+        "Prenotazioni"
+      ],
+      "reporter": {
+        "id": "u-paolo",
+        "name": "Paolo Ferri"
+      },
+      "assignee": {
+        "id": "u-luca",
+        "name": "Luca Bianchi"
+      },
+      "created": "2026-06-01T08:00:00.000+0000",
+      "resolved": "2026-06-19T17:00:00",
+      "comments": [
+        {
+          "author": {
+            "id": "u-luca",
+            "name": "Luca Bianchi"
+          },
+          "created": "2026-06-10T09:45:00.000+0000",
+          "body": "BE: GET /api/agenda/availability?resourceCode=&date= (AvailabilityService, STEP = 20 min) and POST /api/bookings (BookingService: validity, weekday, hours, double booking → 409). Flyway V6."
+        },
+        {
+          "author": {
+            "id": "u-marta",
+            "name": "Marta Ricci"
+          },
+          "created": "2026-06-18T14:30:00.000+0000",
+          "body": "FE: booking-form.component, reuses the Struttura autocomplete of the Agenda mask and AgendaApiService.resources()."
+        },
+        {
+          "author": {
+            "id": "u-elena",
+            "name": "Elena Conti"
+          },
+          "created": "2026-06-19T11:00:00.000+0000",
+          "body": "Tested in SVIL with CA_CARDIOLOGIA: free times OK, a booked time disappears from the list."
+        }
+      ],
+      "worklogs": [
+        {
+          "author": {
+            "id": "u-luca",
+            "name": "Luca Bianchi"
+          },
+          "started": "2026-06-08T08:00:00.000+0000",
+          "seconds": 28800
+        },
+        {
+          "author": {
+            "id": "u-marta",
+            "name": "Marta Ricci"
+          },
+          "started": "2026-06-16T08:00:00.000+0000",
+          "seconds": 25200
+        }
+      ],
+      "resolutionDate": "2026-06-19T17:00:00.000+0000",
+      "updated": "2026-06-19T17:00:00.000+0000",
+      "changelog": [
+        {
+          "author": {
+            "id": "u-paolo",
+            "name": "Paolo Ferri"
+          },
+          "created": "2026-06-01T08:00:00.000+0000",
+          "items": [
+            {
+              "field": "assignee",
+              "from": null,
+              "to": "Luca Bianchi"
+            }
+          ]
+        },
+        {
+          "author": {
+            "id": "u-luca",
+            "name": "Luca Bianchi"
+          },
+          "created": "2026-06-19T17:00:00.000+0000",
+          "items": [
+            {
+              "field": "status",
+              "from": "In Progress",
+              "to": "Done"
+            },
+            {
+              "field": "resolution",
+              "from": null,
+              "to": "Done"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "status": "Done",
+      "resolution": "Done",
+      "key": "CUP_DEMO-2590",
+      "summary": "[BE][FE] - Agenda: create recurring time slots for a provider (Fasce orarie)",
+      "description": "The planning office creates the weekly time slots of a provider: provider, agenda name, weekdays, from/to time, validity dates, priority.\nOne slot per selected weekday. The end time must be after the start time; inactive providers cannot get new slots.",
+      "priority": "Medium",
+      "issueType": "Story",
+      "environments": [
+        "SVIL"
+      ],
+      "components": [
+        "Backend",
+        "Frontend",
+        "Agenda"
+      ],
+      "reporter": {
+        "id": "u-paolo",
+        "name": "Paolo Ferri"
+      },
+      "assignee": {
+        "id": "u-davide",
+        "name": "Davide Greco"
+      },
+      "created": "2026-07-13T08:00:00.000+0000",
+      "resolved": "2026-07-29T15:00:00",
+      "comments": [
+        {
+          "author": {
+            "id": "u-davide",
+            "name": "Davide Greco"
+          },
+          "created": "2026-07-20T10:10:00.000+0000",
+          "body": "POST /api/timeslots (TimeSlotAdminService). Ids from the sequence time_slot_seq (Flyway V7), slot code <id>|HHmm|HHmm."
+        },
+        {
+          "author": {
+            "id": "u-sara",
+            "name": "Sara Colombo"
+          },
+          "created": "2026-07-28T16:20:00.000+0000",
+          "body": "Fasce orarie page in the side menu: timeslot-form.component with a FormArray of weekdays and a preview of the frequency text."
+        }
+      ],
+      "worklogs": [
+        {
+          "author": {
+            "id": "u-davide",
+            "name": "Davide Greco"
+          },
+          "started": "2026-07-20T08:00:00.000+0000",
+          "seconds": 10800
+        },
+        {
+          "author": {
+            "id": "u-sara",
+            "name": "Sara Colombo"
+          },
+          "started": "2026-07-27T08:00:00.000+0000",
+          "seconds": 18000
+        }
+      ],
+      "resolutionDate": "2026-07-29T15:00:00.000+0000",
+      "updated": "2026-07-29T15:00:00.000+0000",
+      "changelog": [
+        {
+          "author": {
+            "id": "u-paolo",
+            "name": "Paolo Ferri"
+          },
+          "created": "2026-07-13T08:00:00.000+0000",
+          "items": [
+            {
+              "field": "assignee",
+              "from": null,
+              "to": "Davide Greco"
+            }
+          ]
+        },
+        {
+          "author": {
+            "id": "u-davide",
+            "name": "Davide Greco"
+          },
+          "created": "2026-07-29T15:00:00.000+0000",
+          "items": [
+            {
+              "field": "status",
+              "from": "In Progress",
+              "to": "Done"
+            },
+            {
+              "field": "resolution",
+              "from": null,
+              "to": "Done"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "status": "Done",
+      "resolution": "Done",
+      "key": "CUP_DEMO-2533",
+      "summary": "[BE][FE] - Prenotazioni: cancel a booking with a reason",
+      "description": "Operators must be able to cancel a confirmed booking (\"Annulla\"), choosing a reason (patient request, provider not available, wrong entry, other + note).\nA cancelled appointment must be offered again to other patients.\nThe Prenotazioni list needs a status filter (Tutte / Confermate / Annullate / Completate).",
+      "priority": "High",
+      "issueType": "Story",
+      "environments": [
+        "SVIL"
+      ],
+      "components": [
+        "Backend",
+        "Frontend",
+        "Prenotazioni"
+      ],
+      "reporter": {
+        "id": "u-paolo",
+        "name": "Paolo Ferri"
+      },
+      "assignee": {
+        "id": "u-luca",
+        "name": "Luca Bianchi"
+      },
+      "created": "2026-09-01T08:00:00.000+0000",
+      "resolved": "2026-09-11T16:30:00",
+      "comments": [
+        {
+          "author": {
+            "id": "u-luca",
+            "name": "Luca Bianchi"
+          },
+          "created": "2026-09-08T11:45:00.000+0000",
+          "body": "POST /api/bookings/{id}/cancel (CONFERMATA → ANNULLATA, Flyway V8). Availability and the double-booking check now ignore ANNULLATA bookings (existsBy…AndStatusNot), so a cancelled time is free again. GET /api/bookings?status= for the filter."
+        },
+        {
+          "author": {
+            "id": "u-marta",
+            "name": "Marta Ricci"
+          },
+          "created": "2026-09-10T15:10:00.000+0000",
+          "body": "FE: status filter in the Prenotazioni toolbar and booking-cancel-dialog.component."
+        },
+        {
+          "author": {
+            "id": "u-elena",
+            "name": "Elena Conti"
+          },
+          "created": "2026-09-11T10:00:00.000+0000",
+          "body": "Tested: cancelled PR-2026-00544, the 10:20 appointment of DERMATOLOGIA was offered again. OK."
+        }
+      ],
+      "worklogs": [
+        {
+          "author": {
+            "id": "u-luca",
+            "name": "Luca Bianchi"
+          },
+          "started": "2026-09-07T08:00:00.000+0000",
+          "seconds": 14400
+        },
+        {
+          "author": {
+            "id": "u-marta",
+            "name": "Marta Ricci"
+          },
+          "started": "2026-09-09T08:00:00.000+0000",
+          "seconds": 14400
+        }
+      ],
+      "resolutionDate": "2026-09-11T16:30:00.000+0000",
+      "updated": "2026-09-11T16:30:00.000+0000",
+      "changelog": [
+        {
+          "author": {
+            "id": "u-paolo",
+            "name": "Paolo Ferri"
+          },
+          "created": "2026-09-01T08:00:00.000+0000",
+          "items": [
+            {
+              "field": "assignee",
+              "from": null,
+              "to": "Luca Bianchi"
+            }
+          ]
+        },
+        {
+          "author": {
+            "id": "u-luca",
+            "name": "Luca Bianchi"
+          },
+          "created": "2026-09-11T16:30:00.000+0000",
+          "items": [
+            {
+              "field": "status",
+              "from": "In Progress",
+              "to": "Done"
+            },
+            {
+              "field": "resolution",
+              "from": null,
+              "to": "Done"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "status": "Done",
+      "resolution": "Done",
+      "key": "CUP_DEMO-2612",
+      "summary": "[FE] - Pazienti: birth date in the patient form typed as dd/MM/yyyy",
+      "description": "On some operator PCs (English Windows) the date picker of the patient form shows mm/dd/yyyy, and operators type day and month the wrong way round.\nThe birth date must be typed as on the documents: dd/MM/yyyy.",
+      "priority": "Medium",
+      "issueType": "Story",
+      "environments": [
+        "COLLAUDO"
+      ],
+      "components": [
+        "Frontend"
+      ],
+      "reporter": {
+        "id": "u-elena",
+        "name": "Elena Conti"
+      },
+      "assignee": {
+        "id": "u-sara",
+        "name": "Sara Colombo"
+      },
+      "created": "2026-10-12T09:00:00.000+0000",
+      "resolved": "2026-10-21T12:00:00",
+      "comments": [
+        {
+          "author": {
+            "id": "u-sara",
+            "name": "Sara Colombo"
+          },
+          "created": "2026-10-20T11:40:00.000+0000",
+          "body": "Text field with the gg/mm/aaaa mask. New shared/utils/dates.ts (parseItalianDate, toIsoDate, isoToItalian) for the conversion to the ISO date of the API; other forms can use it too."
+        },
+        {
+          "author": {
+            "id": "u-elena",
+            "name": "Elena Conti"
+          },
+          "created": "2026-10-21T11:30:00.000+0000",
+          "body": "Tested in COLLAUDO: typing 07/03/1985 works, the field shows the date back in the same format."
+        }
+      ],
+      "worklogs": [
+        {
+          "author": {
+            "id": "u-sara",
+            "name": "Sara Colombo"
+          },
+          "started": "2026-10-20T08:30:00.000+0000",
+          "seconds": 9000
+        }
+      ],
+      "resolutionDate": "2026-10-21T12:00:00.000+0000",
+      "updated": "2026-10-21T12:00:00.000+0000",
+      "changelog": [
+        {
+          "author": {
+            "id": "u-paolo",
+            "name": "Paolo Ferri"
+          },
+          "created": "2026-10-12T09:00:00.000+0000",
+          "items": [
+            {
+              "field": "assignee",
+              "from": null,
+              "to": "Sara Colombo"
+            }
+          ]
+        },
+        {
+          "author": {
+            "id": "u-sara",
+            "name": "Sara Colombo"
+          },
+          "created": "2026-10-21T12:00:00.000+0000",
+          "items": [
+            {
+              "field": "status",
+              "from": "In Progress",
+              "to": "Done"
+            },
+            {
+              "field": "resolution",
+              "from": null,
+              "to": "Done"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "status": "Done",
+      "resolution": "Done",
+      "key": "CUP_DEMO-2620",
+      "summary": "[BE] - Prenotazioni: free times load slowly for providers with long slots",
+      "description": "In the Nuova prenotazione form the free times of LO_OCULISTICA and TG_RADIOLOGIA take 1–2 seconds to appear.\nThe availability service runs one query per candidate time.",
+      "priority": "Medium",
+      "issueType": "Task",
+      "environments": [
+        "COLLAUDO"
+      ],
+      "components": [
+        "Backend",
+        "Prenotazioni"
+      ],
+      "reporter": {
+        "id": "u-elena",
+        "name": "Elena Conti"
+      },
+      "assignee": {
+        "id": "u-luca",
+        "name": "Luca Bianchi"
+      },
+      "created": "2026-10-19T08:00:00.000+0000",
+      "resolved": "2026-10-23T10:00:00",
+      "comments": [
+        {
+          "author": {
+            "id": "u-luca",
+            "name": "Luca Bianchi"
+          },
+          "created": "2026-10-22T17:20:00.000+0000",
+          "body": "AvailabilityService now loads all booked times of the day with one query (BookingRepository.findBookedTimes) instead of one exists-query per candidate time. ~40 ms instead of ~1.5 s for TG_RADIOLOGIA."
+        },
+        {
+          "author": {
+            "id": "u-marta",
+            "name": "Marta Ricci"
+          },
+          "created": "2026-10-23T09:00:00.000+0000",
+          "body": "Code review: looks good. Just to be sure, the old query ignored ANNULLATA bookings (CUP_DEMO-2533): is that still the case with findBookedTimes?"
+        },
+        {
+          "author": {
+            "id": "u-luca",
+            "name": "Luca Bianchi"
+          },
+          "created": "2026-10-23T09:40:00.000+0000",
+          "body": "The availability tests are green, closing."
+        }
+      ],
+      "worklogs": [
+        {
+          "author": {
+            "id": "u-luca",
+            "name": "Luca Bianchi"
+          },
+          "started": "2026-10-22T14:00:00.000+0000",
+          "seconds": 7200
+        }
+      ],
+      "resolutionDate": "2026-10-23T10:00:00.000+0000",
+      "updated": "2026-10-23T10:00:00.000+0000",
+      "changelog": [
+        {
+          "author": {
+            "id": "u-paolo",
+            "name": "Paolo Ferri"
+          },
+          "created": "2026-10-19T08:00:00.000+0000",
+          "items": [
+            {
+              "field": "assignee",
+              "from": null,
+              "to": "Luca Bianchi"
+            }
+          ]
+        },
+        {
+          "author": {
+            "id": "u-luca",
+            "name": "Luca Bianchi"
+          },
+          "created": "2026-10-23T10:00:00.000+0000",
+          "items": [
+            {
+              "field": "status",
+              "from": "In Progress",
+              "to": "Done"
+            },
+            {
+              "field": "resolution",
+              "from": null,
+              "to": "Done"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

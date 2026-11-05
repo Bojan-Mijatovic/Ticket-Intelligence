@@ -2,7 +2,8 @@
 // Builds demo/mediagenda: Angular 18 frontend + Spring Boot (Java 21) backend + H2/Flyway database, with a git
 // history that matches the mock Jira tickets CUP_DEMO-2398 … CUP_DEMO-2629.
 //
-//   node demo/make-mediagenda.mjs [--svn] [--force] [--no-install]
+//   node demo/make-mediagenda.mjs [--svn] [--force] [--no-install] [--out <dir>]
+//   --out builds into another folder (e.g. to check a new history before publishing it).
 //   --svn builds demo/mediagenda-svn (working copy) + demo/mediagenda-svn-repo (SVN repository) instead of the git repo.
 //
 // demo/src/mediagenda/template/  = the project as it is today (HEAD)
@@ -36,20 +37,21 @@ const H = (dir) => ({ history: dir });
 const BE = 'backend/src/main/java/com/mediagenda';
 const FE = 'frontend/src/app';
 const MIG = 'backend/src/main/resources/db/migration';
+const TEST = 'backend/src/test/java/com/mediagenda';
 
 const STEPS = [
   {
     who: 'davide', date: '2026-02-02T10:00:00+01:00',
     message: 'Backend skeleton: Spring Boot app, structures, resources, time slots (Flyway V1, V2)',
     files: {
-      '.gitignore': T, 'README.md': T,
+      '.gitignore': T, 'README.md': H('01-backend'),
       'backend/pom.xml': T, 'backend/src/main/resources/application.yml': T,
       [`${BE}/MediAgendaApplication.java`]: T,
-      [`${BE}/common/ApiError.java`]: T, [`${BE}/common/GlobalExceptionHandler.java`]: T, [`${BE}/common/NotFoundException.java`]: T,
+      [`${BE}/common/ApiError.java`]: T, [`${BE}/common/GlobalExceptionHandler.java`]: H('01-backend'), [`${BE}/common/NotFoundException.java`]: T,
       [`${BE}/structure/Structure.java`]: T, [`${BE}/structure/StructureRepository.java`]: T, [`${BE}/structure/StructureController.java`]: T,
       [`${BE}/resource/AgendaResource.java`]: T, [`${BE}/resource/AgendaResourceRepository.java`]: T,
       [`${BE}/resource/AgendaResourceService.java`]: H('01-backend'), [`${BE}/resource/AgendaResourceController.java`]: T,
-      [`${BE}/timeslot/TimeSlot.java`]: T, [`${BE}/timeslot/TimeSlotController.java`]: T,
+      [`${BE}/timeslot/TimeSlot.java`]: H('01-backend'), [`${BE}/timeslot/TimeSlotController.java`]: T,
       [`${BE}/timeslot/TimeSlotRepository.java`]: H('01-backend'), [`${BE}/timeslot/TimeSlotSearchRequest.java`]: H('01-backend'),
       [`${BE}/timeslot/TimeSlotService.java`]: H('01-backend'),
       [`${MIG}/V1__structures_resources_timeslots.sql`]: T, [`${MIG}/V2__seed_agenda.sql`]: T,
@@ -60,9 +62,9 @@ const STEPS = [
     message: 'Frontend skeleton: Angular 18 app shell, layout, routing, shared models',
     files: {
       'frontend/package.json': T, 'frontend/angular.json': T, 'frontend/tsconfig.json': T, 'frontend/tsconfig.app.json': T,
-      'frontend/proxy.conf.json': T, 'frontend/src/index.html': T, 'frontend/src/main.ts': T, 'frontend/src/styles.scss': T,
-      [`${FE}/app.config.ts`]: T, [`${FE}/app.routes.ts`]: T, [`${FE}/app.component.ts`]: T,
-      [`${FE}/core/layout/header.component.ts`]: T, [`${FE}/core/layout/sidenav.component.ts`]: T,
+      'frontend/proxy.conf.json': T, 'frontend/src/index.html': T, 'frontend/src/main.ts': T, 'frontend/src/styles.scss': H('02-frontend'),
+      [`${FE}/app.config.ts`]: T, [`${FE}/app.routes.ts`]: H('02-frontend'), [`${FE}/app.component.ts`]: T,
+      [`${FE}/core/layout/header.component.ts`]: T, [`${FE}/core/layout/sidenav.component.ts`]: H('02-frontend'),
       [`${FE}/core/i18n/labels.ts`]: T, [`${FE}/core/http/api.ts`]: T, [`${FE}/shared/models/agenda.models.ts`]: T,
     },
   },
@@ -80,41 +82,60 @@ const STEPS = [
       [`${FE}/features/agenda/search-mask/search-mask.component.ts`]: H('03-agenda'),
       [`${FE}/features/agenda/search-mask/search-mask.component.html`]: T,
       [`${FE}/features/agenda/results/resources-list.component.ts`]: T,
-      [`${FE}/features/agenda/results/timeslot-table.component.ts`]: H('03-agenda'),
+      [`${FE}/features/agenda/results/timeslot-table.component.ts`]: H('03-agenda'), [`${FE}/app.routes.ts`]: H('03-agenda'),
     },
   },
   {
     who: 'luca', date: '2026-03-04T09:40:00+01:00',
     message: 'Booking module: bookings table (Flyway V3) and API',
     files: {
-      [`${BE}/booking/Booking.java`]: T, [`${BE}/booking/BookingRepository.java`]: T, [`${BE}/booking/BookingController.java`]: T,
+      [`${BE}/booking/Booking.java`]: H('04-booking'), [`${BE}/booking/BookingRepository.java`]: H('04-booking'), [`${BE}/booking/BookingController.java`]: H('04-booking'),
       [`${MIG}/V3__bookings.sql`]: T,
     },
   },
   {
     who: 'marta', date: '2026-03-11T14:00:00+01:00',
     message: 'Prenotazioni page: bookings list',
-    files: { [`${FE}/features/booking/booking-api.service.ts`]: T, [`${FE}/features/booking/booking-list.component.ts`]: T },
+    files: { [`${FE}/features/booking/booking-api.service.ts`]: H('05-booking-fe'), [`${FE}/features/booking/booking-list.component.ts`]: H('05-booking-fe'), [`${FE}/app.routes.ts`]: H('05-booking-fe') },
   },
   {
     who: 'davide', date: '2026-03-25T10:30:00+01:00',
     message: 'Patient module: patient search API with paging (Flyway V4)',
     files: {
-      [`${BE}/patient/Patient.java`]: T, [`${BE}/patient/PatientRepository.java`]: T, [`${BE}/patient/PatientController.java`]: T,
+      [`${BE}/patient/Patient.java`]: H('06-patient'), [`${BE}/patient/PatientRepository.java`]: H('06-patient'), [`${BE}/patient/PatientController.java`]: H('06-patient'),
       [`${BE}/common/PageResponse.java`]: T, [`${MIG}/V4__patients.sql`]: T,
     },
   },
   {
     who: 'sara', date: '2026-04-02T16:20:00+02:00',
     message: 'Pazienti page: patient search with paging',
-    files: { [`${FE}/features/patients/patient-api.service.ts`]: T, [`${FE}/features/patients/patient-search.component.ts`]: T },
+    files: { [`${FE}/features/patients/patient-api.service.ts`]: H('07-patient-fe'), [`${FE}/features/patients/patient-search.component.ts`]: H('07-patient-fe'), [`${FE}/app.routes.ts`]: H('07-patient-fe') },
+  },
+  {
+    who: 'davide', date: '2026-04-20T10:15:00+02:00',
+    message: "CUP_DEMO-2441: patient registry API (create, update, get) with validation (Flyway V5)\n\nPOST /api/patients and PUT /api/patients/{id} validate the fiscal code format, names, birth date (past), sex and contacts.\nA fiscal code that is already registered is rejected with 409 CONFLICT.",
+    files: {
+      [`${BE}/patient/Patient.java`]: T, [`${BE}/patient/PatientRequest.java`]: T, [`${BE}/patient/PatientRepository.java`]: T,
+      [`${BE}/patient/PatientService.java`]: T, [`${BE}/patient/PatientController.java`]: T,
+      [`${BE}/common/ConflictException.java`]: T, [`${BE}/common/BadRequestException.java`]: T, [`${BE}/common/GlobalExceptionHandler.java`]: T,
+      [`${MIG}/V5__patient_registry.sql`]: T, [`${TEST}/patient/PatientServiceTest.java`]: T,
+    },
+  },
+  {
+    who: 'sara', date: '2026-04-28T15:40:00+02:00',
+    message: "CUP_DEMO-2441: Anagrafica paziente form (new and edit) and shared form styles",
+    files: {
+      'frontend/src/styles.scss': T, [`${FE}/core/http/api-errors.ts`]: T, [`${FE}/shared/validators/form-validators.ts`]: T,
+      [`${FE}/features/patients/patient-api.service.ts`]: T, [`${FE}/features/patients/patient-search.component.ts`]: T,
+      [`${FE}/features/patients/patient-form.component.ts`]: H('10-patient-form'), [`${FE}/app.routes.ts`]: H('10-patient-form'),
+    },
   },
   {
     who: 'luca', date: '2026-05-14T12:10:00+02:00',
     message: 'CUP_DEMO-2398: time slot search accepts a list of structureIds\n\nPOST /api/agenda/structure-timeslots now takes { structureIds: [...] } and merges the slots of all structures.',
     files: {
       [`${BE}/timeslot/TimeSlotSearchRequest.java`]: T, [`${BE}/timeslot/TimeSlotService.java`]: T,
-      [`${BE}/timeslot/TimeSlotRepository.java`]: T, 'backend/src/test/java/com/mediagenda/timeslot/TimeSlotServiceTest.java': T,
+      [`${BE}/timeslot/TimeSlotRepository.java`]: H('08-sup2398-be'), 'backend/src/test/java/com/mediagenda/timeslot/TimeSlotServiceTest.java': T,
     },
   },
   {
@@ -126,9 +147,65 @@ const STEPS = [
     },
   },
   {
+    who: 'luca', date: '2026-06-10T09:30:00+02:00',
+    message: "CUP_DEMO-2470: create bookings and free appointment times (Flyway V6)\n\nGET /api/agenda/availability splits the slots of a provider on a day into 20-minute appointments and leaves out booked times.\nPOST /api/bookings checks validity, weekday and hours of the slot, and rejects a time that is already booked (409).",
+    files: {
+      [`${BE}/booking/Booking.java`]: H('12-booking-form'), [`${BE}/booking/BookingRequest.java`]: T, [`${BE}/booking/BookingView.java`]: H('12-booking-form'),
+      [`${BE}/booking/BookingRepository.java`]: H('12-booking-form'), [`${BE}/booking/BookingService.java`]: H('12-booking-form'),
+      [`${BE}/booking/BookingController.java`]: H('12-booking-form'),
+      [`${BE}/timeslot/Weekdays.java`]: T, [`${BE}/timeslot/AvailableTime.java`]: T, [`${BE}/timeslot/AvailabilityService.java`]: H('12-booking-form'),
+      [`${BE}/timeslot/AvailabilityController.java`]: T, [`${BE}/timeslot/TimeSlotRepository.java`]: T,
+      [`${MIG}/V6__booking_details.sql`]: T,
+      [`${TEST}/booking/BookingServiceTest.java`]: H('12-booking-form'), [`${TEST}/timeslot/AvailabilityServiceTest.java`]: T,
+    },
+  },
+  {
+    who: 'marta', date: '2026-06-18T14:20:00+02:00',
+    message: "CUP_DEMO-2470: Nuova prenotazione form; bookings list shows patient and agenda",
+    files: {
+      [`${FE}/features/booking/booking-api.service.ts`]: H('12-booking-form'), [`${FE}/features/booking/booking-list.component.ts`]: H('12-booking-form'),
+      [`${FE}/features/booking/booking-form.component.ts`]: T, [`${FE}/app.routes.ts`]: H('12-booking-form'),
+    },
+  },
+  {
     who: 'davide', date: '2026-07-08T11:00:00+02:00',
     message: 'CUP_DEMO-2602: resources endpoint returns only active erogatori',
     files: { [`${BE}/resource/AgendaResourceService.java`]: T },
+  },
+  {
+    who: 'davide', date: '2026-07-20T10:00:00+02:00',
+    message: "CUP_DEMO-2590: POST /api/timeslots creates recurring time slots (Flyway V7)\n\nOne slot per selected weekday; the resource must be active, the end time after the start time, the end date not before the start date.",
+    files: {
+      [`${BE}/timeslot/TimeSlot.java`]: T, [`${BE}/timeslot/TimeSlotCreateRequest.java`]: T,
+      [`${BE}/timeslot/TimeSlotAdminService.java`]: T, [`${BE}/timeslot/TimeSlotAdminController.java`]: T,
+      [`${MIG}/V7__time_slot_sequence.sql`]: T, [`${TEST}/timeslot/TimeSlotAdminServiceTest.java`]: T,
+    },
+  },
+  {
+    who: 'sara', date: '2026-07-28T16:10:00+02:00',
+    message: "CUP_DEMO-2590: Fasce orarie page: Nuova fascia oraria form",
+    files: {
+      [`${FE}/features/timeslots/timeslot-api.service.ts`]: T, [`${FE}/features/timeslots/timeslot-form.component.ts`]: T,
+      [`${FE}/app.routes.ts`]: H('13-timeslot-fe'), [`${FE}/core/layout/sidenav.component.ts`]: T,
+    },
+  },
+  {
+    who: 'luca', date: '2026-09-08T11:30:00+02:00',
+    message: "CUP_DEMO-2533: cancel a booking with a reason (Flyway V8)\n\nPOST /api/bookings/{id}/cancel: CONFERMATA → ANNULLATA. A cancelled time is free again: availability and the\ndouble-booking check ignore ANNULLATA bookings. GET /api/bookings takes an optional status filter.",
+    files: {
+      [`${BE}/booking/Booking.java`]: T, [`${BE}/booking/CancelRequest.java`]: T, [`${BE}/booking/BookingView.java`]: T,
+      [`${BE}/booking/BookingRepository.java`]: H('15-booking-cancel'), [`${BE}/booking/BookingService.java`]: T,
+      [`${BE}/booking/BookingController.java`]: T, [`${BE}/timeslot/AvailabilityService.java`]: H('15-booking-cancel'),
+      [`${MIG}/V8__booking_cancellation.sql`]: T, [`${TEST}/booking/BookingServiceTest.java`]: T, 'README.md': T,
+    },
+  },
+  {
+    who: 'marta', date: '2026-09-10T15:00:00+02:00',
+    message: "CUP_DEMO-2533: Prenotazioni: status filter and Annulla prenotazione dialog",
+    files: {
+      [`${FE}/features/booking/booking-api.service.ts`]: T, [`${FE}/features/booking/booking-list.component.ts`]: T,
+      [`${FE}/features/booking/booking-cancel-dialog.component.ts`]: T,
+    },
   },
   {
     who: 'sara', date: '2026-09-22T15:05:00+02:00',
@@ -145,6 +222,20 @@ const STEPS = [
     files: { [`${FE}/features/agenda/results/timeslot-table.component.ts`]: T },
   },
   {
+    who: 'sara', date: '2026-10-20T11:25:00+02:00',
+    message: "CUP_DEMO-2612: patient form: birth date typed as dd/MM/yyyy\n\nThe operators type dates as on the documents; the browser date picker showed mm/dd/yyyy on some PCs.\nNew shared/utils/dates.ts converts between dd/MM/yyyy and the ISO format of the API.",
+    files: {
+      [`${FE}/shared/utils/dates.ts`]: T, [`${FE}/features/patients/patient-form.component.ts`]: T,
+    },
+  },
+  {
+    who: 'luca', date: '2026-10-22T17:05:00+02:00',
+    message: "CUP_DEMO-2620: availability loads the booked times of the day with one query\n\nThe Nuova prenotazione form waited up to 2 s per provider: one exists-query per candidate time.\nNow one query returns all booked times of the day for the provider's slots.",
+    files: {
+      [`${BE}/booking/BookingRepository.java`]: T, [`${BE}/timeslot/AvailabilityService.java`]: T,
+    },
+  },
+  {
     who: 'luca', date: '2026-10-27T09:10:00+01:00',
     message: 'Reports: monthly bookings per structure API',
     files: { [`${BE}/report/ReportController.java`]: T },
@@ -152,15 +243,16 @@ const STEPS = [
   {
     who: 'marta', date: '2026-10-29T16:40:00+01:00',
     message: 'Report page: monthly bookings table',
-    files: { [`${FE}/features/reports/reports.component.ts`]: T },
+    files: { [`${FE}/features/reports/reports.component.ts`]: T, [`${FE}/app.routes.ts`]: T },
   },
   {
     who: 'bojan', date: '2026-11-04T19:00:00+01:00',
-    message: 'Browser tests: Playwright with a mocked backend API',
+    message: 'Browser tests: Playwright with a mocked backend API (agenda, patients, bookings, time slots)',
     files: {
       'e2e/package.json': T, 'e2e/playwright.config.ts': T, 'e2e/README.md': T,
       'e2e/support/agenda.ts': T, 'e2e/support/api-data.json': T, 'e2e/support/evidence.ts': T, 'e2e/support/mock-api.ts': T,
-      'e2e/tests/agenda.smoke.spec.ts': T,
+      'e2e/support/forms.ts': T, 'e2e/tests/agenda.smoke.spec.ts': T,
+      'e2e/tests/patients.smoke.spec.ts': T, 'e2e/tests/bookings.smoke.spec.ts': T, 'e2e/tests/timeslots.smoke.spec.ts': T,
     },
   },
 ];
@@ -169,7 +261,8 @@ const STEPS = [
 
 const args = process.argv.slice(2);
 const SVN_MODE = args.includes('--svn');
-const OUT = SVN_MODE ? join(HERE, 'mediagenda-svn') : REPO;
+const outArg = args.includes('--out') ? args[args.indexOf('--out') + 1] : null;
+const OUT = outArg ? join(process.cwd(), outArg) : SVN_MODE ? join(HERE, 'mediagenda-svn') : REPO;
 const SVN_REPO = join(HERE, 'mediagenda-svn-repo');
 
 // Empty instead of delete: on Windows the folder itself is often locked by a terminal or editor.

@@ -7,3 +7,4 @@ tools/
 agent/state/
 demo/jira-keys.json
 demo/.demo-tickets.json
+demo/.scenario-runs.json

@@ -18,8 +18,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(ApiError.of(400, "VALIDATION_ERROR", details));
     }
 
+    @ExceptionHandler(BadRequestException.class)
+    public ResponseEntity<ApiError> badRequest(BadRequestException ex) {
+        return ResponseEntity.badRequest().body(ApiError.of(400, "VALIDATION_ERROR", List.of(ex.getMessage())));
+    }
+
     @ExceptionHandler(NotFoundException.class)
     public ResponseEntity<ApiError> notFound(NotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiError.of(404, "NOT_FOUND", List.of(ex.getMessage())));
+    }
+
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ApiError> conflict(ConflictException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiError.of(409, "CONFLICT", List.of(ex.getMessage())));
     }
 }

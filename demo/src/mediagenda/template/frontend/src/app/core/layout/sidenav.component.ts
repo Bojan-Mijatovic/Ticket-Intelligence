@@ -10,6 +10,7 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
       <a routerLink="/agenda" routerLinkActive="active">Agenda</a>
       <a routerLink="/prenotazioni" routerLinkActive="active">Prenotazioni</a>
       <a routerLink="/pazienti" routerLinkActive="active">Pazienti</a>
+      <a routerLink="/fasce-orarie" routerLinkActive="active">Fasce orarie</a>
       <a routerLink="/report" routerLinkActive="active">Report</a>
     </nav>
   `,

@@ -9,7 +9,14 @@ export interface Patient {
   firstName: string;
   lastName: string;
   birthDate: string;
+  sex: 'M' | 'F';
+  city: string | null;
+  phone: string | null;
+  email: string | null;
 }
+
+/** Body of POST /api/patients and PUT /api/patients/{id}. */
+export type PatientRequest = Omit<Patient, 'id'>;
 
 export interface PageResponse<T> {
   items: T[];
@@ -24,5 +31,17 @@ export class PatientApiService {
 
   search(q: string, page: number, size = 5): Observable<PageResponse<Patient>> {
     return this.http.get<PageResponse<Patient>>(`${API}/patients`, { params: { q, page, size } });
+  }
+
+  get(id: number): Observable<Patient> {
+    return this.http.get<Patient>(`${API}/patients/${id}`);
+  }
+
+  create(patient: PatientRequest): Observable<Patient> {
+    return this.http.post<Patient>(`${API}/patients`, patient);
+  }
+
+  update(id: number, patient: PatientRequest): Observable<Patient> {
+    return this.http.put<Patient>(`${API}/patients/${id}`, patient);
   }
 }
