@@ -84,6 +84,7 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 | `repo` | the project's code (git repository or SVN working copy), relative to this folder |
 | `pollSeconds` | how often Jira is checked |
 | `lookbackHours` | only tickets created in this window are picked |
+| `settleMinutes` | a new ticket is picked only after it has not changed for this long (default 1), so a description added right after creating it is read; **Run again** does not wait |
 | `analysisTimeoutMinutes` | a run is stopped after this long |
 | `dashboardPort` | dashboard port |
 | `dashboardAllowRemote` | default off: the dashboard and its API answer only requests from this machine (they start paid agent runs) |

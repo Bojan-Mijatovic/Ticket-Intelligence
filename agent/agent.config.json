@@ -2,6 +2,7 @@
   "project": "DEM",
   "repo": "../demo/mediagenda",
   "pollSeconds": 30,
+  "settleMinutes": 1,
   "lookbackHours": 72,
   "maxParallel": 1,
   "analysisTimeoutMinutes": 10,

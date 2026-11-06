@@ -79,7 +79,11 @@ const events = createEventLog(join(stateDir, 'events.jsonl'));
 const jira = createJira();
 
 const agentLabels = Object.values(cfg.labels);
-const JQL = `project = ${cfg.project} AND created >= -${cfg.lookbackHours}h AND statusCategory != Done AND (labels is EMPTY OR labels not in (${agentLabels.join(', ')})) ORDER BY created ASC`;
+// A ticket is picked only after it has not changed for settleMinutes: reporters often create it with a title and
+// add the description right after, and an analysis of the half-written ticket says "no description, low confidence"
+// (DEM-31, DEM-32, DEM-35). Run again on the dashboard does not wait.
+const SETTLE = Math.max(0, Number(cfg.settleMinutes ?? 1));
+const JQL = `project = ${cfg.project} AND created >= -${cfg.lookbackHours}h AND statusCategory != Done AND (labels is EMPTY OR labels not in (${agentLabels.join(', ')}))${SETTLE ? ` AND updated <= -${SETTLE}m` : ''} ORDER BY created ASC`;
 // Resolved tickets the agent analyzed and has not documented yet.
 const L = cfg.labels;
 const DONE_JQL = `project = ${cfg.project} AND statusCategory = Done AND labels = ${L.done} AND labels not in (${[L.documenting, L.documented, L.docFailed, L.skip].join(', ')}) AND updated >= -${cfg.lookbackHours}h ORDER BY updated ASC`;

@@ -36,9 +36,16 @@ async function api(method, path, body, headers = {}) {
 }
 
 if (opt('--delete')) {
-  await api('DELETE', `/rest/api/2/issue/${opt('--delete')}`);
-  track(tracked().filter((k) => k !== opt('--delete')));
-  console.log(`deleted ${opt('--delete')}`);
+  const key = opt('--delete');
+  try {
+    await api('DELETE', `/rest/api/2/issue/${key}`);
+    console.log(`deleted ${key}`);
+  } catch (e) {
+    // Deleted by hand in Jira already: nothing left to do but forget it.
+    if (!/-> 404:/.test(e.message)) throw e;
+    console.log(`${key} no longer exists in Jira`);
+  }
+  track(tracked().filter((k) => k !== key));
   process.exit(0);
 }
 
