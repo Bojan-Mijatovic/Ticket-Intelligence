@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { createEventLog } from './lib/events.mjs';
 import { reproduceAndFix } from './lib/fix.mjs';
 import { createJira } from './lib/jira-actions.mjs';
-import { fixBlocker } from './lib/pipeline.mjs';
+import { fixBlocker, fixSide } from './lib/pipeline.mjs';
 import { publishFix } from './lib/publish.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -33,7 +33,9 @@ const blocker = fixBlocker({ issue, result: analysis, policy });
 if (blocker) console.warn(`note: the watcher would skip this ticket (${blocker}); running anyway because it was asked for explicitly`);
 
 const started = Date.now();
-const fix = await reproduceAndFix({ issue, analysis, repoDir: resolve(HERE, cfg.repo), stateDir, cfg, events, toolsDir: resolve(HERE, cfg.toolsDir), allowSupersededTests: policy.proposeFixWhen?.allowSupersededTestUpdates === true });
+const side = fixSide({ issue, result: analysis, policy });
+console.log(`side: ${side}`);
+const fix = await reproduceAndFix({ issue, analysis, repoDir: resolve(HERE, cfg.repo), stateDir, cfg, events, toolsDir: resolve(HERE, cfg.toolsDir), allowSupersededTests: policy.proposeFixWhen?.allowSupersededTestUpdates === true, side });
 console.log(`\nbranch ${fix.branch}: test ${fix.test.commit}, fix ${fix.fix.commit} · ${fix.fix.files.join(', ')}`);
 console.log(`checks: ${JSON.stringify(fix.checks)}`);
 console.log(`evidence: ${JSON.stringify(fix.evidence)}`);

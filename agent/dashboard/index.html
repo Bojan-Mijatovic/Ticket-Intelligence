@@ -256,7 +256,7 @@ function apply(ev) {
     case 'done': t.state = 'done'; t.doneAt = ev.at; t.totalMs = ev.totalMs; break;
     case 'failed': t.state = 'failed'; t.error = ev.text; break;
     case 'duplicate': t.duplicateOf = { key: ev.of, why: ev.why }; break;
-    case 'reproducing': t.fix = { stage: 'reproducing' }; t.state = 'fixing'; break;
+    case 'reproducing': t.fix = { stage: 'reproducing', side: ev.side ?? 'frontend' }; t.state = 'fixing'; break;
     case 'reproduced': t.fix = { ...(t.fix ?? {}), stage: 'fixing', reproduced: true, failure: ev.failure, before: ev.evidence ? `/evidence/${ev.key}/before.png?${Date.parse(ev.at)}` : null }; break;
     case 'verified': t.fix = { ...(t.fix ?? {}), stage: 'publishing', checks: ev.checks, after: ev.evidence ? `/evidence/${ev.key}/after.png?${Date.parse(ev.at)}` : null }; break;
     case 'pr': t.fix = { ...(t.fix ?? {}), prUrl: ev.url ?? t.fix?.prUrl }; break;
@@ -291,10 +291,10 @@ function fixView(t) {
     h('div', { class: 'fix-title' }, '🛠 Automatic reproduction and fix',
       f.stage === 'done' ? chip('draft PR ready', 'done') : f.stage === 'failed' ? chip('stopped', 'failed') : chip(f.stage, 'analyzing')),
     h('div', { class: 'stages' },
-      chip(f.reproduced ? '🐞 bug reproduced by a browser test' : '🧪 writing the test…', f.reproduced ? 'done' : 'analyzing'),
-      c ? chip(`browser tests ${c.e2e.passed}✓ ${c.e2e.failed}✗`, c.e2e.ok ? 'done' : 'failed') : null,
+      chip(f.reproduced ? `🐞 bug reproduced by a ${f.side === 'backend' ? 'backend (JUnit)' : 'browser'} test` : '🧪 writing the test…', f.reproduced ? 'done' : 'analyzing'),
+      c ? chip(c.e2e.skipped ? 'browser tests not needed' : `browser tests ${c.e2e.passed}✓ ${c.e2e.failed}✗`, c.e2e.ok ? 'done' : 'failed') : null,
       c ? chip(`ng build ${c.build.skipped ? 'skipped' : c.build.ok ? '✓' : '✗'}`, c.build.ok ? 'done' : 'failed') : null,
-      c ? chip(`backend ${c.backend.skipped ? 'unchanged' : c.backend.ok ? '✓' : '✗'}`, c.backend.ok ? 'done' : 'failed') : null),
+      c ? chip(c.backend.skipped ? 'backend unchanged' : `backend tests ${c.backend.passed ?? ''}${c.backend.ok ? '✓' : '✗'}${c.backend.failed ? ` ${c.backend.failed}✗` : ''}`, c.backend.ok ? 'done' : 'failed') : null),
     f.before || f.after ? h('div', { class: 'shots' },
       f.before ? h('figure', { class: 'shot before' }, h('figcaption', {}, 'Before the fix (bug)'), h('a', { href: f.before, target: '_blank' }, h('img', { src: f.before, alt: 'before' }))) : h('div'),
       f.after ? h('figure', { class: 'shot after' }, h('figcaption', {}, 'After the fix'), h('a', { href: f.after, target: '_blank' }, h('img', { src: f.after, alt: 'after' }))) : h('div')) : null,

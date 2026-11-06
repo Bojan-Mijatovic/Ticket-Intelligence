@@ -54,6 +54,18 @@ export function fixBlocker({ issue, result, policy }) {
 }
 
 /**
+ * Which side reproduces and fixes the ticket: 'frontend' (Playwright with the mocked API) or 'backend' (JUnit against
+ * the real code). A title with [FE] keeps the browser harness, also with [BE][FE]; a title with only [BE], or an
+ * untagged ticket whose analysis names only backend files, uses the backend harness.
+ */
+export function fixSide({ issue, result, policy }) {
+  const tags = titleTags(issue.summary);
+  if (tags.includes('FE')) return 'frontend';
+  if (tags.includes('BE')) return 'backend';
+  return inferredTag({ result, when: policy.proposeFixWhen ?? {} }) === 'BE' ? 'backend' : 'frontend';
+}
+
+/**
  * Before the analysis: whether a fix is possible at all, to decide whether to warm up a workspace. A title with a
  * wanted tag warms up; an untagged title too when tags can be inferred from the analysis; a title tagged only with
  * something else (e.g. [BE]) does not.
@@ -68,11 +80,18 @@ function mayFixByTitle({ issue, policy }) {
 }
 
 let warmPort = 4400;
-/** Worktree + warm dev server, prepared while the analysis runs. Resolves to the workspace, or null. Never throws. */
-async function prepareWorkspace({ key, repoDir, stateDir, events }) {
+/**
+ * Worktree (+ a warm Angular dev server, unless the title says backend only), prepared while the analysis runs.
+ * Resolves to the workspace, or null. Never throws.
+ */
+async function prepareWorkspace({ key, repoDir, stateDir, events, warm = true }) {
   let ws = null;
   try {
     ws = createWorkspace({ repoDir, key, stateDir });
+    if (!warm) {
+      events.emit('workspace', { key, text: `worktree on branch ${ws.branch} (backend ticket: no dev server needed)` });
+      return ws;
+    }
     events.emit('workspace', { key, text: `worktree on branch ${ws.branch}; warming the dev server while the analysis runs` });
     const server = await startDevServer(ws, warmPort++);
     events.emit('warmed', { key, text: `dev server ready in ${Math.round(server.warmMs / 1000)} s (port ${server.port})` });
@@ -107,7 +126,8 @@ async function maybeFix({ issue, result, cfg, policy, jira, events, repoDir, sta
     const full = await jira.getIssue(key);
     const toolsDir = cfg.toolsDir ? resolve(AGENT_DIR, cfg.toolsDir) : null;
     const allowSupersededTests = policy.proposeFixWhen?.allowSupersededTestUpdates === true;
-    const fix = await reproduceAndFix({ issue: full, analysis: result, repoDir, stateDir, cfg, events, toolsDir, prepared: ws, allowSupersededTests });
+    const side = fixSide({ issue, result, policy });
+    const fix = await reproduceAndFix({ issue: full, analysis: result, repoDir, stateDir, cfg, events, toolsDir, prepared: ws, allowSupersededTests, side });
     const pub = await publishFix({ key, analysis: result, result: fix, jira, events, stateDir });
     // What the reviewer (review.mjs) and agent/review-one.mjs need later, after the worktree is gone.
     const { ws: _ws, ...saved } = fix;
@@ -145,7 +165,8 @@ export async function processTicket({ issue, cfg, policy, jira, events, repoDir,
     await jira.labels(key, { add: [cfg.labels.inProgress], remove: [cfg.labels.failed] });
 
     // Warm up the fix workspace in parallel with the analysis (only for tickets the title rules allow).
-    prepared = mayFixByTitle({ issue, policy }) ? prepareWorkspace({ key, repoDir, stateDir, events }) : null;
+    const onlyBackend = titleTags(issue.summary).includes('BE') && !titleTags(issue.summary).includes('FE');
+    prepared = mayFixByTitle({ issue, policy }) ? prepareWorkspace({ key, repoDir, stateDir, events, warm: !onlyBackend }) : null;
 
     let result = given;
     let meta = { durationMs: 0, costUsd: 0, turns: 0 };

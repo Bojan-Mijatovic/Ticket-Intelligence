@@ -33,7 +33,7 @@ Training is therefore a loop: run the agent on known tickets → score → impro
 | `struttura` | [FE] Struttura field cleared by hand keeps the old structure | store keeps the structureId (`agenda-search.store.ts`) | CUP_DEMO-2398 / 2511 | Sara Colombo | yes |
 | `birth-date` | [FE] birth date saved one day earlier | `toIsoDate()` uses UTC (`shared/utils/dates.ts`) | CUP_DEMO-2612 | Sara Colombo | yes |
 | `annullate-filter` | [FE] Annullate filter shows nothing | option value `ANNULLATE` ≠ status `ANNULLATA` (`booking-list.component.ts`) | CUP_DEMO-2533 | Marta Ricci | yes |
-| `cancelled-slot` | [BE] cancelled appointment never offered again | `findBookedTimes` ignores the status (`BookingRepository`, `AvailabilityService`) | CUP_DEMO-2620 (regression of 2533) | Luca Bianchi | no: backend, analysis only |
+| `cancelled-slot` | [BE] cancelled appointment never offered again | `findBookedTimes` ignores the status (`BookingRepository`, `AvailabilityService`) | CUP_DEMO-2620 (regression of 2533) | Luca Bianchi | yes: reproduced with a JUnit test against H2 |
 
 The bugs are realistic on purpose: each was introduced by a later change and has a trace in Jira. In CUP_DEMO-2620, for example, the reviewer asks whether cancelled bookings are still ignored.
 
@@ -46,7 +46,7 @@ node demo/score-run.mjs --all                      # 2. after "done": score ever
 node demo/reset-demo.mjs --yes                     # 4. clean up, then run the same scenario again
 ```
 
-`score-run.mjs` checks six things per ticket: the right file, the change that introduced the bug, related tickets, owner, confidence, and the fix outcome (a verified draft PR when expected, none for backend tickets). It also prints time and cost.
+`score-run.mjs` checks six things per ticket: the right file, the change that introduced the bug, related tickets, owner, confidence, and the fix outcome (a verified draft PR when expected; backend tickets are reproduced with a JUnit test, frontend tickets with a browser test). It also prints time and cost.
 
 Rules:
 

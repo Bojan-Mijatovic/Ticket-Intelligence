@@ -103,7 +103,7 @@ Without configuration, owner notifications are shown on the dashboard as Teams-s
 
 For tickets that pass `proposeFixWhen` in `policy.json`, the agent continues after the analysis. By default:
 
-- `[FE]` in the title, **or** a title without any tag where every file the analysis names is under `frontend/` (`inferTagFromFiles`). An explicit other tag such as `[BE]` is respected: no fix.
+- `[FE]` or `[BE]` in the title, **or** a title without any tag where every file the analysis names is under `frontend/` or under `backend/` (`inferTagFromFiles`). Remove `BE` from `titleTags` to keep backend tickets analysis-only.
 - `high` confidence;
 - not a duplicate.
 
@@ -116,6 +116,18 @@ The steps:
 | 3. Fix the application code | agent | watcher: no test was modified; **all** browser tests pass; `ng build` passes; `mvn test` if backend code changed → commit "<KEY>: …" |
 | 4. Push the branch, open a **draft** pull request | watcher | GitHub via `gh`; other hosts: branch only |
 | 5. Attach before/after screenshots and the recorded API calls to Jira, comment with the PR link and the check results | watcher | |
+
+**Backend tickets** (`[BE]`, or only backend files in the analysis) use a different test harness, because the browser tests run against a mocked API and cannot show a backend bug:
+
+| Step | Frontend (`[FE]`) | Backend (`[BE]`) |
+|---|---|---|
+| reproduce | Playwright `e2e/tests/<KEY>.spec.ts`, mocked API | JUnit `backend/src/test/java/com/mediagenda/regression/<Key>RegressionTest.java` (`@SpringBootTest`, real H2 + Flyway data); `backendTestDir` in `agent.config.json` |
+| "it fails" means | a failing assertion in the browser test | a surefire report with a failure; no report (compile error) is not a reproduction |
+| the fix may not touch | `e2e/` | `backend/src/test/` and `e2e/` |
+| checks after the fix | all browser tests, `ng build`, `mvn test` if backend changed | all backend tests (`mvn test`); browser tests and `ng build` only if frontend files changed |
+| evidence | before/after screenshots, recorded API calls | `test-before.txt` (the new test failing), `test-after.txt` (all backend tests passing) |
+
+A `[BE][FE]` title keeps the browser harness. No Angular dev server is warmed for a `[BE]`-only title. **Preview in app** works for backend fixes too: `run-mediagenda.mjs` restarts the backend when the app clone switches to the branch.
 
 **A change request that replaces earlier behaviour** (e.g. DEM-33 "dark red" after DEM-32 "dark blue" on the same page) makes the earlier ticket's test fail after a correct fix, and the fix may not modify tests. The analysis therefore names the tickets it deliberately replaces (`supersedes`). With `allowSupersededTestUpdates: true` in `policy.json`, the fix may update **only** those tickets' tests (`e2e/tests/<THAT-KEY>.spec.ts`), never its own test or anything else under `e2e/`, and must also change application code; the watcher checks this. The PR and the Jira comment say "replaces earlier behaviour" with the updated tests, and the AI reviewer is told to check that the ticket really asks for it.
 

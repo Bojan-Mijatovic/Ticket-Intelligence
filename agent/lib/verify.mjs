@@ -1,7 +1,7 @@
 // Independent verification: the watcher runs the checks itself instead of trusting what the agent reports.
 
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 let nextPort = 4310;
@@ -65,18 +65,67 @@ export async function runFrontendBuild(ws) {
   return { ok: r.code === 0, durationMs: r.durationMs, output: tail(r.out, 15) };
 }
 
-/** Maven tests with the portable JDK/Maven from tools/ when java/mvn are not on PATH. */
-export async function runBackendTests(ws, toolsDir) {
+/** Maven and JAVA_HOME: the portable JDK/Maven from tools/ when java/mvn are not on PATH. */
+function maven(toolsDir) {
   const env = {};
   let mvn = 'mvn';
   if (toolsDir && existsSync(toolsDir)) {
     const jdk = readdirSync(toolsDir).find((d) => d.startsWith('jdk-'));
-    const maven = readdirSync(toolsDir).find((d) => d.startsWith('apache-maven-'));
-    if (jdk && maven) {
+    const mavenDir = readdirSync(toolsDir).find((d) => d.startsWith('apache-maven-'));
+    if (jdk && mavenDir) {
       env.JAVA_HOME = resolve(toolsDir, jdk);
-      mvn = resolve(toolsDir, maven, 'bin', process.platform === 'win32' ? 'mvn.cmd' : 'mvn');
+      mvn = resolve(toolsDir, mavenDir, 'bin', process.platform === 'win32' ? 'mvn.cmd' : 'mvn');
     }
   }
+  return { mvn, env };
+}
+
+/**
+ * Totals and the first failure from the surefire XML reports (target/surefire-reports). A test class that did not
+ * compile has no report at all, so "failed on an assertion" and "did not compile" can be told apart.
+ */
+export function surefireResults(reportsDir, onlyClass = null) {
+  const out = { tests: 0, failed: 0, classes: [], firstError: null };
+  if (!existsSync(reportsDir)) return out;
+  for (const f of readdirSync(reportsDir).filter((n) => /^TEST-.+\.xml$/.test(n))) {
+    const name = f.slice(5, -4);
+    if (onlyClass && !name.endsWith(`.${onlyClass}`) && name !== onlyClass) continue;
+    const xml = readFileSync(join(reportsDir, f), 'utf8');
+    const attr = (a) => Number(xml.match(new RegExp(`<testsuite[^>]*\\s${a}="(\\d+)"`))?.[1] ?? 0);
+    const tests = attr('tests');
+    const failed = attr('failures') + attr('errors');
+    out.tests += tests;
+    out.failed += failed;
+    out.classes.push({ name, tests, failed });
+    if (!out.firstError && failed) {
+      const m = xml.match(/<(failure|error)(\s[^>]*)?>([\s\S]*?)<\/\1>/);
+      const message = m?.[2]?.match(/\smessage="([^"]*)"/)?.[1];
+      const decode = (s) => String(s ?? '').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#10;/g, '\n').replace(/&amp;/g, '&');
+      out.firstError = tail(`${decode(message)}\n${decode(m?.[3])}`, 12);
+    }
+  }
+  return out;
+}
+
+/** All Maven tests; passed/failed from the surefire reports. */
+export async function runBackendTests(ws, toolsDir) {
+  const { mvn, env } = maven(toolsDir);
+  const reports = join(ws.path, 'backend', 'target', 'surefire-reports');
+  rmSync(reports, { recursive: true, force: true });
   const r = await run(mvn, ['-q', '-B', 'test'], { cwd: join(ws.path, 'backend'), env });
-  return { ok: r.code === 0, durationMs: r.durationMs, output: tail(r.out, 15) };
+  const s = surefireResults(reports);
+  return { ok: r.code === 0, passed: s.tests - s.failed, failed: s.failed, firstError: s.firstError, durationMs: r.durationMs, output: tail(r.out, 15) };
+}
+
+/**
+ * One test class (the regression test of a backend ticket). `compiled` is false when Maven produced no report for it
+ * (compile error, wrong class name): that is not a reproduction.
+ */
+export async function runBackendTest(ws, toolsDir, testClass) {
+  const { mvn, env } = maven(toolsDir);
+  const reports = join(ws.path, 'backend', 'target', 'surefire-reports');
+  rmSync(reports, { recursive: true, force: true });
+  const r = await run(mvn, ['-q', '-B', 'test', `-Dtest=${testClass}`, '-Dsurefire.failIfNoSpecifiedTests=false'], { cwd: join(ws.path, 'backend'), env });
+  const s = surefireResults(reports, testClass);
+  return { compiled: s.classes.length > 0, tests: s.tests, failed: s.failed, firstError: s.firstError ?? (s.classes.length ? null : tail(r.out, 12)), durationMs: r.durationMs };
 }

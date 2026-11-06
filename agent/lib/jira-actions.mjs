@@ -98,7 +98,7 @@ export function createJira() {
     async attach(key, filePath, name) {
       const { readFileSync } = await import('node:fs');
       const form = new FormData();
-      form.append('file', new Blob([readFileSync(filePath)], { type: name.endsWith('.png') ? 'image/png' : 'application/octet-stream' }), name);
+      form.append('file', new Blob([readFileSync(filePath)], { type: name.endsWith('.png') ? 'image/png' : name.endsWith('.txt') ? 'text/plain' : 'application/octet-stream' }), name);
       const res = await fetch(`${cfg.baseUrl}/rest/api/2/issue/${encodeURIComponent(key)}/attachments`, {
         method: 'POST',
         headers: { Authorization: auth, Accept: 'application/json', 'X-Atlassian-Token': 'no-check' },

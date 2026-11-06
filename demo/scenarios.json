@@ -44,7 +44,7 @@
         "related": ["CUP_DEMO-2620", "CUP_DEMO-2533", "CUP_DEMO-2470"],
         "owner": "Luca Bianchi",
         "fix": "add \"and b.status <> 'ANNULLATA'\" to findBookedTimes (or pass the status), plus a test: cancel → time offered again",
-        "agentFix": false
+        "agentFix": true
       }
     },
     "annullate-filter": {

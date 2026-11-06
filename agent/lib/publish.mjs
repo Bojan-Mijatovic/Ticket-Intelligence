@@ -12,6 +12,8 @@ function githubSlug(remoteUrl) {
 }
 
 const mark = (c) => (c.skipped ? 'not needed' : c.ok ? 'passed' : 'FAILED');
+const e2eCell = (c) => (c.e2e.skipped ? 'not needed: backend-only change (browser tests use a mocked API)' : `${c.e2e.passed} passed, ${c.e2e.failed} failed`);
+const backendCell = (c) => (c.backend.skipped ? 'not needed' : `${c.backend.ok ? 'passed' : 'FAILED'}${c.backend.passed !== undefined ? ` (${c.backend.passed} passed, ${c.backend.failed} failed)` : ''}`);
 
 /** A reviewer must see at once that the fix changed the expected behaviour of an earlier ticket's test. */
 function supersededNote(result, format) {
@@ -43,11 +45,11 @@ ${supersededNote(result, 'md')}
 | Check | Result |
 |---|---|
 | Regression test \`${result.test.file}\` on the code **before** the fix | failed, as expected (commit ${result.test.commit}) |
-| All browser tests **after** the fix | ${c.e2e.passed} passed, ${c.e2e.failed} failed |
+| All browser tests **after** the fix | ${e2eCell(c)} |
 | Frontend build (\`ng build\`) | ${mark(c.build)} |
-| Backend tests (\`mvn test\`) | ${mark(c.backend)} |
+| Backend tests (\`mvn test\`) | ${backendCell(c)} |
 
-Before/after screenshots and the recorded API calls are attached to the Jira ticket.
+${result.side === 'backend' ? 'The output of the backend test before the fix and of all backend tests after it is attached to the Jira ticket.' : 'Before/after screenshots and the recorded API calls are attached to the Jira ticket.'}
 
 ### Review checklist
 - [ ] The test describes the behaviour the ticket asks for
@@ -68,7 +70,7 @@ h3. Pull request
 [${result.title}|${prUrl}]
 
 h3. Reproduction
-A browser test written from the ticket's steps fails on the current code:
+${result.side === 'backend' ? `A backend test ({{${result.test.file}}}) written from the ticket fails on the current code:` : "A browser test written from the ticket's steps fails on the current code:"}
 {noformat}${String(result.test.firstError ?? result.test.failure ?? '').slice(0, 900)}{noformat}
 
 h3. Fix
@@ -78,13 +80,16 @@ ${supersededNote(result, 'jira')}
 h3. Verification (independent checks)
 ||Check||Result||
 |Regression test before the fix|failed, as expected|
-|All browser tests after the fix|${c.e2e.passed} passed, ${c.e2e.failed} failed|
+|All browser tests after the fix|${e2eCell(c)}|
 |Frontend build|${mark(c.build)}|
-|Backend tests|${mark(c.backend)}|
+|Backend tests|${backendCell(c)}|
 
-h3. Before / after
+${result.side === 'backend'
+    ? `h3. Before / after
+Attached: {{test-before.txt}} (the new test failing on the old code) and {{test-after.txt}} (all backend tests on the fixed code).`
+    : `h3. Before / after
 *Before:* ${img('before.png')}
-*After:* ${img('after.png')}
+*After:* ${img('after.png')}`}
 
 ----
 _Nothing is merged automatically. Review the pull request and merge it if it is right._`;
@@ -107,7 +112,7 @@ export async function publishFix({ key, analysis, result, jira, events, stateDir
   }
 
   const attachments = [];
-  for (const [file, name] of [[result.evidence.before, 'before.png'], [result.evidence.after, 'after.png'], [result.evidence.beforeJson, 'api-calls-before.json'], [result.evidence.afterJson, 'api-calls-after.json']]) {
+  for (const [file, name] of [[result.evidence.before, 'before.png'], [result.evidence.after, 'after.png'], [result.evidence.beforeJson, 'api-calls-before.json'], [result.evidence.afterJson, 'api-calls-after.json'], [result.evidence.beforeText, 'test-before.txt'], [result.evidence.afterText, 'test-after.txt']]) {
     if (!file) continue;
     try {
       attachments.push(await jira.attach(key, file, name));
