@@ -13,6 +13,16 @@ function githubSlug(remoteUrl) {
 
 const mark = (c) => (c.skipped ? 'not needed' : c.ok ? 'passed' : 'FAILED');
 
+/** A reviewer must see at once that the fix changed the expected behaviour of an earlier ticket's test. */
+function supersededNote(result, format) {
+  const t = result.fix.updatedTests ?? [];
+  if (!t.length) return '';
+  const list = t.map((x) => (format === 'md' ? `- \`${x.file}\` (${x.key}${x.why ? `: ${x.why}` : ''})` : `* {{${x.file}}} (${x.key}${x.why ? `: ${x.why}` : ''})`)).join('\n');
+  return format === 'md'
+    ? `\n> **⚠ This change replaces earlier behaviour.** The tests of these tickets asserted the old behaviour and were updated to the new one:\n\n${list}\n\nCheck that replacing it is wanted.\n`
+    : `\nh3. Replaces earlier behaviour\nThe tests of these tickets asserted the old behaviour and were updated to the new one:\n${list}\n`;
+}
+
 function prBody({ key, jiraUrl, analysis, result }) {
   const c = result.checks;
   return `## ${key}
@@ -28,7 +38,7 @@ ${analysis.likelyCause}
 ${result.fix.description}
 
 Files: ${result.fix.files.map((f) => `\`${f}\``).join(', ')}
-
+${supersededNote(result, 'md')}
 ### Verification (run independently by the agent's watcher, not reported by the AI)
 | Check | Result |
 |---|---|
@@ -64,7 +74,7 @@ A browser test written from the ticket's steps fails on the current code:
 h3. Fix
 ${result.fix.description}
 Files: ${result.fix.files.map((f) => `{{${f}}}`).join(', ')}
-
+${supersededNote(result, 'jira')}
 h3. Verification (independent checks)
 ||Check||Result||
 |Regression test before the fix|failed, as expected|

@@ -27,6 +27,7 @@ When you are done, reply with ONLY one \`\`\`json fenced block, nothing else, ma
   "files": ["path:line", "..."],
   "relatedTickets": [{ "key": "…", "why": "one line" }],
   "duplicateOf": null or { "key": "an open ticket reporting the same problem", "why": "one line" },
+  "supersedes": [{ "key": "an earlier ticket whose implemented behaviour this ticket deliberately replaces (a change request, e.g. a new colour instead of the one DEM-32 introduced)", "why": "one line" }] — empty [] for a bug or when nothing earlier is replaced,
   "proposedFix": "concrete change: file, what to change, how to verify",
   "owner": { "name": "best person", "why": "evidence: tickets / commits" },
   "alternatives": [{ "name": "…", "why": "…" }],

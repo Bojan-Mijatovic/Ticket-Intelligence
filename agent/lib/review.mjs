@@ -88,6 +88,7 @@ ${ticket ? `\nTicket description:\n${ticket}\n` : ''}
 ${analysis ? `Analysis the fix agent worked from (JSON):\n${JSON.stringify({ summary: analysis.summary, likelyCause: analysis.likelyCause, files: analysis.files, proposedFix: analysis.proposedFix }, null, 2)}\n` : 'No analysis is available.\n'}
 ${fix ? `What the fix agent says it changed: ${fix.fix?.description ?? ''}
 Regression test: ${fix.test?.file ?? 'none'} (it failed on the code before the fix: ${fix.test?.failure ?? 'n/a'})
+${fix.fix?.updatedTests?.length ? `IMPORTANT: the fix also UPDATED the tests of earlier tickets, because the analysis says this ticket deliberately replaces their behaviour: ${fix.fix.updatedTests.map((t) => `${t.file} (${t.key})`).join(', ')}. Check that the ticket really asks to replace that behaviour, and that only the replaced expectation changed in those tests.\n` : ''}
 Independent checks run by the watcher after the fix: browser tests ${checks?.e2e?.passed ?? '?'} passed / ${checks?.e2e?.failed ?? '?'} failed, frontend build ${checks?.build?.skipped ? 'not needed' : checks?.build?.ok ? 'passed' : 'failed'}, backend tests ${checks?.backend?.skipped ? 'not needed' : checks?.backend?.ok ? 'passed' : 'failed'}.\n` : ''}
 The diff of the pull request${truncated ? ' (truncated)' : ''}:
 \`\`\`diff

@@ -45,14 +45,32 @@ Reply with ONLY one \`\`\`json block:
 { "testFile": "e2e/tests/${issue.key}.spec.ts", "reproduced": true, "failure": "one line: what the failing assertion shows", "notes": "anything the reviewer should know" }`;
 }
 
-function fixPrompt(issue, analysis, testEnv, javaHint) {
+/**
+ * Tests the fix may update: the tests of earlier tickets whose behaviour this ticket deliberately replaces
+ * (analysis.supersedes), when they exist. Everything else under e2e/ stays read-only for the fix.
+ */
+export function supersededTests(analysis, issueKey, exists) {
+  return [...new Set((analysis.supersedes ?? []).map((s) => String(s?.key ?? '').toUpperCase()))]
+    .filter((k) => /^[A-Z][A-Z0-9_]+-\d+$/.test(k) && k !== issueKey)
+    .map((k) => ({ key: k, file: `e2e/tests/${k}.spec.ts`, why: (analysis.supersedes ?? []).find((s) => String(s?.key).toUpperCase() === k)?.why ?? '' }))
+    .filter((t) => exists(t.file));
+}
+
+function fixPrompt(issue, analysis, testEnv, javaHint, updatable = []) {
+  const e2eRule = updatable.length
+    ? `- This ticket deliberately replaces behaviour of earlier tickets, and their tests assert the OLD behaviour:
+${updatable.map((t) => `    ${t.file} (${t.key}${t.why ? `: ${t.why}` : ''})`).join('\n')}
+  Update ONLY those test files so they assert the NEW behaviour this ticket asks for (keep what is still valid; do not delete them, do not weaken unrelated assertions).
+  Do NOT modify anything else under e2e/, in particular not e2e/tests/${issue.key}.spec.ts.`
+    : '- Do NOT modify anything under e2e/.';
   return `You are running unattended: nobody will answer questions. The current directory is a git worktree of the application on branch ${issue.key}.
 
 ${ticketContext(issue, analysis)}
 
 TASK (phase 2 of 2, fix): the committed test e2e/tests/${issue.key}.spec.ts reproduces the bug and fails. Implement the smallest correct fix in the application code.
 - Follow the proposed fix unless you find a smaller correct one. Keep existing behaviour working (for example the footer PULISCI button).
-- Do NOT modify anything under e2e/. Match the style of the surrounding code; a short comment referencing ${issue.key} only where it helps a reader.
+${e2eRule}
+- Match the style of the surrounding code; a short comment referencing ${issue.key} only where it helps a reader.
 - Verify from the e2e folder: ${testEnv} npx playwright test   (all tests must pass; a compile error also makes them fail).
   Do not run ng build: the watcher runs the build and all checks again independently.
   Only if you changed backend code: from the backend folder: mvn -q test ${javaHint}
@@ -70,7 +88,7 @@ const fail = (stage, message, extra = {}) => Object.assign(new Error(message), {
 /**
  * @param {object} [p.prepared]  a workspace created in advance (createWorkspace), possibly with a warm dev server
  */
-export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg, events, toolsDir, prepared = null }) {
+export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg, events, toolsDir, prepared = null, allowSupersededTests = false }) {
   const key = issue.key;
   const evidenceDir = join(stateDir, 'work', key, 'evidence');
   mkdirSync(evidenceDir, { recursive: true });
@@ -106,12 +124,19 @@ export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg,
     // ---------------------------------------------------------------- phase 2: fix
     events.emit('fixing', { key, text: 'agent implements the fix' });
     const javaHint = toolsDir ? `(if mvn is not on PATH, use the JDK/Maven in ${toolsDir})` : '';
-    const fix = await runClaude({ ...common, prompt: fixPrompt(issue, analysis, testEnv, javaHint), transcriptFile: join(stateDir, 'work', key, 'transcript-fix.jsonl'), required: ['summary', 'description'], onProgress: progress });
+    const updatable = allowSupersededTests ? supersededTests(analysis, key, (f) => existsSync(join(ws.path, f))) : [];
+    if (updatable.length) events.emit('progress', { key, step: `may update the tests of replaced behaviour: ${updatable.map((t) => t.file).join(', ')}` });
+    const fix = await runClaude({ ...common, prompt: fixPrompt(issue, analysis, testEnv, javaHint, updatable), transcriptFile: join(stateDir, 'work', key, 'transcript-fix.jsonl'), required: ['summary', 'description'], onProgress: progress });
 
     const changed2 = ws.changedFiles('HEAD').filter((f) => !f.startsWith('e2e/evidence/') && !f.startsWith('e2e/test-results/'));
     if (!changed2.length) throw fail('fix', 'the agent did not change any file');
-    const touchedE2E = changed2.filter((f) => f.startsWith('e2e/'));
-    if (touchedE2E.length) throw fail('fix', `the fix must not modify tests: ${touchedE2E.join(', ')}`);
+    const allowed = new Set(updatable.map((t) => t.file));
+    const touchedE2E = changed2.filter((f) => f.startsWith('e2e/') && !allowed.has(f));
+    if (touchedE2E.length) throw fail('fix', `the fix must not modify tests${allowed.size ? ` other than ${[...allowed].join(', ')}` : ''}: ${touchedE2E.join(', ')}`);
+    const updatedTests = updatable.filter((t) => changed2.includes(t.file));
+    if (updatedTests.length) events.emit('progress', { key, step: `updated the test of replaced behaviour: ${updatedTests.map((t) => t.file).join(', ')}` });
+    // Only application code counts as "the fix"; an updated superseded test alone is not a fix.
+    if (!changed2.some((f) => !f.startsWith('e2e/'))) throw fail('fix', 'the agent changed only tests, not the application code');
 
     events.emit('verifying', { key, text: `independent checks on ${changed2.length} changed file(s)` });
     const after = await runE2E(ws, [], { evidenceDir });
@@ -136,7 +161,7 @@ export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg,
       branch: ws.branch,
       title,
       test: { file: specRel, commit: testCommit, failure: repro.result.failure, firstError: before.firstError, notes: repro.result.notes },
-      fix: { commit: fixCommit, summary: fix.result.summary, description: fix.result.description, files: changed2 },
+      fix: { commit: fixCommit, summary: fix.result.summary, description: fix.result.description, files: changed2, updatedTests },
       checks,
       evidence: { before: evBefore.png, after: evAfter.png, beforeJson: evBefore.json, afterJson: evAfter.json },
       meta: { durationMs: repro.meta.durationMs + fix.meta.durationMs, costUsd: repro.meta.costUsd + fix.meta.costUsd },

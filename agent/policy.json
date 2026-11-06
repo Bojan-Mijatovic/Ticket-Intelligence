@@ -27,8 +27,10 @@
     "inferIgnoreFiles": [
       "e2e/"
     ],
-    "skipDuplicates": true
+    "skipDuplicates": true,
+    "allowSupersededTestUpdates": true
   },
+  "_supersededComment": "allowSupersededTestUpdates = a change request that deliberately replaces an earlier ticket's behaviour (analysis.supersedes, e.g. DEM-33 red instead of DEM-32 blue) may update ONLY the e2e tests of those tickets; the watcher checks it, and the PR, the Jira comment and the AI review call it out. false = the fix never touches tests.",
   "_proposeFixWhenComment": "A title without [FE] still qualifies when every file the analysis names is under frontend/ (inferTagFromFiles).",
   "_fixComment": "proposeFix = reproduce with a browser test, fix on branch <KEY>, verify independently, open a DRAFT pull request. mergeFix is always off: a human merges.",
   "_reviewComment": "reviewFix = after a draft PR is opened, a second read-only agent reviews it and posts a COMMENT review with a risk level (it never approves or merges).",

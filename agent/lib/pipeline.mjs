@@ -106,7 +106,8 @@ async function maybeFix({ issue, result, cfg, policy, jira, events, repoDir, sta
   try {
     const full = await jira.getIssue(key);
     const toolsDir = cfg.toolsDir ? resolve(AGENT_DIR, cfg.toolsDir) : null;
-    const fix = await reproduceAndFix({ issue: full, analysis: result, repoDir, stateDir, cfg, events, toolsDir, prepared: ws });
+    const allowSupersededTests = policy.proposeFixWhen?.allowSupersededTestUpdates === true;
+    const fix = await reproduceAndFix({ issue: full, analysis: result, repoDir, stateDir, cfg, events, toolsDir, prepared: ws, allowSupersededTests });
     const pub = await publishFix({ key, analysis: result, result: fix, jira, events, stateDir });
     // What the reviewer (review.mjs) and agent/review-one.mjs need later, after the worktree is gone.
     const { ws: _ws, ...saved } = fix;

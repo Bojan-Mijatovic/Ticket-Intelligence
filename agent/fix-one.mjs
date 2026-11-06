@@ -33,7 +33,7 @@ const blocker = fixBlocker({ issue, result: analysis, policy });
 if (blocker) console.warn(`note: the watcher would skip this ticket (${blocker}); running anyway because it was asked for explicitly`);
 
 const started = Date.now();
-const fix = await reproduceAndFix({ issue, analysis, repoDir: resolve(HERE, cfg.repo), stateDir, cfg, events, toolsDir: resolve(HERE, cfg.toolsDir) });
+const fix = await reproduceAndFix({ issue, analysis, repoDir: resolve(HERE, cfg.repo), stateDir, cfg, events, toolsDir: resolve(HERE, cfg.toolsDir), allowSupersededTests: policy.proposeFixWhen?.allowSupersededTestUpdates === true });
 console.log(`\nbranch ${fix.branch}: test ${fix.test.commit}, fix ${fix.fix.commit} · ${fix.fix.files.join(', ')}`);
 console.log(`checks: ${JSON.stringify(fix.checks)}`);
 console.log(`evidence: ${JSON.stringify(fix.evidence)}`);
