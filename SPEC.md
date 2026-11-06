@@ -115,7 +115,7 @@ Ticket Intelligence gives every Jira ticket a fast, evidence-based first analysi
 | FR-61 | Mission Control: live per-ticket phase timeline; Impact metrics (times, hours saved vs. configured baseline, cost per ticket); Run on ticket and Pause | Planned |
 | FR-62 | Night shift: backlog processing in a time window with ticket and cost limits; morning digest to Teams, dashboard and `state/digests/` | Planned |
 | FR-63 | AI reviewer: read-only second run on every agent PR (separate queue item, no shell, own checkout of `origin/main`); posts a COMMENT review with inline comments on diff lines and a risk level used by FR-60; never blocks the PR (`agent/lib/review.mjs`, `agent/review-one.mjs`) | Implemented |
-| FR-64 | Hotspot map: tickets, recurrences and churn per component over time; top hotspots with a cited recommendation | Planned |
+| FR-64 | Hotspot map: bugs per component and month (dates and components from git commits, type and status from Jira, open bugs from saved analyses), files fixed more than once, recurrences, churn; top 3 hotspots with an AI recommendation that must cite tickets or commits (`agent/lib/insights.mjs`, Insights tab, `agent/insights.mjs`) | Implemented |
 | FR-65 | Ask the knowledge base: read-only question answering over `docs/knowledge`, agent results and Jira; every claim cited; "not found" instead of guessing | Planned |
 | FR-66 | Release notes and sprint report in a technical and a business version, on a branch with a draft PR | Planned |
 | FR-67 | Reply to the reporter when the ticket's PR is merged (`replyOnMerge: draft` by default); one reply per merge | Planned |

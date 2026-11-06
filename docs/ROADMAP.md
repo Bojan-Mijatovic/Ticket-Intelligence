@@ -17,7 +17,7 @@ Two rules from the POC still apply:
 | 2 | Mission Control dashboard | Team lead, management | Live phase timeline + Impact tab (time, hours saved, cost) + "Run on ticket" | 1 d | A |
 | 3 | Night shift + morning digest | Management | 08:00 Teams digest: what the agent did overnight | 1 d | C |
 | 4 | AI reviewer | Team lead, developers | Second agent reviews the PR, posts comments, sets a risk level | 0.5–1 d · **done** | B |
-| 5 | Hotspot map | Management, architects | Which components produce the most bugs, and the trend | 1 d | D |
+| 5 | Hotspot map | Management, architects | Which components produce the most bugs, and the trend | 1 d + 1 d data · **done** | D |
 | 6 | Ask the knowledge base | PM, support, developers | Question in plain language → answer with ticket/PR links | 0.5–1 d | D |
 | 7 | Release notes and sprint report | PM, customer, management | Two versions: technical and business | 0.5 d | C |
 | 8 | Reply to the customer after merge | Support, customer | "Fixed in …" reply drafted (or posted) when the PR is merged | 0.5 d | B |
@@ -142,6 +142,13 @@ Phase A gives the biggest demo effect for the least work. Phase B closes the loo
 **Acceptance.** The review is posted on every agent PR. Invalid JSON skips the review with an event and never blocks the PR. On a planted bad fix (e.g. a change outside the component) it reports at least one finding.
 
 ## 5. Hotspot map
+
+**Status: Implemented** (2026-11-06; see [agent/README.md](../agent/README.md#insights-hotspot-map)). Changes from the plan below:
+- **Dates come from git, not Jira.** Seeded tickets all have the same Jira `created` date (Jira cannot backdate it), so a ticket's month is the date of its first commit (for a bug: the fix). Open bugs without commits use the date and files of the agent's analysis.
+- **Components come from paths**, configured in `agent.config.json` → `insights.components`. Jira has no components in the demo project, and the analysis' `component` is free text.
+- **Analyses are kept** in `state/results/` (the demo reset removes `state/work/` and only the results of the tickets it deletes).
+- **More history instead of `seed-jira.mjs --history`:** the MediAgenda history now has 12 fixed bugs (9 new bug tickets with fix commits, plus a fix commit for DEM-3), built with `B()` in `make-mediagenda.mjs` (a feature commit gets the file with the bug, the bug ticket's commit fixes it). Every commit is compiled and tested.
+- Not built: weekly regeneration (the recommendation is written on demand and marked stale when the facts change).
 
 **Goal.** Show management where bugs come from, and therefore where a refactor pays off.
 

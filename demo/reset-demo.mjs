@@ -78,6 +78,11 @@ if (APPLY && existsSync(RUNS)) {
   for (const key of [...tickets, ...also]) delete runs[key];
   writeFileSync(RUNS, `${JSON.stringify(runs, null, 2)}\n`);
 }
+// Saved analyses (agent/state/results, used by the hotspot map and Ask) of the deleted tickets; the others are kept.
+for (const key of [...tickets, ...also]) {
+  const file = join(STATE, 'results', `${key}.json`);
+  if (existsSync(file)) step(`remove the saved analysis of ${key}`, () => rmSync(file, { force: true }));
+}
 
 // Tickets made by hand in Jira are never deleted unless named. List the likely ones: processed by the agent,
 // numbered after the seeded history (demo/jira-keys.json), and not created by new-ticket.mjs.

@@ -18,12 +18,13 @@ public class ReportController {
         this.jdbc = jdbc;
     }
 
-    /** Bookings per month and structure. */
+    /** Bookings per month and structure; cancelled bookings are not counted (CUP_DEMO-2627). */
     @GetMapping("/monthly-bookings")
     public List<MonthlyBookings> monthlyBookings() {
         return jdbc.query("""
                 SELECT FORMATDATETIME(b.appointment_at, 'yyyy-MM') AS month, t.structure_id, COUNT(*) AS bookings
                 FROM bookings b JOIN time_slots t ON t.id = b.time_slot_id
+                WHERE b.status <> 'ANNULLATA'
                 GROUP BY month, t.structure_id
                 ORDER BY month, t.structure_id
                 """,

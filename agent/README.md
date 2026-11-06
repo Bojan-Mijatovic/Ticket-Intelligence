@@ -42,6 +42,7 @@ Requirements: the Claude Code CLI (`npm install -g @anthropic-ai/claude-code`, l
 | `node agent/process-one.mjs DEM-7` | full pipeline for one ticket | per policy |
 | `node agent/process-one.mjs DEM-7 --reuse-result` | act on the last saved analysis, without analyzing again | per policy |
 | `node agent/review-one.mjs DEM-7` / `--pr 14` | AI review of a pull request (posted on GitHub; `--dry-run` prints only) | no |
+| `node agent/insights.mjs` | hotspot map in the terminal (`--json`, `--recommend`) | no |
 | `node --test agent/test` | unit tests of the agent's plain-code parts | no |
 
 ## Which tickets are picked
@@ -146,6 +147,20 @@ node agent/review-one.mjs --pr 14 --dry-run  # print the review, do not post it
 ```
 
 A review queued in the watcher is lost if the watcher restarts before it runs; run it with `review-one.mjs`.
+
+## Insights: hotspot map
+
+The dashboard's **Insights** tab (and `node agent/insights.mjs` in the terminal) shows where the bugs come from: bugs per component and month, the top 3 hotspots, files fixed by more than one bug, and new bugs that the agent found related to an earlier bug of the same component. The numbers are plain code over:
+
+- **git** (`origin/main`): a ticket's month is the date of its first commit with the key in the subject (for a bug: the fix), and its components are the folders those commits changed. Jira's own `created` is not used for this: tickets imported or seeded later all have the same date.
+- **Jira**: type (Bug or not) and status (open bugs) of every ticket in the project.
+- **the agent's saved analyses** (`state/results/<KEY>.json`, kept across demo resets): open bugs without commits are placed by the files the analysis names, in the month of the analysis.
+
+Components are configured in `agent.config.json` → `insights.components` (first matching path prefix wins; `src/test/java` counts with its main code). Without that list, Angular feature folders and Java packages are used.
+
+**✦ Write recommendations (AI)** (or `node agent/insights.mjs --recommend`) runs one headless call, without any tools, on the facts of the top hotspots. A recommendation that does not cite a known ticket or commit is dropped. The result is cached in `state/insights/recommendations.json` and marked "data changed since" when the facts change.
+
+The map shows components, not people: authors appear only as context.
 
 ## Done → documentation
 

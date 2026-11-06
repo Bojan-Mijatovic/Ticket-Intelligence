@@ -122,7 +122,21 @@
   .draft .dk { font-size: 11px; font-weight: 700; color: var(--warn); text-transform: uppercase; letter-spacing: 0.04em; }
   .policy { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px; border-top: 1px solid var(--border); }
 
-  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .tabs { display: inline-flex; gap: 4px; padding: 3px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+  .tabs button { border: 0; background: transparent; padding: 5px 12px; color: var(--muted); }
+  .tabs button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+  .heat { display: grid; gap: 3px; overflow-x: auto; padding: 14px 16px; }
+  .heat .hc { min-width: 44px; height: 38px; border-radius: 6px; display: grid; place-items: center; font-size: 12px; font-variant-numeric: tabular-nums; background: var(--surface-2); color: var(--muted); }
+  .heat .hc.has { color: var(--text); font-weight: 700; }
+  .heat .hc .t { font-size: 10px; font-weight: 500; color: inherit; opacity: 0.7; display: block; line-height: 1; }
+  .heat .hn { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; padding-right: 10px; white-space: nowrap; }
+  .heat .hm { font-size: 11px; color: var(--muted); text-align: center; }
+  .hotspots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .hotspot { padding: 14px 16px; display: grid; gap: 8px; align-content: start; }
+  .hotspot .rank { font-size: 11px; font-weight: 700; color: var(--bad); text-transform: uppercase; letter-spacing: 0.05em; }
+  .hotspot .hname { font-size: 16px; font-weight: 700; }
+  .rec { border-left: 3px solid var(--accent); padding: 6px 10px; background: var(--accent-soft); border-radius: 0 6px 6px 0; font-size: 13px; }
+  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hotspots { grid-template-columns: 1fr; } }
   @media (max-width: 600px) { header, main { padding-left: 16px; padding-right: 16px; } .result .row { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -131,6 +145,7 @@
   <div class="brand"><span class="logo">✦</span> Ticket Intelligence <span class="meta" style="font-weight:500">agent</span></div>
   <span class="pill" id="state"><span class="dot"></span><span id="state-text">connecting…</span></span>
   <span class="meta" id="project"></span>
+  <nav class="tabs" id="tabs"><button data-tab="tickets" class="active">Tickets</button><button data-tab="insights">Insights</button></nav>
   <span class="spacer"></span>
   <span class="meta" id="poll"></span>
   <span class="pill" id="app-branch" title="Branch the MediAgenda app on http://localhost:4200 shows"></span>
@@ -141,6 +156,17 @@
 </header>
 
 <main>
+  <section id="tab-insights" hidden>
+    <div class="kpis" id="ins-kpis"></div>
+    <h2>Bugs per component and month</h2>
+    <div class="panel" style="margin-bottom:20px"><div class="heat" id="ins-heat"><div class="empty">Loading…</div></div>
+      <div class="hint" style="padding:0 16px 12px" id="ins-note"></div></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><h2 style="margin:0">Top hotspots</h2><span class="spacer"></span>
+      <span class="meta" id="ins-rec-state"></span><button class="small" id="ins-recommend" title="One headless run writes a recommendation per hotspot, citing tickets and commits">✦ Write recommendations (AI)</button>
+      <button class="small" id="ins-refresh">Refresh</button></div>
+    <div class="hotspots" id="ins-hotspots"></div>
+  </section>
+  <div id="tab-tickets">
   <section class="kpis">
     <div class="kpi"><div class="label">Tickets analyzed</div><div class="value" id="k-done">0</div><div class="sub">by the agent, no human start</div></div>
     <div class="kpi"><div class="label">Avg. time to analysis</div><div class="value" id="k-time">–</div><div class="sub">from pickup to Jira comment</div></div>
@@ -168,6 +194,7 @@
         <div class="policy" id="policy"></div>
       </div>
     </aside>
+  </div>
   </div>
 </main>
 
@@ -441,8 +468,94 @@ $('#run-form').addEventListener('submit', async (e) => {
   await runTicket(key);
   input.value = '';
 });
-setInterval(() => { renderStatus(); if (status?.processing) render(); }, 1000);
+// ---------------------------------------------------------------- tabs
+let tab = 'tickets';
+function showTab(name) {
+  tab = name;
+  for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === name);
+  for (const s of ['tickets', 'insights']) $(`#tab-${s}`).hidden = s !== name;
+  if (name === 'insights') loadInsights();
+  try { localStorage.setItem('ti-tab', name); } catch { /* storage blocked */ }
+}
+$('#tabs').addEventListener('click', (e) => { if (e.target.dataset.tab) showTab(e.target.dataset.tab); });
+
+// ---------------------------------------------------------------- insights (FR-64)
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const monthLabel = (m) => `${MONTHS[Number(m.slice(5, 7)) - 1]} ${m.slice(2, 4)}`;
+const jiraLink = (key) => h('a', { href: `${status?.jiraUrl ?? ''}/browse/${key}`, target: '_blank' }, key);
+
+async function loadInsights(refresh = false) {
+  $('#ins-heat').replaceChildren(h('div', { class: 'empty' }, 'Reading git history, Jira and the saved analyses…'));
+  try {
+    const res = await fetch(`/api/insights${refresh ? '?refresh=1' : ''}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+    renderInsights(data);
+  } catch (e) { $('#ins-heat').replaceChildren(h('pre', { class: 'err' }, `Insights failed: ${e.message}`)); }
+}
+
+function renderInsights(d) {
+  const comps = d.components.filter((c) => c.tickets > 0);
+  const top = d.components.find((c) => c.name === d.hotspots[0]);
+  const kpi = (label, value, sub) => h('div', { class: 'kpi' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), h('div', { class: 'sub' }, sub));
+  $('#ins-kpis').replaceChildren(
+    kpi('Bugs', d.totals.bugs, `${d.totals.openBugs} still open`),
+    kpi('Top hotspot', top ? top.name : '–', top ? `${top.bugs} bugs · ${top.openBugs} open` : 'no bugs yet'),
+    kpi('Same file fixed twice', d.components.reduce((n, c) => n + c.repeatFiles.length, 0), 'files changed by 2+ bug fixes'),
+    kpi('Recurring', d.recurring.length, 'new bugs related to an earlier one'),
+    kpi('Commits', d.totals.commits, `${d.totals.tickets} tickets in Jira`));
+
+  const max = Math.max(1, ...comps.flatMap((c) => d.months.map((m) => d.cells[c.name]?.[m]?.bugs ?? 0)));
+  const grid = $('#ins-heat');
+  grid.style.gridTemplateColumns = `minmax(160px, max-content) repeat(${d.months.length}, minmax(44px, 1fr)) 64px`;
+  const cells = [h('span'), ...d.months.map((m) => h('span', { class: 'hm' }, monthLabel(m))), h('span', { class: 'hm' }, 'bugs')];
+  for (const c of comps) {
+    cells.push(h('span', { class: 'hn', title: c.authors.map((a) => `${a.name}: ${a.commits} commits`).join('\n') }, c.name));
+    for (const m of d.months) {
+      const cell = d.cells[c.name]?.[m];
+      const bugs = cell?.bugs ?? 0;
+      const pct = Math.round(15 + (bugs / max) * 70);
+      cells.push(h('span', {
+        class: `hc ${cell ? 'has' : ''}`,
+        style: bugs ? `background: color-mix(in srgb, var(--bad) ${pct}%, var(--surface))${pct > 50 ? '; color: #fff' : ''}` : '',
+        title: cell ? `${c.name} · ${monthLabel(m)}: ${bugs} bug(s)${cell.keys.length ? ` (${cell.keys.join(', ')})` : ''}, ${cell.tickets} ticket(s)` : '',
+      }, bugs ? String(bugs) : cell ? '·' : '', cell && cell.tickets > bugs ? h('span', { class: 't' }, `${cell.tickets} t`) : null));
+    }
+    cells.push(h('span', { class: 'hc has' }, String(c.bugs)));
+  }
+  grid.replaceChildren(...(comps.length ? cells : [h('div', { class: 'empty' }, 'No tickets with commits or analyses yet.')]));
+  $('#ins-note').textContent = `Month = first commit of the ticket (for a bug: its fix); open bugs: the agent's analysis. Components only: authors are shown as context, not as a score. ${d.totals.unplaced.length ? `Not placed (no commit, no analysis): ${d.totals.unplaced.length} ticket(s).` : ''}`;
+
+  const rec = d.recommendations;
+  $('#ins-rec-state').textContent = rec ? `written ${ago(rec.at)}${rec.stale ? ' · data changed since' : ''}` : '';
+  $('#ins-hotspots').replaceChildren(...(d.hotspots.length ? d.hotspots.map((name, i) => {
+    const c = d.components.find((x) => x.name === name);
+    const bugs = d.tickets.filter((t) => t.components.includes(name) && /bug/i.test(t.type ?? ''));
+    const r = rec?.recommendations?.find((x) => x.component === name);
+    return h('div', { class: 'panel hotspot' },
+      h('div', { class: 'rank' }, `#${i + 1} hotspot`),
+      h('div', { class: 'hname' }, name),
+      h('div', { class: 'stages' }, h('span', { class: 'chip failed' }, `${c.bugs} bugs`), c.openBugs ? h('span', { class: 'chip analyzing' }, `${c.openBugs} open`) : null,
+        h('span', { class: 'chip' }, `${c.churnLines} lines changed in ${d.churnDays} d`)),
+      c.repeatFiles.length ? h('div', {}, h('div', { class: 't-sub' }, 'Fixed more than once:'), c.repeatFiles.slice(0, 3).map((f) => h('div', {}, h('code', {}, f.path.replace(/^.*\//, '')), ' ', f.keys.flatMap((k) => [jiraLink(k), ' '])))) : null,
+      h('div', {}, h('div', { class: 't-sub' }, 'Bugs:'), h('div', { style: 'display:flex;flex-wrap:wrap;gap:6px' }, bugs.slice(-8).map((t) => h('span', { title: t.summary }, jiraLink(t.key))))),
+      r ? h('div', { class: 'rec' }, '✦ ', r.text) : null,
+      h('div', { class: 't-sub' }, `Main authors (context): ${c.authors.map((a) => a.name).join(', ') || '–'}`));
+  }) : [h('div', { class: 'empty' }, 'No bugs found yet.')]));
+}
+
+$('#ins-refresh').addEventListener('click', () => loadInsights(true));
+$('#ins-recommend').addEventListener('click', async (e) => {
+  const b = e.target;
+  b.disabled = true; b.textContent = 'Writing… (about a minute)';
+  try { await post('/api/insights/recommend', {}); await loadInsights(); }
+  catch (err) { alert(`Recommendations failed: ${err.message}`); }
+  finally { b.disabled = false; b.textContent = '✦ Write recommendations (AI)'; }
+});
+
+setInterval(() => { renderStatus(); if (status?.processing && tab === 'tickets') render(); }, 1000);
 connect();
+try { if (localStorage.getItem('ti-tab') === 'insights') showTab('insights'); } catch { /* storage blocked */ }
 </script>
 </body>
 </html>

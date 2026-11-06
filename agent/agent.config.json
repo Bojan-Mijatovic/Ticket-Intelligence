@@ -22,5 +22,18 @@
     "model": null
   },
   "fixTimeoutMinutes": 15,
-  "toolsDir": "../tools"
+  "toolsDir": "../tools",
+  "insights": {
+    "months": 10,
+    "churnDays": 90,
+    "_components": "Hotspot map: a file belongs to the first component with a matching path prefix (tests count with their main code: src/test/java is read as src/main/java). Files outside every component are not counted.",
+    "components": [
+      { "name": "Prenotazioni", "paths": ["frontend/src/app/features/booking/", "backend/src/main/java/com/mediagenda/booking/", "backend/src/main/java/com/mediagenda/timeslot/Availab"] },
+      { "name": "Fasce orarie", "paths": ["frontend/src/app/features/timeslots/", "backend/src/main/java/com/mediagenda/timeslot/TimeSlotAdmin", "backend/src/main/java/com/mediagenda/timeslot/TimeSlotCreate"] },
+      { "name": "Agenda search", "paths": ["frontend/src/app/features/agenda/", "frontend/src/app/shared/components/", "frontend/src/app/shared/services/structure", "backend/src/main/java/com/mediagenda/structure/", "backend/src/main/java/com/mediagenda/resource/", "backend/src/main/java/com/mediagenda/timeslot/"] },
+      { "name": "Pazienti", "paths": ["frontend/src/app/features/patients/", "backend/src/main/java/com/mediagenda/patient/"] },
+      { "name": "Report", "paths": ["frontend/src/app/features/reports/", "backend/src/main/java/com/mediagenda/report/"] },
+      { "name": "Shared (forms, dates, layout)", "paths": ["frontend/src/app/shared/", "frontend/src/app/core/", "frontend/src/styles.scss", "backend/src/main/java/com/mediagenda/common/"] }
+    ]
+  }
 }

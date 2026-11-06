@@ -176,5 +176,8 @@ export async function runAnalysis({ key, repoDir, stateDir, cfg, onProgress = ()
     onProgress,
   });
   writeFileSync(join(workDir, 'result.json'), JSON.stringify(out.result, null, 2));
+  // Kept across demo resets (work folders are removed): the hotspot map and Ask use past analyses.
+  mkdirSync(join(stateDir, 'results'), { recursive: true });
+  writeFileSync(join(stateDir, 'results', `${key}.json`), JSON.stringify({ at: new Date().toISOString(), result: out.result, meta: out.meta }, null, 2));
   return out;
 }

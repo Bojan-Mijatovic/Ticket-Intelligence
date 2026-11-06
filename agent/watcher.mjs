@@ -19,6 +19,7 @@ import { documentResolved } from './lib/document.mjs';
 import { processTicket } from './lib/pipeline.mjs';
 import { currentBranch, previewBranch } from './lib/preview.mjs';
 import { reviewPullRequest } from './lib/review.mjs';
+import { buildInsights, readRecommendations, writeRecommendations } from './lib/insights.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const cfg = JSON.parse(readFileSync(join(HERE, 'agent.config.json'), 'utf8'));
@@ -184,6 +185,17 @@ async function drain() {
   drain();
 }
 
+// ---------------------------------------------------------------- insights
+
+let insightsCache = null;
+let recommending = false;
+async function insightsCached(refresh = false) {
+  if (!refresh && insightsCache && Date.now() - insightsCache.at < 120_000) return insightsCache.data;
+  const data = await buildInsights({ repoDir, stateDir, cfg, jira });
+  insightsCache = { at: Date.now(), data };
+  return data;
+}
+
 // ---------------------------------------------------------------- dashboard
 
 const page = () => readFileSync(join(HERE, 'dashboard', 'index.html'));
@@ -252,6 +264,29 @@ const server = createServer(async (req, res) => {
       return json(res, 202, { ok: true });
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
+    }
+  }
+  // Hotspot map (FR-64): computed on request (git + Jira + saved analyses), cached for two minutes.
+  if (req.method === 'GET' && path === '/api/insights') {
+    try {
+      const data = await insightsCached(req.url.includes('refresh=1'));
+      return json(res, 200, { ...data, recommendations: readRecommendations(stateDir, data) });
+    } catch (e) {
+      return json(res, 500, { ok: false, error: e.message });
+    }
+  }
+  if (req.method === 'POST' && path === '/api/insights/recommend') {
+    if (recommending) return json(res, 409, { ok: false, error: 'recommendations are being written already' });
+    recommending = true;
+    try {
+      const data = await insightsCached(true);
+      const rec = await writeRecommendations({ insights: data, stateDir, cfg });
+      events.emit('insights', { text: `hotspot recommendations written for ${rec.recommendations.length} component(s)`, meta: rec.meta });
+      return json(res, 200, { ok: true, recommendations: { ...rec, stale: false } });
+    } catch (e) {
+      return json(res, 500, { ok: false, error: e.message });
+    } finally {
+      recommending = false;
     }
   }
   if (req.method === 'POST' && path === '/api/preview') {

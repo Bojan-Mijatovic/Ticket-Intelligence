@@ -37,16 +37,31 @@ export function createJira() {
     browseUrl: (key) => `${cfg.baseUrl}/browse/${key}`,
 
     async search(jql, max = 20) {
-      const page = await api('GET', `/rest/api/2/search/jql?jql=${encodeURIComponent(jql)}&fields=summary,status,priority,labels,created,reporter&maxResults=${max}`);
-      return (page.issues ?? []).map((i) => ({
-        key: i.key,
-        summary: i.fields.summary,
-        status: i.fields.status?.name,
-        priority: i.fields.priority?.name ?? null,
-        labels: i.fields.labels ?? [],
-        created: i.fields.created,
-        reporter: i.fields.reporter?.displayName ?? null,
-      }));
+      return (await this.searchAll(jql, max, Math.min(max, 100))).slice(0, max);
+    },
+
+    /** All matching tickets up to `max`, page by page (search/jql pages with nextPageToken). */
+    async searchAll(jql, max = 500, pageSize = 100) {
+      const out = [];
+      let token = null;
+      do {
+        const page = await api('GET', `/rest/api/2/search/jql?jql=${encodeURIComponent(jql)}&fields=summary,status,priority,labels,created,reporter,issuetype,resolutiondate&maxResults=${pageSize}${token ? `&nextPageToken=${encodeURIComponent(token)}` : ''}`);
+        for (const i of page.issues ?? []) {
+          out.push({
+            key: i.key,
+            summary: i.fields.summary,
+            status: i.fields.status?.name,
+            priority: i.fields.priority?.name ?? null,
+            labels: i.fields.labels ?? [],
+            created: i.fields.created,
+            reporter: i.fields.reporter?.displayName ?? null,
+            issueType: i.fields.issuetype?.name ?? null,
+            resolved: i.fields.resolutiondate ?? null,
+          });
+        }
+        token = page.nextPageToken ?? null;
+      } while (token && out.length < max);
+      return out;
     },
 
     async labels(key, { add = [], remove = [] }) {
@@ -57,6 +72,26 @@ export function createJira() {
     async getIssue(key) {
       const i = await api('GET', `/rest/api/2/issue/${encodeURIComponent(key)}?fields=summary,description,labels,priority,status`);
       return { key: i.key, summary: i.fields.summary, description: i.fields.description ?? '', labels: i.fields.labels ?? [], priority: i.fields.priority?.name ?? null, status: i.fields.status?.name };
+    },
+
+    /** One ticket with what a reader needs: type, dates, description, the last comments and the linked tickets. */
+    async getIssueFull(key, { maxComments = 5, maxChars = 1500 } = {}) {
+      const i = await api('GET', `/rest/api/2/issue/${encodeURIComponent(key)}?fields=summary,description,status,issuetype,created,resolutiondate,assignee,reporter,comment,issuelinks`);
+      const f = i.fields;
+      const cut = (s, n) => (String(s ?? '').length > n ? `${String(s).slice(0, n)}…` : String(s ?? ''));
+      return {
+        key: i.key,
+        summary: f.summary,
+        type: f.issuetype?.name ?? null,
+        status: f.status?.name ?? null,
+        created: f.created,
+        resolved: f.resolutiondate ?? null,
+        assignee: f.assignee?.displayName ?? null,
+        reporter: f.reporter?.displayName ?? null,
+        description: cut(f.description, maxChars),
+        comments: (f.comment?.comments ?? []).slice(-maxComments).map((c) => ({ author: c.author?.displayName ?? null, created: c.created, body: cut(c.body, 600) })),
+        links: (f.issuelinks ?? []).map((l) => (l.outwardIssue ?? l.inwardIssue)?.key).filter(Boolean),
+      };
     },
 
     /** Uploads a file as an attachment; returns its id and download URL. */

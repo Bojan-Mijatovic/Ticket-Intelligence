@@ -21,7 +21,9 @@ const args = process.argv.slice(2);
 const PROJECT = args.includes('--project') ? args[args.indexOf('--project') + 1] : 'DEM';
 const KEYS_FILE = join(HERE, 'jira-keys.json');
 // Oldest first, so the Jira keys follow the story; tickets already in jira-keys.json are skipped.
-const SEED_ORDER = ['CUP_DEMO-2398', 'CUP_DEMO-2580', 'CUP_DEMO-2602', 'CUP_DEMO-2511', 'CUP_DEMO-2615', 'CUP_DEMO-2441', 'CUP_DEMO-2470', 'CUP_DEMO-2590', 'CUP_DEMO-2533', 'CUP_DEMO-2612', 'CUP_DEMO-2620'];
+const SEED_ORDER = ['CUP_DEMO-2398', 'CUP_DEMO-2580', 'CUP_DEMO-2602', 'CUP_DEMO-2511', 'CUP_DEMO-2615', 'CUP_DEMO-2441', 'CUP_DEMO-2470', 'CUP_DEMO-2590', 'CUP_DEMO-2533', 'CUP_DEMO-2612', 'CUP_DEMO-2620',
+  // Bugs fixed in the history, so the hotspot map (FR-64) has data: oldest first.
+  'CUP_DEMO-2402', 'CUP_DEMO-2419', 'CUP_DEMO-2455', 'CUP_DEMO-2483', 'CUP_DEMO-2489', 'CUP_DEMO-2603', 'CUP_DEMO-2541', 'CUP_DEMO-2549', 'CUP_DEMO-2627'];
 
 if (cfg.mock || !cfg.baseUrl) {
   console.error('Jira is not configured (JIRA_MOCK=1 or no JIRA_BASE_URL in .env).');
@@ -45,6 +47,7 @@ async function api(method, path, body) {
   return text ? JSON.parse(text) : null;
 }
 
+const OPT_OUT = 'no-ai'; // agent/agent.config.json → labels.skip
 const fixtures = JSON.parse(readFileSync(join(SKILL, 'fixtures', 'mock-jira.json'), 'utf8')).issues;
 const byKey = new Map(fixtures.map((i) => [i.key, i]));
 const keys = existsSync(KEYS_FILE) ? JSON.parse(readFileSync(KEYS_FILE, 'utf8')) : {};
@@ -56,7 +59,9 @@ async function createIssue(issue) {
     summary: mapKeys(issue.summary),
     description: mapKeys(issue.description),
     issuetype: { name: issue.issueType === 'Story' ? 'Story' : issue.issueType === 'Bug' ? 'Bug' : 'Task' },
-    labels: issue.environments ?? [],
+    // A running watcher must not pick a history ticket in the seconds before it is moved to Done: it is created
+    // with the opt-out label, which is removed once the ticket is Done (the watcher never picks Done tickets).
+    labels: [...(issue.environments ?? []), OPT_OUT],
   };
   try {
     return await api('POST', '/rest/api/2/issue', { fields: { ...fields, priority: { name: issue.priority } } });
@@ -94,6 +99,7 @@ for (const oldKey of SEED_ORDER) {
     }
   }
   const status = issue.resolution ? await moveToDone(res.key) : null;
+  if (status) await api('PUT', `/rest/api/2/issue/${res.key}`, { update: { labels: [{ remove: OPT_OUT }] } });
   created.push(`${oldKey} -> ${res.key}${status ? ` (${status})` : ''}  ${issue.summary}`);
 }
 
@@ -103,6 +109,14 @@ const LINKS = [
   ['CUP_DEMO-2533', 'CUP_DEMO-2470'],
   ['CUP_DEMO-2620', 'CUP_DEMO-2470'],
   ['CUP_DEMO-2612', 'CUP_DEMO-2441'],
+  ['CUP_DEMO-2455', 'CUP_DEMO-2441'],
+  ['CUP_DEMO-2580', 'CUP_DEMO-2441'],
+  ['CUP_DEMO-2483', 'CUP_DEMO-2470'],
+  ['CUP_DEMO-2489', 'CUP_DEMO-2470'],
+  ['CUP_DEMO-2603', 'CUP_DEMO-2590'],
+  ['CUP_DEMO-2541', 'CUP_DEMO-2533'],
+  ['CUP_DEMO-2549', 'CUP_DEMO-2533'],
+  ['CUP_DEMO-2627', 'CUP_DEMO-2533'],
 ];
 const createdNow = new Set(created.map((line) => line.split(' ')[0]));
 for (const [a, b] of LINKS.filter(([a, b]) => createdNow.has(a) || createdNow.has(b))) {

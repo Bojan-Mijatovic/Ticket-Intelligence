@@ -34,6 +34,44 @@ const PEOPLE = {
 
 const T = 'template';
 const H = (dir) => ({ history: dir });
+// B(source, [fixed, buggy], …): the file of `source` (T or H(dir)) with a bug put back: each `fixed` text is replaced by
+// `buggy`. A feature commit gets the buggy version; a later commit of the bug ticket sets the file to T (the fix).
+// This gives the history realistic bug-fix commits (for the hotspot map, FR-64) without keeping more file copies.
+const B = (base, ...pairs) => ({ base, pairs });
+const BUG = {
+  // CUP_DEMO-2402: the Risorse table shows the code twice instead of the description
+  descr: ['<td>{{ r.code }}</td><td>{{ r.description }}</td>', '<td>{{ r.code }}</td><td>{{ r.code }}</td>'],
+  // CUP_DEMO-2419: Struttura search by name is case-sensitive
+  structSearch: ['findTop10ByIdContainingIgnoreCaseOrNameContainingIgnoreCaseOrderByIdAsc', 'findTop10ByIdContainingIgnoreCaseOrNameContainingOrderByIdAsc'],
+  // CUP_DEMO-2455: saving a patient without changing the fiscal code fails with 409 (the patient conflicts with itself)
+  patientUpdate: ['                .filter(other -> !other.getId().equals(id))\n', ''],
+  patientUpdateTest: [`
+    @Test
+    void updatesContactsAndKeepsTheId() {
+        Patient p = service.create(request("NRIANB91H54F205U", "Neri"));
+        Patient updated = service.update(p.getId(), new PatientRequest("NRIANB91H54F205U", "Anna", "Neri Bassi",
+                LocalDate.of(1991, 6, 14), "F", "Lodi", "", "anna.neri@example.com"));
+        assertThat(updated.getId()).isEqualTo(p.getId());
+        assertThat(updated.getLastName()).isEqualTo("Neri Bassi");
+        assertThat(updated.getCity()).isEqualTo("Lodi");
+    }
+`, ''],
+  // CUP_DEMO-2580: a new search keeps the page of the previous one
+  page: ['(ngSubmit)="search(0)"', '(ngSubmit)="search(result()?.page ?? 0)"'],
+  // CUP_DEMO-2483: the time just booked is still offered as free
+  bookedTime: ['          this.times.update((list) => list.filter((t) => t !== v.time));\n', ''],
+  // CUP_DEMO-2489: changing the Struttura keeps the Erogatore of the previous one
+  oldProvider: ["  onStructure(structure: Structure): void {\n    this.form.controls.resourceCode.setValue('');\n", '  onStructure(structure: Structure): void {\n'],
+  // CUP_DEMO-2603: a time slot valid for a single day (start date = end date) cannot be saved
+  singleDay: ["orderedRange('startDate', 'endDate', true)", "orderedRange('startDate', 'endDate')"],
+  // CUP_DEMO-2541: a cancelled booking can be cancelled again (the reason is overwritten)
+  cancelTwice: ['        if (!CONFIRMED.equals(status)) {\n            throw new ConflictException("status: only a " + CONFIRMED + " booking can be cancelled (" + id + " is " + status + ")");\n        }\n', ''],
+  cancelTwiceTest: ['        assertThatThrownBy(() -> service.cancel(b.id(), new CancelRequest("again")))\n                .isInstanceOf(ConflictException.class);\n', ''],
+  // CUP_DEMO-2549: "Altro" can be confirmed without a note
+  altroNote: ["return !!reason && (reason !== 'Altro' || note.trim().length > 0);", 'return !!reason;'],
+  // CUP_DEMO-2627: the monthly report counts cancelled bookings
+  reportCancelled: ["                WHERE b.status <> 'ANNULLATA'\n", ''],
+};
 const BE = 'backend/src/main/java/com/mediagenda';
 const FE = 'frontend/src/app';
 const MIG = 'backend/src/main/resources/db/migration';
@@ -48,7 +86,7 @@ const STEPS = [
       'backend/pom.xml': T, 'backend/src/main/resources/application.yml': T,
       [`${BE}/MediAgendaApplication.java`]: T,
       [`${BE}/common/ApiError.java`]: T, [`${BE}/common/GlobalExceptionHandler.java`]: H('01-backend'), [`${BE}/common/NotFoundException.java`]: T,
-      [`${BE}/structure/Structure.java`]: T, [`${BE}/structure/StructureRepository.java`]: T, [`${BE}/structure/StructureController.java`]: T,
+      [`${BE}/structure/Structure.java`]: T, [`${BE}/structure/StructureRepository.java`]: B(T, BUG.structSearch), [`${BE}/structure/StructureController.java`]: B(T, BUG.structSearch),
       [`${BE}/resource/AgendaResource.java`]: T, [`${BE}/resource/AgendaResourceRepository.java`]: T,
       [`${BE}/resource/AgendaResourceService.java`]: H('01-backend'), [`${BE}/resource/AgendaResourceController.java`]: T,
       [`${BE}/timeslot/TimeSlot.java`]: H('01-backend'), [`${BE}/timeslot/TimeSlotController.java`]: T,
@@ -81,9 +119,14 @@ const STEPS = [
       [`${FE}/features/agenda/state/agenda-search.store.ts`]: H('03-agenda'),
       [`${FE}/features/agenda/search-mask/search-mask.component.ts`]: H('03-agenda'),
       [`${FE}/features/agenda/search-mask/search-mask.component.html`]: T,
-      [`${FE}/features/agenda/results/resources-list.component.ts`]: T,
+      [`${FE}/features/agenda/results/resources-list.component.ts`]: B(T, BUG.descr),
       [`${FE}/features/agenda/results/timeslot-table.component.ts`]: H('03-agenda'), [`${FE}/app.routes.ts`]: H('03-agenda'),
     },
+  },
+  {
+    who: 'sara', date: '2026-03-02T10:05:00+01:00',
+    message: 'CUP_DEMO-2402: Risorse list shows the provider description again\n\nThe second column repeated the code; the operators could not tell the providers apart.',
+    files: { [`${FE}/features/agenda/results/resources-list.component.ts`]: T },
   },
   {
     who: 'luca', date: '2026-03-04T09:40:00+01:00',
@@ -97,6 +140,11 @@ const STEPS = [
     who: 'marta', date: '2026-03-11T14:00:00+01:00',
     message: 'Prenotazioni page: bookings list',
     files: { [`${FE}/features/booking/booking-api.service.ts`]: H('05-booking-fe'), [`${FE}/features/booking/booking-list.component.ts`]: H('05-booking-fe'), [`${FE}/app.routes.ts`]: H('05-booking-fe') },
+  },
+  {
+    who: 'davide', date: '2026-03-16T11:20:00+01:00',
+    message: 'CUP_DEMO-2419: Struttura search by name ignores upper and lower case\n\nThe name matched case-sensitively, so "sviluppo" did not find "SVILUPPO ..." (the code already ignored case).',
+    files: { [`${BE}/structure/StructureRepository.java`]: T, [`${BE}/structure/StructureController.java`]: T },
   },
   {
     who: 'davide', date: '2026-03-25T10:30:00+01:00',
@@ -116,9 +164,9 @@ const STEPS = [
     message: "CUP_DEMO-2441: patient registry API (create, update, get) with validation (Flyway V5)\n\nPOST /api/patients and PUT /api/patients/{id} validate the fiscal code format, names, birth date (past), sex and contacts.\nA fiscal code that is already registered is rejected with 409 CONFLICT.",
     files: {
       [`${BE}/patient/Patient.java`]: T, [`${BE}/patient/PatientRequest.java`]: T, [`${BE}/patient/PatientRepository.java`]: T,
-      [`${BE}/patient/PatientService.java`]: T, [`${BE}/patient/PatientController.java`]: T,
+      [`${BE}/patient/PatientService.java`]: B(T, BUG.patientUpdate), [`${BE}/patient/PatientController.java`]: T,
       [`${BE}/common/ConflictException.java`]: T, [`${BE}/common/BadRequestException.java`]: T, [`${BE}/common/GlobalExceptionHandler.java`]: T,
-      [`${MIG}/V5__patient_registry.sql`]: T, [`${TEST}/patient/PatientServiceTest.java`]: T,
+      [`${MIG}/V5__patient_registry.sql`]: T, [`${TEST}/patient/PatientServiceTest.java`]: B(T, BUG.patientUpdateTest),
     },
   },
   {
@@ -126,9 +174,14 @@ const STEPS = [
     message: "CUP_DEMO-2441: Anagrafica paziente form (new and edit) and shared form styles",
     files: {
       'frontend/src/styles.scss': T, [`${FE}/core/http/api-errors.ts`]: T, [`${FE}/shared/validators/form-validators.ts`]: T,
-      [`${FE}/features/patients/patient-api.service.ts`]: T, [`${FE}/features/patients/patient-search.component.ts`]: T,
+      [`${FE}/features/patients/patient-api.service.ts`]: T, [`${FE}/features/patients/patient-search.component.ts`]: B(T, BUG.page),
       [`${FE}/features/patients/patient-form.component.ts`]: H('10-patient-form'), [`${FE}/app.routes.ts`]: H('10-patient-form'),
     },
+  },
+  {
+    who: 'davide', date: '2026-05-05T09:50:00+02:00',
+    message: 'CUP_DEMO-2455: saving a patient without changing the fiscal code no longer fails with 409\n\nThe duplicate check found the patient being edited and reported a conflict with itself; it now ignores the same id.\nTest added for an update that keeps the fiscal code.',
+    files: { [`${BE}/patient/PatientService.java`]: T, [`${TEST}/patient/PatientServiceTest.java`]: T },
   },
   {
     who: 'luca', date: '2026-05-14T12:10:00+02:00',
@@ -145,6 +198,11 @@ const STEPS = [
       [`${FE}/features/agenda/state/agenda-search.store.ts`]: H('09-sup2398-fe'),
       [`${FE}/features/agenda/services/agenda-api.service.ts`]: T,
     },
+  },
+  {
+    who: 'sara', date: '2026-06-09T10:40:00+02:00',
+    message: 'CUP_DEMO-2580: patient search always starts from the first page\n\nRICERCA reused the page of the previous search, so after moving to page 2 a new search showed\n"Pagina 2" of a result with one page.',
+    files: { [`${FE}/features/patients/patient-search.component.ts`]: T },
   },
   {
     who: 'luca', date: '2026-06-10T09:30:00+02:00',
@@ -164,8 +222,18 @@ const STEPS = [
     message: "CUP_DEMO-2470: Nuova prenotazione form; bookings list shows patient and agenda",
     files: {
       [`${FE}/features/booking/booking-api.service.ts`]: H('12-booking-form'), [`${FE}/features/booking/booking-list.component.ts`]: H('12-booking-form'),
-      [`${FE}/features/booking/booking-form.component.ts`]: T, [`${FE}/app.routes.ts`]: H('12-booking-form'),
+      [`${FE}/features/booking/booking-form.component.ts`]: B(T, BUG.bookedTime, BUG.oldProvider), [`${FE}/app.routes.ts`]: H('12-booking-form'),
     },
+  },
+  {
+    who: 'marta', date: '2026-06-24T11:15:00+02:00',
+    message: 'CUP_DEMO-2483: Nuova prenotazione: the time just booked disappears from the free times\n\nAfter CONFERMA the booked time stayed in the list; choosing it again ended in "already booked" (409).',
+    files: { [`${FE}/features/booking/booking-form.component.ts`]: B(T, BUG.oldProvider) },
+  },
+  {
+    who: 'marta', date: '2026-07-01T15:30:00+02:00',
+    message: 'CUP_DEMO-2489: changing the Struttura clears the chosen Erogatore\n\nThe provider of the previous structure stayed selected (hidden in the list), so the free times and the\nbooking were for the wrong provider.',
+    files: { [`${FE}/features/booking/booking-form.component.ts`]: T },
   },
   {
     who: 'davide', date: '2026-07-08T11:00:00+02:00',
@@ -185,18 +253,23 @@ const STEPS = [
     who: 'sara', date: '2026-07-28T16:10:00+02:00',
     message: "CUP_DEMO-2590: Fasce orarie page: Nuova fascia oraria form",
     files: {
-      [`${FE}/features/timeslots/timeslot-api.service.ts`]: T, [`${FE}/features/timeslots/timeslot-form.component.ts`]: T,
+      [`${FE}/features/timeslots/timeslot-api.service.ts`]: T, [`${FE}/features/timeslots/timeslot-form.component.ts`]: B(T, BUG.singleDay),
       [`${FE}/app.routes.ts`]: H('13-timeslot-fe'), [`${FE}/core/layout/sidenav.component.ts`]: T,
     },
+  },
+  {
+    who: 'sara', date: '2026-08-06T09:35:00+02:00',
+    message: 'CUP_DEMO-2603: a time slot valid for a single day can be saved\n\n"Valida dal" equal to "Valida al" was rejected as an invalid range; a one-day slot (e.g. an extra Saturday) is allowed.',
+    files: { [`${FE}/features/timeslots/timeslot-form.component.ts`]: T },
   },
   {
     who: 'luca', date: '2026-09-08T11:30:00+02:00',
     message: "CUP_DEMO-2533: cancel a booking with a reason (Flyway V8)\n\nPOST /api/bookings/{id}/cancel: CONFERMATA → ANNULLATA. A cancelled time is free again: availability and the\ndouble-booking check ignore ANNULLATA bookings. GET /api/bookings takes an optional status filter.",
     files: {
-      [`${BE}/booking/Booking.java`]: T, [`${BE}/booking/CancelRequest.java`]: T, [`${BE}/booking/BookingView.java`]: T,
+      [`${BE}/booking/Booking.java`]: B(T, BUG.cancelTwice), [`${BE}/booking/CancelRequest.java`]: T, [`${BE}/booking/BookingView.java`]: T,
       [`${BE}/booking/BookingRepository.java`]: H('15-booking-cancel'), [`${BE}/booking/BookingService.java`]: T,
       [`${BE}/booking/BookingController.java`]: T, [`${BE}/timeslot/AvailabilityService.java`]: H('15-booking-cancel'),
-      [`${MIG}/V8__booking_cancellation.sql`]: T, [`${TEST}/booking/BookingServiceTest.java`]: T, 'README.md': T,
+      [`${MIG}/V8__booking_cancellation.sql`]: T, [`${TEST}/booking/BookingServiceTest.java`]: B(T, BUG.cancelTwiceTest), 'README.md': T,
     },
   },
   {
@@ -204,8 +277,18 @@ const STEPS = [
     message: "CUP_DEMO-2533: Prenotazioni: status filter and Annulla prenotazione dialog",
     files: {
       [`${FE}/features/booking/booking-api.service.ts`]: T, [`${FE}/features/booking/booking-list.component.ts`]: T,
-      [`${FE}/features/booking/booking-cancel-dialog.component.ts`]: T,
+      [`${FE}/features/booking/booking-cancel-dialog.component.ts`]: B(T, BUG.altroNote),
     },
+  },
+  {
+    who: 'luca', date: '2026-09-16T14:45:00+02:00',
+    message: 'CUP_DEMO-2541: a booking that is already cancelled cannot be cancelled again\n\nA second cancel overwrote the reason and the time of the first one. Only a CONFERMATA booking can be cancelled\nnow (409 otherwise); test extended.',
+    files: { [`${BE}/booking/Booking.java`]: T, [`${TEST}/booking/BookingServiceTest.java`]: T },
+  },
+  {
+    who: 'marta', date: '2026-09-18T10:10:00+02:00',
+    message: 'CUP_DEMO-2549: Annulla prenotazione: "Altro" needs a note\n\nThe dialog could be confirmed with "Altro" and an empty "Specificare"; the reason was saved as "Altro: ".',
+    files: { [`${FE}/features/booking/booking-cancel-dialog.component.ts`]: T },
   },
   {
     who: 'sara', date: '2026-09-22T15:05:00+02:00',
@@ -238,12 +321,17 @@ const STEPS = [
   {
     who: 'luca', date: '2026-10-27T09:10:00+01:00',
     message: 'Reports: monthly bookings per structure API',
-    files: { [`${BE}/report/ReportController.java`]: T },
+    files: { [`${BE}/report/ReportController.java`]: B(T, BUG.reportCancelled) },
   },
   {
     who: 'marta', date: '2026-10-29T16:40:00+01:00',
     message: 'Report page: monthly bookings table',
     files: { [`${FE}/features/reports/reports.component.ts`]: T, [`${FE}/app.routes.ts`]: T },
+  },
+  {
+    who: 'luca', date: '2026-11-02T12:00:00+01:00',
+    message: 'CUP_DEMO-2627: monthly report no longer counts cancelled bookings\n\nThe report counted ANNULLATA bookings as well, like availability did before CUP_DEMO-2533.',
+    files: { [`${BE}/report/ReportController.java`]: T },
   },
   {
     who: 'bojan', date: '2026-11-04T19:00:00+01:00',
@@ -300,12 +388,26 @@ if (Object.keys(keyMap).length) console.log(`Using Jira keys from ${KEYS_FILE}`)
 for (const step of STEPS) step.message = mapKeys(step.message);
 
 const committed = new Set();
+const sourceFile = (path, source) => (source === T ? join(TEMPLATE, path) : join(HISTORY, source.history, path));
+/** The content of `path` for a step: a template or history file, or (B) one with bugs put back. */
+function sourceText(path, source) {
+  const base = source.pairs ? source.base : source;
+  const from = sourceFile(path, base);
+  if (!existsSync(from)) throw new Error(`Missing source for ${path}: ${from}`);
+  let text = readFileSync(from, 'utf8');
+  for (const [fixed, buggy] of source.pairs ?? []) {
+    const eol = text.includes('\r\n') ? (s) => s.replace(/\r?\n/g, '\r\n') : (s) => s;
+    const [f, b] = [eol(fixed), eol(buggy)];
+    const count = text.split(f).length - 1;
+    if (count !== 1) throw new Error(`${path}: the fixed text of a bug must occur exactly once (found ${count}): ${fixed.slice(0, 60)}`);
+    text = text.replace(f, () => b);
+  }
+  return text;
+}
 function applyStep(step, dir) {
   for (const [path, source] of Object.entries(step.files)) {
-    const from = source === T ? join(TEMPLATE, path) : join(HISTORY, source.history, path);
-    if (!existsSync(from)) throw new Error(`Missing source for ${path}: ${from}`);
     mkdirSync(dirname(join(dir, path)), { recursive: true });
-    writeFileSync(join(dir, path), mapKeys(readFileSync(from, 'utf8')));
+    writeFileSync(join(dir, path), mapKeys(sourceText(path, source)));
     if (source === T) committed.add(path);
   }
 }
@@ -368,6 +470,12 @@ const listFiles = (dir) =>
     .map((d) => relative(dir, join(d.parentPath ?? d.path, d.name)).replace(/\\/g, '/'));
 const missing = listFiles(TEMPLATE).filter((f) => !committed.has(f));
 if (missing.length) console.warn(`WARNING: template files never committed in their final version: ${missing.join(', ')}`);
+// The last commit must be the template: a B() version committed after the file's T commit would leave a bug in.
+const differs = listFiles(TEMPLATE).filter((f) => committed.has(f) && readFileSync(join(OUT, f), 'utf8') !== mapKeys(readFileSync(join(TEMPLATE, f), 'utf8')));
+if (differs.length) {
+  console.error(`ERROR: the final history differs from the template in: ${differs.join(', ')}`);
+  process.exit(1);
+}
 
 console.log(`Demo project created (${SVN_MODE ? 'SVN' : 'git'}): ${OUT}
 `);
