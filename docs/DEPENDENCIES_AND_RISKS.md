@@ -17,8 +17,9 @@
 | Claude Code VS Code extension | 2.1.318 | interactive use | |
 | GitHub Copilot (VS Code agent mode) | — | interactive use at work | not yet tested |
 | git | 2.55 | code analysis, demo repository | |
-| Subversion client | 1.14.5 (portable, `tools/svn`) | code analysis on SVN projects | TortoiseSVN needs the "command line client tools" option |
-| JDK / Maven | Temurin 21.0.13 / 3.9.9 (portable, `tools/`) | demo backend | not needed for the skills or agent |
+| Subversion client | 1.14.5 (portable, `tools/svn`, VisualSVN command line tools) | code analysis on SVN projects | TortoiseSVN needs the "command line client tools" option; `node demo/get-tools.mjs` downloads it |
+| JDK / Maven | Temurin 21.0.13 / 3.9.9 (portable, `tools/`) | demo backend | not needed for the skills or agent; `tools/` is not in git: `node demo/get-tools.mjs` downloads and checks them |
+| TypeScript (editor) | VS Code's built-in TypeScript may be 6.x/7.x, newer than the project's 5.5 | editing the MediAgenda frontend | TS 6 requires `rootDir` when `outDir` is set (TS5011); set in `frontend/tsconfig.json` |
 | Angular CLI | 18.2 | demo frontend | Angular 19+ needs Node ≥ 20.19 |
 | Playwright + Chromium | 1.64.1 | bug reproduction (MediAgenda `e2e/`) | browsers in `%LOCALAPPDATA%ms-playwright` |
 | GitHub CLI (`gh`) | 2.101 | draft pull requests | logged in as the repository owner |

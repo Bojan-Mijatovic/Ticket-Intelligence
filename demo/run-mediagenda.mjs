@@ -34,7 +34,7 @@ if (!onPath('mvn') || !onPath('java')) {
   const jdk = existsSync(TOOLS) && readdirSync(TOOLS).find((d) => d.startsWith('jdk-'));
   const maven = existsSync(TOOLS) && readdirSync(TOOLS).find((d) => d.startsWith('apache-maven-'));
   if (!jdk || !maven) {
-    console.error('Java 21 and Maven are needed (not on PATH and not found in tools/).');
+    console.error('Java 21 and Maven are needed (not on PATH and not found in tools/). Get them with: node demo/get-tools.mjs');
     process.exit(1);
   }
   env.JAVA_HOME = join(TOOLS, jdk);

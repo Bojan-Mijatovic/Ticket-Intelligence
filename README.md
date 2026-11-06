@@ -115,7 +115,7 @@ claude
 
 The Risorse list now shows the providers of both structures (`MS_…` and `TG_…`), and in DevTools › Network the `structure-timeslots` request sends both IDs. The backend log shows the same: `StructureTimeSlot search … structureIds=[SVIL_MS_VISITE, TEST_GEN_25]`.
 
-Java and Maven are not installed system-wide: `run-mediagenda.mjs` uses the portable JDK 21 and Maven in `tools/`.
+Java and Maven are not installed system-wide: `run-mediagenda.mjs` uses the portable JDK 21 and Maven in `tools/`. That folder is not in git (about 350 MB). After a fresh clone, get it with `node demo/get-tools.mjs`: it downloads Temurin JDK 21.0.13+9, Maven 3.9.9 and (on Windows) the Subversion 1.14.5 command line tools, checks each download against its published (or pinned) checksum, and checks that each tool starts. Tools already in `tools/` are skipped.
 
 **The same app on SVN:**
 ```
