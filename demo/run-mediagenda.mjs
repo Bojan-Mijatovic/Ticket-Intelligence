@@ -38,7 +38,9 @@ if (!onPath('mvn') || !onPath('java')) {
     process.exit(1);
   }
   env.JAVA_HOME = join(TOOLS, jdk);
-  env.PATH = `${join(TOOLS, jdk, 'bin')}${win ? ';' : ':'}${env.PATH}`;
+  // On Windows the variable is usually spelled "Path"; reuse that key so the rest of PATH (node, npx) is kept.
+  const pathKey = Object.keys(env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
+  env[pathKey] = `${join(TOOLS, jdk, 'bin')}${win ? ';' : ':'}${env[pathKey] ?? ''}`;
   mvn = join(TOOLS, maven, 'bin', win ? 'mvn.cmd' : 'mvn');
 }
 
