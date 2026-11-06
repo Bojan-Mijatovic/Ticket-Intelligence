@@ -134,7 +134,17 @@ node demo/preview.mjs main       # back (preflight requires main before a demo)
 node demo/preview.mjs            # which branch the app shows
 ```
 
-Each fix branch starts from `main`, so previewing one shows only that fix, not earlier ones. The MediAgenda repository is private: a browser that is not signed in to GitHub as the repository owner gets **404** on pull request links.
+Each fix branch starts from `main`, so previewing one shows only that fix, not earlier ones.
+
+To accept a fix, a person merges it (the agent never does). From the terminal:
+
+```
+node demo/merge-fix.mjs DEM-32           # what would be done: PR, files, AI review
+node demo/merge-fix.mjs DEM-32 --yes     # ready → squash merge → branch deleted → app on :4200 on the new main
+node demo/merge-fix.mjs DEM-32 --yes --docs   # also merge the documentation PR (docs/DEM-32)
+```
+
+A review with high risk or "needs changes" stops the merge unless `--force` is given. The script comments the merge in Jira. A merged fix stays on `main`: `reset-demo.mjs` never rewrites `main`. The MediAgenda repository is private: a browser that is not signed in to GitHub as the repository owner gets **404** on pull request links.
 
 ## AI review of the pull request
 

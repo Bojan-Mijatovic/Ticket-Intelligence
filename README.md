@@ -206,6 +206,8 @@ agent/                        autonomous watcher, headless analysis, policy, liv
 demo/seed-jira.mjs            copies the historical demo tickets into a real Jira project
 demo/new-ticket.mjs           opens the demo target ticket in Jira (rehearsal / live demo)
 demo/resolve-ticket.mjs       moves a ticket to Done (triggers the documentation stage)
+demo/merge-fix.mjs            merges the agent's PR of a ticket into main, app on :4200 back on main (dry run unless --yes)
+demo/get-tools.mjs            downloads the portable JDK, Maven and SVN into tools/ (checksums checked)
 demo/reset-demo.mjs           puts the demo back to its starting point (dry run unless --yes)
 demo/preflight.mjs            go / no-go check before a live demo
 ```
