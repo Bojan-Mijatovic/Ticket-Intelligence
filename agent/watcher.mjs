@@ -20,6 +20,7 @@ import { processTicket } from './lib/pipeline.mjs';
 import { currentBranch, previewBranch } from './lib/preview.mjs';
 import { reviewPullRequest } from './lib/review.mjs';
 import { buildInsights, readRecommendations, writeRecommendations } from './lib/insights.mjs';
+import { askQuestion } from './lib/ask.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const cfg = JSON.parse(readFileSync(join(HERE, 'agent.config.json'), 'utf8'));
@@ -189,6 +190,7 @@ async function drain() {
 
 let insightsCache = null;
 let recommending = false;
+let asking = false;
 async function insightsCached(refresh = false) {
   if (!refresh && insightsCache && Date.now() - insightsCache.at < 120_000) return insightsCache.data;
   const data = await buildInsights({ repoDir, stateDir, cfg, jira });
@@ -287,6 +289,20 @@ const server = createServer(async (req, res) => {
       return json(res, 500, { ok: false, error: e.message });
     } finally {
       recommending = false;
+    }
+  }
+  // Ask the knowledge base (FR-65): one question at a time; progress goes to the dashboard stream (not the event log).
+  if (req.method === 'POST' && path === '/api/ask') {
+    if (asking) return json(res, 409, { ok: false, error: 'another question is being answered; try again in a minute' });
+    const { question, id } = await readBody(req);
+    asking = true;
+    try {
+      const answer = await askQuestion({ question, repoDir, stateDir, cfg, jira, onProgress: (step) => broadcast({ type: 'ask-progress', id, step }) });
+      return json(res, 200, { ok: true, ...answer });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    } finally {
+      asking = false;
     }
   }
   if (req.method === 'POST' && path === '/api/preview') {

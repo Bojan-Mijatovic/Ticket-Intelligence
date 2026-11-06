@@ -135,6 +135,12 @@
   .hotspot { padding: 14px 16px; display: grid; gap: 8px; align-content: start; }
   .hotspot .rank { font-size: 11px; font-weight: 700; color: var(--bad); text-transform: uppercase; letter-spacing: 0.05em; }
   .hotspot .hname { font-size: 16px; font-weight: 700; }
+  .ask-form { padding: 14px 16px; display: grid; gap: 10px; margin-bottom: 16px; }
+  .ask-form textarea { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); resize: vertical; }
+  .answer { padding: 14px 16px; margin-bottom: 12px; display: grid; gap: 8px; }
+  .answer .q { font-weight: 700; }
+  .answer .a { white-space: pre-wrap; }
+  .answer ul { margin: 0; padding-left: 18px; }
   .rec { border-left: 3px solid var(--accent); padding: 6px 10px; background: var(--accent-soft); border-radius: 0 6px 6px 0; font-size: 13px; }
   @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hotspots { grid-template-columns: 1fr; } }
   @media (max-width: 600px) { header, main { padding-left: 16px; padding-right: 16px; } .result .row { grid-template-columns: 1fr; } }
@@ -145,7 +151,7 @@
   <div class="brand"><span class="logo">✦</span> Ticket Intelligence <span class="meta" style="font-weight:500">agent</span></div>
   <span class="pill" id="state"><span class="dot"></span><span id="state-text">connecting…</span></span>
   <span class="meta" id="project"></span>
-  <nav class="tabs" id="tabs"><button data-tab="tickets" class="active">Tickets</button><button data-tab="insights">Insights</button></nav>
+  <nav class="tabs" id="tabs"><button data-tab="tickets" class="active">Tickets</button><button data-tab="insights">Insights</button><button data-tab="ask">Ask</button></nav>
   <span class="spacer"></span>
   <span class="meta" id="poll"></span>
   <span class="pill" id="app-branch" title="Branch the MediAgenda app on http://localhost:4200 shows"></span>
@@ -165,6 +171,17 @@
       <span class="meta" id="ins-rec-state"></span><button class="small" id="ins-recommend" title="One headless run writes a recommendation per hotspot, citing tickets and commits">✦ Write recommendations (AI)</button>
       <button class="small" id="ins-refresh">Refresh</button></div>
     <div class="hotspots" id="ins-hotspots"></div>
+  </section>
+  <section id="tab-ask" hidden>
+    <h2>Ask the knowledge base</h2>
+    <form class="panel ask-form" id="ask-form">
+      <textarea id="ask-q" rows="2" maxlength="500" placeholder="e.g. Has the Struttura field bug happened before?" aria-label="Question"></textarea>
+      <div class="actions"><button class="primary" type="submit" id="ask-go">Ask</button>
+        <span class="meta">Answers come only from Jira, the agent's analyses, the git history and the code; every claim is cited. Nothing found → it says so.</span></div>
+      <div class="actions" id="ask-examples"></div>
+      <div class="steps" id="ask-progress" hidden></div>
+    </form>
+    <div id="ask-answers"></div>
   </section>
   <div id="tab-tickets">
   <section class="kpis">
@@ -451,6 +468,7 @@ function connect() {
     if (ev.type === 'history') { tickets.clear(); teams.length = 0; drafts.length = 0; const was = live; live = false; ev.events.forEach(apply); live = was; render(); return; }
     if (ev.type === 'status') { status = ev.status; renderStatus(); render(); return; }
     if (ev.type === 'ping') return;
+    if (ev.type === 'ask-progress') return onAskProgress(ev);
     apply(ev); render();
   };
 }
@@ -473,7 +491,7 @@ let tab = 'tickets';
 function showTab(name) {
   tab = name;
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === name);
-  for (const s of ['tickets', 'insights']) $(`#tab-${s}`).hidden = s !== name;
+  for (const s of ['tickets', 'insights', 'ask']) $(`#tab-${s}`).hidden = s !== name;
   if (name === 'insights') loadInsights();
   try { localStorage.setItem('ti-tab', name); } catch { /* storage blocked */ }
 }
@@ -553,9 +571,61 @@ $('#ins-recommend').addEventListener('click', async (e) => {
   finally { b.disabled = false; b.textContent = '✦ Write recommendations (AI)'; }
 });
 
+// ---------------------------------------------------------------- ask (FR-65)
+const EXAMPLES = ['Has the Struttura field bug happened before?', 'Which bugs did Prenotazioni have since June, and why?', 'Why can a cancelled booking not be cancelled again?', 'Who knows the time slot code best?'];
+const answers = [];
+let askId = null;
+$('#ask-examples').replaceChildren(h('span', { class: 'meta' }, 'Try:'), ...EXAMPLES.map((q) => h('button', { type: 'button', class: 'small', onclick: () => { $('#ask-q').value = q; ask(); } }, q)));
+
+/** Ticket keys and commit hashes in the answer become links. */
+function linkify(text) {
+  const repo = status?.github?.repo;
+  return String(text).split(/(\b[A-Z][A-Z0-9_]+-\d+\b|\b[0-9a-f]{7}\b)/).map((part, i) => {
+    if (i % 2 === 0) return part;
+    if (/^[0-9a-f]{7}$/.test(part)) return repo ? h('a', { href: `https://github.com/${repo}/commit/${part}`, target: '_blank' }, h('code', {}, part)) : h('code', {}, part);
+    return jiraLink(part);
+  });
+}
+
+function renderAnswers() {
+  $('#ask-answers').replaceChildren(...answers.map((a) => h('div', { class: 'panel answer' },
+    h('div', { class: 'q' }, a.question),
+    a.error ? h('pre', { class: 'err' }, a.error) : [
+      h('div', {}, h('span', { class: `chip ${a.found ? 'done' : 'analyzing'}` }, a.found ? 'answered from sources' : 'not in the knowledge base'),
+        h('span', { class: 'meta', style: 'margin-left:8px' }, `${Math.round((a.meta?.durationMs ?? 0) / 1000)} s · ~$${(a.meta?.costUsd ?? 0).toFixed(2)}`)),
+      h('div', { class: 'a' }, linkify(a.answer)),
+      a.sources?.length ? h('div', {}, h('div', { class: 't-sub' }, 'Sources'), h('ul', {}, a.sources.map((s) => h('li', {},
+        s.url ? h('a', { href: s.url, target: '_blank' }, s.type === 'ticket' ? s.ref : h('code', {}, s.ref)) : h('code', {}, s.ref), s.why ? ` · ${s.why}` : '')))) : null,
+      a.closest?.length ? h('div', { class: 't-sub' }, 'Closest tickets: ', a.closest.flatMap((c) => [jiraLink(c.key), ' '])) : null,
+      a.dropped ? h('div', { class: 't-sub' }, `${a.dropped} cited source(s) were not found in the data and were left out.`) : null,
+    ])));
+}
+
+async function ask() {
+  const q = $('#ask-q').value.trim();
+  if (!q || askId) return;
+  askId = String(Date.now());
+  const btn = $('#ask-go');
+  btn.disabled = true; btn.textContent = 'Thinking…';
+  const progress = $('#ask-progress');
+  progress.hidden = false;
+  progress.replaceChildren(h('div', { class: 'step' }, h('span'), h('span'), h('span', { class: 'typing m' }, 'working')));
+  try { answers.unshift(await post('/api/ask', { question: q, id: askId })); $('#ask-q').value = ''; }
+  catch (e) { answers.unshift({ question: q, error: e.message }); }
+  finally { askId = null; btn.disabled = false; btn.textContent = 'Ask'; progress.hidden = true; renderAnswers(); }
+}
+$('#ask-form').addEventListener('submit', (e) => { e.preventDefault(); ask(); });
+$('#ask-q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } });
+function onAskProgress(ev) {
+  if (!askId || ev.id !== askId) return;
+  const box = $('#ask-progress');
+  box.insertBefore(h('div', { class: 'step' }, h('span', { class: 't' }, ''), h('span', { class: 'i' }, '›'), h('span', { class: 'm' }, ev.step)), box.lastChild);
+  box.scrollTop = box.scrollHeight;
+}
+
 setInterval(() => { renderStatus(); if (status?.processing && tab === 'tickets') render(); }, 1000);
 connect();
-try { if (localStorage.getItem('ti-tab') === 'insights') showTab('insights'); } catch { /* storage blocked */ }
+try { const saved = localStorage.getItem('ti-tab'); if (saved === 'insights' || saved === 'ask') showTab(saved); } catch { /* storage blocked */ }
 </script>
 </body>
 </html>

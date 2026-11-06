@@ -230,7 +230,7 @@ Reply with ONLY one \`\`\`json block:
 { "recommendations": [{ "component": "name", "text": "…" }] }`;
   const dir = join(stateDir, 'insights');
   mkdirSync(dir, { recursive: true });
-  const out = await runClaude({ cwd: dir, prompt, cfg, disallowedTools: NO_TOOLS, required: ['recommendations'], timeoutMinutes: 4, transcriptFile: join(dir, 'transcript-recommendations.jsonl') });
+  const out = await runClaude({ cwd: dir, prompt, cfg, tools: [], disallowedTools: NO_TOOLS, required: ['recommendations'], timeoutMinutes: 4, transcriptFile: join(dir, 'transcript-recommendations.jsonl') });
   const recommendations = citedOnly(out.result.recommendations, facts);
   const saved = { at: new Date().toISOString(), fingerprint, dropped: (out.result.recommendations?.length ?? 0) - recommendations.length, recommendations, meta: out.meta };
   writeFileSync(recommendationsFile(stateDir), JSON.stringify(saved, null, 2));

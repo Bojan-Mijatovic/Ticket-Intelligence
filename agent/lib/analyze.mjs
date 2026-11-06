@@ -99,17 +99,30 @@ function parseResult(final, required) {
   return missing.length ? { error: `the JSON answer is missing: ${missing.join(', ')}` } : { result };
 }
 
-/** One `claude -p` process. Resolves with the final result event and the stream transcript. */
-function invokeClaude({ cwd, prompt, cfg, addDirs = [], disallowedTools = [], permissionMode = null, timeoutMinutes, resume = null, onProgress = () => {} }) {
+// Tools of the user's Claude Code that publish, message or schedule outside this run. No agent run needs them, and a
+// ticket or a question could try to make the agent use them, so they are always removed. MCP servers (including
+// claude.ai connectors such as documents) are never loaded either (--strict-mcp-config without --mcp-config).
+const OUTWARD = ['Artifact', 'ArtifactComments', 'ArtifactData', 'DesignSync', 'CronCreate', 'CronDelete', 'ScheduleWakeup', 'RemoteTrigger', 'SendMessage', 'PushNotification', 'EnterWorktree', 'ExitWorktree'];
+
+/**
+ * One `claude -p` process. Resolves with the final result event and the stream transcript.
+ * @param {string[]} [p.tools]  an allow-list of built-in tools (e.g. ['Read','Grep','Glob']; [] = none). Without it the
+ *   default set is used, minus `disallowedTools` and OUTWARD.
+ */
+function invokeClaude({ cwd, prompt, cfg, addDirs = [], disallowedTools = [], tools = null, permissionMode = null, timeoutMinutes, resume = null, onProgress = () => {} }) {
+  const win = process.platform === 'win32';
+  const denied = [...disallowedTools, ...OUTWARD];
   const args = [
     '-p',
     ...(resume ? ['--resume', resume] : []),
     '--output-format', 'stream-json', '--verbose',
     '--max-turns', String(cfg.claude.maxTurns),
+    '--strict-mcp-config',
+    ...(tools ? ['--tools', tools.length ? tools.join(',') : win ? '""' : ''] : []),
     ...addDirs.flatMap((d) => ['--add-dir', d]),
     ...(permissionMode ? ['--permission-mode', permissionMode] : []),
     // Rules with spaces ("Bash(git push *)") must be quoted for cmd.exe on Windows.
-    ...(disallowedTools.length ? ['--disallowedTools', ...disallowedTools.map((t) => (process.platform === 'win32' && /\s/.test(t) ? `"${t}"` : t))] : []),
+    '--disallowedTools', ...denied.map((t) => (win && /\s/.test(t) ? `"${t}"` : t)),
     ...(cfg.claude.model ? ['--model', cfg.claude.model] : []),
   ];
 

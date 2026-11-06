@@ -171,6 +171,7 @@ export async function reviewPullRequest({ key, repoDir, stateDir, cfg, events, j
       cwd,
       prompt: reviewPrompt({ key, title: target.title ?? analysis?.title ?? key, ticket, analysis, fix, diff, truncated }),
       cfg,
+      tools: ['Read', 'Grep', 'Glob'], // allow-list: nothing else exists in this run
       disallowedTools: READ_ONLY,
       required: ['risk', 'verdict', 'findings'],
       timeoutMinutes: cfg.reviewTimeoutMinutes ?? 8,

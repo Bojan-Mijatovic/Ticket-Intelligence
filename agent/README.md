@@ -43,6 +43,7 @@ Requirements: the Claude Code CLI (`npm install -g @anthropic-ai/claude-code`, l
 | `node agent/process-one.mjs DEM-7 --reuse-result` | act on the last saved analysis, without analyzing again | per policy |
 | `node agent/review-one.mjs DEM-7` / `--pr 14` | AI review of a pull request (posted on GitHub; `--dry-run` prints only) | no |
 | `node agent/insights.mjs` | hotspot map in the terminal (`--json`, `--recommend`) | no |
+| `node agent/ask.mjs "question"` | ask the knowledge base (sourced answer or "not found") | no |
 | `node --test agent/test` | unit tests of the agent's plain-code parts | no |
 
 ## Which tickets are picked
@@ -60,6 +61,7 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 ## Safety
 
 - **The agent cannot write.** The headless run has file-editing tools disabled and its prompt forbids any Jira or VCS write. It only returns a JSON result.
+- **No run can publish or message.** Every headless run starts without MCP servers (`--strict-mcp-config`) and without the Claude Code tools that publish, schedule or message (Artifact, Cron, RemoteTrigger, SendMessage, …). Runs that read free text from people other than the reporter (the AI reviewer, Ask) and the recommendation run get an allow-list instead (`--tools Read,Grep,Glob`, or no tools at all).
 - **The watcher acts, per `policy.json`.** Every action is `auto`, `draft` (prepared and shown on the dashboard for a human) or `off`:
 
   | Action | Default |
@@ -86,6 +88,8 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 | `dashboardPort` | dashboard port |
 | `dashboardAllowRemote` | default off: the dashboard and its API answer only requests from this machine (they start paid agent runs) |
 | `reviewTimeoutMinutes` | the AI review is stopped after this long (default 8) |
+| `askTimeoutSeconds`, `askMaxTurns` | limits of one Ask question (defaults 120 s, 16 turns) |
+| `insights.months`, `insights.churnDays`, `insights.components` | hotspot map: months shown, churn window, path rules per component |
 | `labels` | the agent's label names |
 | `claude.command`, `claude.maxTurns`, `claude.model` | how the headless agent is started |
 
@@ -161,6 +165,16 @@ Components are configured in `agent.config.json` → `insights.components` (firs
 **✦ Write recommendations (AI)** (or `node agent/insights.mjs --recommend`) runs one headless call, without any tools, on the facts of the top hotspots. A recommendation that does not cite a known ticket or commit is dropped. The result is cached in `state/insights/recommendations.json` and marked "data changed since" when the facts change.
 
 The map shows components, not people: authors appear only as context.
+
+## Ask the knowledge base
+
+The dashboard's **Ask** tab (and `node agent/ask.mjs "question"`) answers questions such as "Has the Struttura field bug happened before?" or "Which bugs did Prenotazioni have since June?" in about 20–30 s:
+
+1. **The code collects the data first:** Jira tickets found by the words of the question (plus the latest ones and any key named in it) with description, last comments and links; the agent's saved analyses; the git log of `origin/main` with changed files. They are written to `state/ask/<time>/`.
+2. **A headless run reads them**, plus the code and `docs/knowledge/` in its own checkout of `origin/main` (`state/ask-repo`). Its only tools are Read, Grep and Glob (an allow-list), and no MCP servers are loaded: the question is free text from anyone at the dashboard, so a shell or a publishing tool must not exist in that run at all.
+3. **Every cited source is checked:** a ticket must be in the collected data, a commit in the git log, a file in the repository. Unknown sources are dropped; an answer with no valid source is shown as "not in the knowledge base", with the closest tickets.
+
+One question at a time (`409` otherwise); `askTimeoutSeconds` (default 120) and `askMaxTurns` (default 16) in `agent.config.json`. Questions and answers are logged locally in `state/asks.jsonl` and `state/ask/`.
 
 ## Done → documentation
 

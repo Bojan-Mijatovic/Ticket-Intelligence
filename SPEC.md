@@ -116,7 +116,7 @@ Ticket Intelligence gives every Jira ticket a fast, evidence-based first analysi
 | FR-62 | Night shift: backlog processing in a time window with ticket and cost limits; morning digest to Teams, dashboard and `state/digests/` | Planned |
 | FR-63 | AI reviewer: read-only second run on every agent PR (separate queue item, no shell, own checkout of `origin/main`); posts a COMMENT review with inline comments on diff lines and a risk level used by FR-60; never blocks the PR (`agent/lib/review.mjs`, `agent/review-one.mjs`) | Implemented |
 | FR-64 | Hotspot map: bugs per component and month (dates and components from git commits, type and status from Jira, open bugs from saved analyses), files fixed more than once, recurrences, churn; top 3 hotspots with an AI recommendation that must cite tickets or commits (`agent/lib/insights.mjs`, Insights tab, `agent/insights.mjs`) | Implemented |
-| FR-65 | Ask the knowledge base: read-only question answering over `docs/knowledge`, agent results and Jira; every claim cited; "not found" instead of guessing | Planned |
+| FR-65 | Ask the knowledge base: the code collects Jira tickets (by the question's words), saved analyses and the git log; a run with only Read/Grep/Glob and no MCP servers answers over them, the code on `origin/main` and `docs/knowledge`; every cited source is checked, an answer without a valid source is "not found" (`agent/lib/ask.mjs`, Ask tab, `agent/ask.mjs`) | Implemented |
 | FR-66 | Release notes and sprint report in a technical and a business version, on a branch with a draft PR | Planned |
 | FR-67 | Reply to the reporter when the ticket's PR is merged (`replyOnMerge: draft` by default); one reply per merge | Planned |
 
@@ -158,7 +158,7 @@ A result that is not valid JSON or misses a required field fails the run (`ai-fa
 | Jira Cloud REST v2 | `issue`, `issue/{k}/comment|worklog|changelog|transitions`, `search/jql`, `field`, `myself`, `serverInfo`, attachment download | Data Center: `search` instead of `search/jql`, PAT auth |
 | git | `log`, `grep`, `show`, `ls-files`, `for-each-ref`, `worktree` (docs only) | read-only for analysis |
 | SVN | `info`, `status --xml`, `log --xml --search`, `diff -c`, `ls` | read-only for analysis; credentials must be cached |
-| Claude Code CLI | `claude -p --output-format stream-json --disallowedTools Edit Write NotebookEdit` | prompt via stdin |
+| Claude Code CLI | `claude -p --output-format stream-json --strict-mcp-config --disallowedTools Edit Write NotebookEdit …` (reviewer, Ask: `--tools Read,Grep,Glob`) | prompt via stdin |
 | Teams | Workflows webhook, Adaptive Card | optional |
 
 ## 6. Scoring (transparent heuristics)
@@ -175,7 +175,7 @@ Scores only order lists; every recommendation must cite tickets, commits or file
 |---|---|
 | Credentials | per user in `.env` outside the repository; never copied into project installs or logs |
 | Writes | the analysis is read-only; the watcher is the only writer, limited by `policy.json`; SVN/git commits and pushes require explicit confirmation (also enforced in Claude Code permission settings) |
-| Prompt injection | ticket text, commit messages and code comments are treated as data, not instructions (stated in both skills); runs that read free text from people other than the ticket reporter (reviewer, Ask) have no shell at all |
+| Prompt injection | ticket text, commit messages and code comments are treated as data, not instructions (stated in both skills); runs that read free text from people other than the ticket reporter (reviewer, Ask) get an allow-list of read tools (`--tools Read,Grep,Glob`); every run starts without MCP servers and without the tools that publish, schedule or message |
 | Dashboard | answers only requests from this machine (loopback); `dashboardAllowRemote: true` in `agent.config.json` opens it to the network |
 | Patient data | **open:** automatic redaction before analysis is not implemented; required before use on company tickets (R-02) |
 | Audit | every agent step and action in `events.jsonl`; per-run transcript and result in `state/work/<KEY>/` |

@@ -18,7 +18,7 @@ Two rules from the POC still apply:
 | 3 | Night shift + morning digest | Management | 08:00 Teams digest: what the agent did overnight | 1 d | C |
 | 4 | AI reviewer | Team lead, developers | Second agent reviews the PR, posts comments, sets a risk level | 0.5–1 d · **done** | B |
 | 5 | Hotspot map | Management, architects | Which components produce the most bugs, and the trend | 1 d + 1 d data · **done** | D |
-| 6 | Ask the knowledge base | PM, support, developers | Question in plain language → answer with ticket/PR links | 0.5–1 d | D |
+| 6 | Ask the knowledge base | PM, support, developers | Question in plain language → answer with ticket/PR links | 1 d · **done** | D |
 | 7 | Release notes and sprint report | PM, customer, management | Two versions: technical and business | 0.5 d | C |
 | 8 | Reply to the customer after merge | Support, customer | "Fixed in …" reply drafted (or posted) when the PR is merged | 0.5 d | B |
 
@@ -169,6 +169,14 @@ Phase A gives the biggest demo effect for the least work. Phase B closes the loo
 **Risks.** With little data the map is not convincing, so it needs seeded history. It must not be read as a ranking of people. It shows components only, with authors as context, not scores.
 
 ## 6. Ask the knowledge base
+
+**Status: Implemented** (2026-11-06; see [agent/README.md](../agent/README.md#ask-the-knowledge-base)). Changes from the plan below:
+- **No shell, by allow-list.** The user's Claude Code settings allow `Bash`, so a prompt rule is not enough for a question typed by anyone. The code collects the data (Jira search by the question's words, saved analyses, git log) and the run gets only Read, Grep and Glob (`--tools`) and no MCP servers (`--strict-mcp-config`). Checking this showed that a deny-list still left publishing and messaging tools (Artifact, Claude Docs, Cron, SendMessage, …) in every headless run, so all runs now start without MCP servers and without those tools.
+- `ticket.mjs recent` only returns the latest tickets; the search uses JQL `text ~` per keyword instead.
+- Its own checkout (`state/ask-repo`), because an analysis running at the same time resets `state/analysis-repo`.
+- Every cited ticket, commit and file is checked against the collected data; an answer without a valid source is "not found".
+- Progress is shown step by step (as for the analysis), then the whole answer; no token streaming.
+- Acceptance (2026-11-06): "Has the Struttura field bug happened before?" → DEM-5 with its fix commit and the review remark, plus DEM-22 and DEM-25, in 20 s (~$0.37); "How do we export the monthly bookings to SAP?" → "Not in the knowledge base", with what does exist, in 22 s (~$0.19). The plan's DEM-10 no longer exists (deleted by the demo reset); `docs/knowledge/` on main is still empty, because no documentation PR has been merged.
 
 **Goal.** Anyone can ask "why did the agenda search break last month?" and get a sourced answer in seconds.
 

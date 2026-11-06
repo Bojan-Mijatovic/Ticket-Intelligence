@@ -1,0 +1,33 @@
+#!/usr/bin/env node
+// Ask the knowledge base (FR-65) from the terminal; the same as the dashboard's Ask tab. Read-only.
+//
+//   node agent/ask.mjs "Has the Struttura field bug happened before?"
+
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createJira } from './lib/jira-actions.mjs';
+import { askQuestion } from './lib/ask.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const cfg = JSON.parse(readFileSync(join(HERE, 'agent.config.json'), 'utf8'));
+const question = process.argv.slice(2).join(' ').trim();
+if (!question) {
+  console.error('usage: node agent/ask.mjs "your question"');
+  process.exit(1);
+}
+
+const started = Date.now();
+const a = await askQuestion({
+  question,
+  repoDir: resolve(HERE, cfg.repo),
+  stateDir: join(HERE, 'state'),
+  cfg,
+  jira: createJira(),
+  onProgress: (step) => console.log(`  [${Math.round((Date.now() - started) / 1000)}s] ${step}`),
+});
+console.log(`\n${a.found ? 'Answer' : 'Not found'}: ${a.answer}\n`);
+for (const s of a.sources) console.log(`  ${s.type.padEnd(7)} ${s.ref}  ${s.why}${s.url ? `\n          ${s.url}` : ''}`);
+if (a.closest.length) console.log(`  closest tickets: ${a.closest.map((c) => c.key).join(', ')}`);
+if (a.dropped) console.log(`  (${a.dropped} cited source(s) dropped: not found in the data)`);
+console.log(`\n${Math.round(a.meta.durationMs / 1000)} s · ${a.meta.turns} turns · ~$${a.meta.costUsd.toFixed(2)}`);
