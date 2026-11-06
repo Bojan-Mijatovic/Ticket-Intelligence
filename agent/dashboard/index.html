@@ -184,7 +184,7 @@ function h(tag, attrs = {}, ...kids) {
 }
 const initials = (name = '?') => name.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
 const ago = (iso) => { if (!iso) return '–'; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`; };
-const ICON = { resolved: '☑', documenting: '📝', documented: '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺' };
+const ICON = { resolved: '☑', documenting: '📝', documented: '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺', reviewing: '👀', reviewed: '🧐', 'review-skipped': '–' };
 
 const tickets = new Map();
 const teams = [];
@@ -204,7 +204,7 @@ function apply(ev) {
   if (ev.priority) t.priority = ev.priority;
   switch (ev.type) {
     case 'queued': t.title = ev.text; t.state = 'queued'; break;
-    case 'picked': t.title = ev.text || t.title; t.state = 'analyzing'; t.startedAt = ev.at; t.steps = []; t.result = null; t.fix = null; t.fixSkipped = null; t.duplicateOf = null; t.error = null; t.expanded = false; break;
+    case 'picked': t.title = ev.text || t.title; t.state = 'analyzing'; t.startedAt = ev.at; t.steps = []; t.result = null; t.fix = null; t.review = null; t.fixSkipped = null; t.duplicateOf = null; t.error = null; t.expanded = false; break;
     case 'analyzed': t.result = ev.result; t.meta = ev.meta; break;
     case 'commented': t.commentUrl = ev.url; break;
     case 'notified': teams.unshift({ ...ev.card, at: ev.at, channel: ev.channel }); break;
@@ -223,8 +223,11 @@ function apply(ev) {
     case 'documenting': t.docs = { stage: 'writing' }; break;
     case 'documented': t.docs = { stage: 'done', url: ev.url, files: ev.files }; break;
     case 'doc-failed': t.docs = { stage: 'failed', error: ev.text }; break;
+    case 'reviewing': t.review = { stage: 'running' }; break;
+    case 'reviewed': t.review = { stage: 'done', ...ev.review, url: ev.url }; break;
+    case 'review-skipped': t.review = { stage: 'skipped', error: ev.text }; break;
   }
-  if (['picked', 'analyzing', 'progress', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'warmed', 'workspace', 'reproducing', 'reproduced', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-skipped'].includes(ev.type)) {
+  if (['picked', 'analyzing', 'progress', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'warmed', 'workspace', 'reproducing', 'reproduced', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-skipped', 'reviewing', 'reviewed', 'review-skipped'].includes(ev.type)) {
     t.steps.push({ at: ev.at, type: ev.type, text: ev.step ?? ev.text });
   }
 }
@@ -289,14 +292,37 @@ function resultView(t) {
       t.commentUrl ? h('a', { href: t.commentUrl, target: '_blank' }, 'View the comment in Jira ↗') : null,
       h('details', {}, h('summary', {}, 'Jira comment text'), h('pre', { class: 'comment' }, r.jiraComment)))),
     fixView(t),
+    reviewView(t),
     docsView(t),
   );
+}
+
+/** The second agent's review of the pull request (FR-63). */
+function reviewView(t) {
+  const r = t.review;
+  if (!r) return null;
+  const head = (chip) => h('div', { class: 'fix-title' }, '🧐 AI review of the pull request', chip);
+  if (r.stage === 'running') return h('div', { class: 'fix' }, head(h('span', { class: 'chip analyzing' }, 'reviewing…')));
+  if (r.stage === 'skipped') return h('div', { class: 'fix' }, head(h('span', { class: 'chip' }, 'skipped')), h('div', { class: 't-sub' }, r.error));
+  const riskCls = r.risk === 'low' ? 'done' : r.risk === 'medium' ? 'analyzing' : 'failed';
+  const attention = r.risk === 'high' || r.verdict === 'needs-changes';
+  const sevCls = { critical: 'failed', major: 'failed', minor: 'analyzing', info: '' };
+  return h('div', { class: 'fix' },
+    head([h('span', { class: `chip ${riskCls}` }, `risk ${r.risk}`), ' ', h('span', { class: `chip ${r.verdict === 'looks-good' ? 'done' : 'failed'}` }, r.verdict === 'looks-good' ? 'looks good' : 'needs changes')]),
+    attention ? h('div', { class: 'esc', style: 'color:var(--bad);font-weight:600' }, 'Review findings first, before approving the pull request.') : null,
+    r.summary ? h('div', {}, r.summary) : null,
+    h('div', { class: 't-sub' }, `Test covers the bug: ${r.testsCoverTheBug?.yes ? 'yes' : 'no'}${r.testsCoverTheBug?.why ? ` · ${r.testsCoverTheBug.why}` : ''}`),
+    r.findings?.length ? h('ul', { style: 'margin:0;padding-left:18px' }, r.findings.map((f) => h('li', {},
+      h('span', { class: `chip ${sevCls[f.severity] ?? ''}` }, f.severity), ' ',
+      f.file ? h('code', {}, `${String(f.file).replace(/^.*?(frontend|backend|e2e)\//, '$1/')}${f.line ? `:${f.line}` : ''}`) : null, ' ', f.comment))) : h('div', { class: 't-sub' }, 'No findings.'),
+    r.url ? h('div', {}, h('a', { href: r.url, target: '_blank' }, 'Open the review on GitHub ↗')) : null);
 }
 
 /** What the ticket ended with, in words: a PR, a failed fix, or only an analysis (and why no fix). */
 function stateChip(t) {
   if (t.state !== 'done') return h('span', { class: `chip ${t.state}` }, t.state);
-  if (t.fix?.stage === 'done') return h('span', { class: 'chip done' }, 'PR ready');
+  if (t.fix?.stage === 'done' && t.review?.stage === 'done' && (t.review.risk === 'high' || t.review.verdict === 'needs-changes')) return h('span', { class: 'chip failed' }, 'PR ready · review findings');
+  if (t.fix?.stage === 'done') return h('span', { class: 'chip done' }, t.review?.stage === 'done' ? `PR ready · risk ${t.review.risk}` : 'PR ready');
   if (t.fix?.stage === 'failed') return h('span', { class: 'chip failed' }, 'fix failed');
   if (t.fixSkipped) return h('span', { class: 'chip analyzing', title: t.fixSkipped }, 'analyzed · no fix');
   return h('span', { class: 'chip done' }, 'analyzed');
@@ -374,7 +400,7 @@ function render() {
 function renderStatus() {
   const pill = $('#state');
   if (!live) { pill.className = 'pill off'; $('#state-text').textContent = 'disconnected'; return; }
-  if (status?.processing) { pill.className = 'pill busy'; $('#state-text').textContent = `analyzing ${status.processing.key}`; }
+  if (status?.processing) { pill.className = 'pill busy'; $('#state-text').textContent = `${{ review: 'reviewing', document: 'documenting' }[status.processing.kind] ?? 'analyzing'} ${status.processing.key}`; }
   else { pill.className = 'pill live'; $('#state-text').textContent = 'watching'; }
   if (status) {
     $('#project').textContent = `Jira project ${status.project}`;

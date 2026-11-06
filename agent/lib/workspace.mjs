@@ -61,14 +61,16 @@ export async function startDevServer(ws, port, { timeoutMs = 300_000 } = {}) {
  * A read-only checkout of origin/main for the analysis (state/analysis-repo, detached HEAD), so the analysis never
  * sees whatever branch the application clone happens to be on (e.g. a fix shown with demo/preview.mjs). Same
  * repository, so history, branches and remotes are all visible. Non-git repositories (SVN) are used as they are.
+ * `name` gives a separate checkout (e.g. 'ask-repo') to a run that may overlap with an analysis: each refresh
+ * resets its folder.
  */
-export function analysisCheckout({ repoDir, stateDir }) {
+export function analysisCheckout({ repoDir, stateDir, name = 'analysis-repo' }) {
   try {
     git(repoDir, ['rev-parse', '--is-inside-work-tree']);
   } catch {
     return repoDir;
   }
-  const path = resolve(stateDir, 'analysis-repo'); // absolute: git resolves relative paths against repoDir
+  const path = resolve(stateDir, name); // absolute: git resolves relative paths against repoDir
   git(repoDir, ['fetch', '-q', 'origin', 'main']);
   if (!existsSync(join(path, '.git'))) {
     git(repoDir, ['worktree', 'prune']);

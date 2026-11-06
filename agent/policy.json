@@ -10,6 +10,7 @@
     "transitionStatus": "off",
     "proposeFix": "auto",
     "mergeFix": "off",
+    "reviewFix": "auto",
     "documentOnDone": "auto"
   },
   "notifyMinConfidence": "medium",
@@ -30,5 +31,6 @@
   },
   "_proposeFixWhenComment": "A title without [FE] still qualifies when every file the analysis names is under frontend/ (inferTagFromFiles).",
   "_fixComment": "proposeFix = reproduce with a browser test, fix on branch <KEY>, verify independently, open a DRAFT pull request. mergeFix is always off: a human merges.",
+  "_reviewComment": "reviewFix = after a draft PR is opened, a second read-only agent reviews it and posts a COMMENT review with a risk level (it never approves or merges).",
   "_documentComment": "documentOnDone = when a ticket the agent analyzed moves to Done, write docs/knowledge on branch docs/<KEY> and open a DRAFT pull request."
 }

@@ -1,6 +1,7 @@
 // One ticket, end to end: lock → headless analysis → policy-checked actions → unlock. Every step is an event.
 
-import { dirname, resolve } from 'node:path';
+import { writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runAnalysis } from './analyze.mjs';
 import { execFileSync } from 'node:child_process';
@@ -107,6 +108,9 @@ async function maybeFix({ issue, result, cfg, policy, jira, events, repoDir, sta
     const toolsDir = cfg.toolsDir ? resolve(AGENT_DIR, cfg.toolsDir) : null;
     const fix = await reproduceAndFix({ issue: full, analysis: result, repoDir, stateDir, cfg, events, toolsDir, prepared: ws });
     const pub = await publishFix({ key, analysis: result, result: fix, jira, events, stateDir });
+    // What the reviewer (review.mjs) and agent/review-one.mjs need later, after the worktree is gone.
+    const { ws: _ws, ...saved } = fix;
+    writeFileSync(join(stateDir, 'work', key, 'fix.json'), JSON.stringify({ ...saved, prUrl: pub.prUrl, at: new Date().toISOString() }, null, 2));
     events.emit('fix-proposed', { key, text: `draft PR ready: ${fix.title}`, url: pub.prUrl, checks: fix.checks, files: fix.fix.files });
     return Boolean(pub.prUrl);
   } catch (e) {
@@ -126,8 +130,10 @@ function composeComment(result, meta, policy) {
  * @param {object} p
  * @param {{key: string, summary: string}} p.issue
  * @param {object} [p.result]  reuse an existing analysis instead of running a new one
+ * @param {(job: {kind: string, key: string}) => void} [p.followUp]  queues work that runs after this ticket
+ *   (the AI review of its pull request), so the next ticket is not held up
  */
-export async function processTicket({ issue, cfg, policy, jira, events, repoDir, stateDir, result: given }) {
+export async function processTicket({ issue, cfg, policy, jira, events, repoDir, stateDir, result: given, followUp = () => {} }) {
   const { key } = issue;
   const auto = (action) => policy.actions[action] === 'auto';
   const started = Date.now();
@@ -189,6 +195,7 @@ export async function processTicket({ issue, cfg, policy, jira, events, repoDir,
     else await jira.labels(key, { remove: [cfg.labels.inProgress] });
 
     events.emit('done', { key, text: `done in ${Math.round((Date.now() - started) / 1000)} s`, totalMs: Date.now() - started, meta });
+    if (fixed && auto('reviewFix')) followUp({ kind: 'review', key });
     return result;
   } catch (e) {
     events.emit('failed', { key, text: e.message });

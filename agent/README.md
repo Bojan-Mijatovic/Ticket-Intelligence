@@ -41,6 +41,8 @@ Requirements: the Claude Code CLI (`npm install -g @anthropic-ai/claude-code`, l
 | `node agent/analyze-one.mjs DEM-7` | dry run: analyze one ticket and print the JSON result | no |
 | `node agent/process-one.mjs DEM-7` | full pipeline for one ticket | per policy |
 | `node agent/process-one.mjs DEM-7 --reuse-result` | act on the last saved analysis, without analyzing again | per policy |
+| `node agent/review-one.mjs DEM-7` / `--pr 14` | AI review of a pull request (posted on GitHub; `--dry-run` prints only) | no |
+| `node --test agent/test` | unit tests of the agent's plain-code parts | no |
 
 ## Which tickets are picked
 
@@ -81,6 +83,8 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 | `lookbackHours` | only tickets created in this window are picked |
 | `analysisTimeoutMinutes` | a run is stopped after this long |
 | `dashboardPort` | dashboard port |
+| `dashboardAllowRemote` | default off: the dashboard and its API answer only requests from this machine (they start paid agent runs) |
+| `reviewTimeoutMinutes` | the AI review is stopped after this long (default 8) |
 | `labels` | the agent's label names |
 | `claude.command`, `claude.maxTurns`, `claude.model` | how the headless agent is started |
 
@@ -126,6 +130,22 @@ node demo/preview.mjs            # which branch the app shows
 ```
 
 Each fix branch starts from `main`, so previewing one shows only that fix, not earlier ones. The MediAgenda repository is private: a browser that is not signed in to GitHub as the repository owner gets **404** on pull request links.
+
+## AI review of the pull request
+
+When a draft pull request is opened (`reviewFix: auto`), a **second, read-only agent** reviews it as a separate queue item, so the next ticket is not held up. It gets the ticket, the analysis, the diff and the watcher's check results, and reads the code around the change on `origin/main` (its own checkout, `state/review-repo`). It cannot edit files or run commands.
+
+It checks correctness (root cause, not symptom), scope (changes the ticket does not need), whether the test really covers the bug, regressions in shared code, and style. It returns a risk (`low` / `medium` / `high`), a verdict (`looks-good` / `needs-changes`) and findings. The watcher posts them as a GitHub **COMMENT** review: findings on changed lines as inline comments, the rest in the review body (GitHub rejects a comment on a line outside the diff). An account cannot approve its own pull request, and the reviewer never approves or merges.
+
+The dashboard shows the risk and the findings under the pull request; `high` or `needs-changes` shows "Review findings first". When anything fails, the review is skipped with a `review-skipped` event; the pull request is never blocked. Files: `state/work/<KEY>/review.json`, `review-request.json` (exactly what was sent to GitHub), `transcript-review.jsonl`.
+
+```
+node agent/review-one.mjs DEM-21             # review the agent's PR for DEM-21 again
+node agent/review-one.mjs --pr 14            # review any pull request of the application repository
+node agent/review-one.mjs --pr 14 --dry-run  # print the review, do not post it
+```
+
+A review queued in the watcher is lost if the watcher restarts before it runs; run it with `review-one.mjs`.
 
 ## Done → documentation
 

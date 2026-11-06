@@ -18,6 +18,7 @@ import { createJira } from './lib/jira-actions.mjs';
 import { documentResolved } from './lib/document.mjs';
 import { processTicket } from './lib/pipeline.mjs';
 import { currentBranch, previewBranch } from './lib/preview.mjs';
+import { reviewPullRequest } from './lib/review.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const cfg = JSON.parse(readFileSync(join(HERE, 'agent.config.json'), 'utf8'));
@@ -176,7 +177,8 @@ async function drain() {
   status.processing = { key: issue.key, kind: issue.kind, since: new Date().toISOString() };
   pushStatus();
   if (issue.kind === 'document') await documentTicket(issue);
-  else await processTicket({ issue, cfg, policy, jira, events, repoDir, stateDir });
+  else if (issue.kind === 'review') await reviewPullRequest({ key: issue.key, repoDir, stateDir, cfg, events, jira });
+  else await processTicket({ issue, cfg, policy, jira, events, repoDir, stateDir, followUp: (job) => status.queue.push(job) });
   status.processing = null;
   pushStatus();
   drain();
@@ -202,7 +204,14 @@ const readBody = (req) =>
     });
   });
 
+// The dashboard and its API (run, preview, ask) are for this machine only: they start agent runs that cost money
+// and read the code. Requests from other machines are refused unless dashboardAllowRemote is set.
+const LOOPBACK = /^(127\.|::1$|::ffff:127\.)/;
 const server = createServer(async (req, res) => {
+  if (!cfg.dashboardAllowRemote && !LOOPBACK.test(req.socket.remoteAddress ?? '')) {
+    res.writeHead(403, { 'Content-Type': 'text/plain' });
+    return res.end('The agent dashboard only answers on this machine (dashboardAllowRemote is off).');
+  }
   const path = req.url.split('?')[0];
   if (path === '/' || path === '/index.html') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });

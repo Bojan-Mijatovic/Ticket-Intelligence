@@ -16,7 +16,7 @@ Two rules from the POC still apply:
 | 1 | Approval from Teams | Team lead | Card with before/after, test result, risk; **Approve** / **Reject** | 1 d | A |
 | 2 | Mission Control dashboard | Team lead, management | Live phase timeline + Impact tab (time, hours saved, cost) + "Run on ticket" | 1 d | A |
 | 3 | Night shift + morning digest | Management | 08:00 Teams digest: what the agent did overnight | 1 d | C |
-| 4 | AI reviewer | Team lead, developers | Second agent reviews the PR, posts comments, sets a risk level | 0.5 d | B |
+| 4 | AI reviewer | Team lead, developers | Second agent reviews the PR, posts comments, sets a risk level | 0.5–1 d · **done** | B |
 | 5 | Hotspot map | Management, architects | Which components produce the most bugs, and the trend | 1 d | D |
 | 6 | Ask the knowledge base | PM, support, developers | Question in plain language → answer with ticket/PR links | 0.5–1 d | D |
 | 7 | Release notes and sprint report | PM, customer, management | Two versions: technical and business | 0.5 d | C |
@@ -116,6 +116,13 @@ Phase A gives the biggest demo effect for the least work. Phase B closes the loo
 **Risks.** Running the night shift on 10–15 tickets takes 30–90 minutes. It has to be prepared, not run live. Cost limits must be set before the first real night.
 
 ## 4. AI reviewer
+
+**Status: Implemented** (2026-11-06; see [agent/README.md](../agent/README.md#ai-review-of-the-pull-request)). Changes from the plan below, found while checking it against the code:
+- The fix worktree is removed as soon as the PR is opened, so the reviewer gets the diff (`git diff origin/main...origin/<KEY>`) in its prompt and reads the surrounding code in its own checkout of `origin/main` (`state/review-repo`). It has no shell.
+- GitHub rejects a whole review when one inline comment is on a line outside the diff hunks. Findings are placed on diff lines only; the rest go into the review body (and if GitHub still refuses, everything goes into the body).
+- The review is a separate queue item (`kind: 'review'`), so the next ticket does not wait for it.
+- `agent/review-one.mjs --pr <n>` reviews any PR; it was used for the acceptance test with a planted bad fix (MediAgenda PR #12: a +12 h workaround in `toIsoDate`, a theme colour change and a relaxed fiscal-code regex, no test). The review found all four problems, as inline comments, in 40 s for about $0.22.
+- Not done: `fixOnReview` (a fix retry on `needs-changes`) needs the retry loop of #1 and is built with it.
 
 **Goal.** A second agent checks the first agent's PR. This shows that the AI's work is reviewed before a human sees it.
 
@@ -221,7 +228,7 @@ Phase A gives the biggest demo effect for the least work. Phase B closes the loo
 | `demo/reset-demo.mjs` | also remove approvals, digests, reports, review comments and the new labels |
 | `demo/preflight.mjs` | checks: `gh` can mark ready and post reviews; Teams card renders; night-shift limits set; seeded history present |
 | `DEMO_SCENARIO.md` | extended storyline (below) |
-| Security | approval/reply tokens single use and local only; the dashboard binds to localhost; R-02 redaction before #6/#7/#8 on company data |
+| Security | approval/reply tokens single use and local only; the dashboard answers only requests from this machine (done: loopback check, `dashboardAllowRemote` to open it); R-02 redaction before #6/#7/#8 on company data |
 
 ## Extended demo storyline (about 12 minutes)
 

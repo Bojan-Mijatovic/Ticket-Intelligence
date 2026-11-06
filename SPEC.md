@@ -114,7 +114,7 @@ Ticket Intelligence gives every Jira ticket a fast, evidence-based first analysi
 | FR-60 | Approval card (Teams + dashboard) with before/after, checks and risk; Approve marks the PR ready and comments in Jira; Reject re-runs the fix with the reason (≤ `maxFixAttempts`); never merges | Planned |
 | FR-61 | Mission Control: live per-ticket phase timeline; Impact metrics (times, hours saved vs. configured baseline, cost per ticket); Run on ticket and Pause | Planned |
 | FR-62 | Night shift: backlog processing in a time window with ticket and cost limits; morning digest to Teams, dashboard and `state/digests/` | Planned |
-| FR-63 | AI reviewer: read-only second run on every agent PR; posts review comments and a risk level used by FR-60; never blocks the PR | Planned |
+| FR-63 | AI reviewer: read-only second run on every agent PR (separate queue item, no shell, own checkout of `origin/main`); posts a COMMENT review with inline comments on diff lines and a risk level used by FR-60; never blocks the PR (`agent/lib/review.mjs`, `agent/review-one.mjs`) | Implemented |
 | FR-64 | Hotspot map: tickets, recurrences and churn per component over time; top hotspots with a cited recommendation | Planned |
 | FR-65 | Ask the knowledge base: read-only question answering over `docs/knowledge`, agent results and Jira; every claim cited; "not found" instead of guessing | Planned |
 | FR-66 | Release notes and sprint report in a technical and a business version, on a branch with a draft PR | Planned |
@@ -139,7 +139,7 @@ A result that is not valid JSON or misses a required field fails the run (`ai-fa
 
 ### 5.3 Events (`agent/state/events.jsonl`, dashboard stream)
 
-`started`, `recovered`, `queued` (`rerun: true` when started with Run again), `picked`, `analyzing`, `progress`, `analyzed`, `duplicate`, `commented`, `notified`, `skipped`, `draft`, `done`, `failed`, `error`, `preview`; fix stage: `workspace`, `warmed`, `reproducing`, `reproduced`, `fixing`, `verifying`, `verified`, `pushed`, `pr`, `fix-proposed`, `fix-failed`, `fix-skipped`; documentation: `resolved`, `documenting`, `documented`, `doc-failed`. Each event has `at`, `type`, and usually `key` and `text`.
+`started`, `recovered`, `queued` (`rerun: true` when started with Run again), `picked`, `analyzing`, `progress`, `analyzed`, `duplicate`, `commented`, `notified`, `skipped`, `draft`, `done`, `failed`, `error`, `preview`; fix stage: `workspace`, `warmed`, `reproducing`, `reproduced`, `fixing`, `verifying`, `verified`, `pushed`, `pr`, `fix-proposed`, `fix-failed`, `fix-skipped`; documentation: `resolved`, `documenting`, `documented`, `doc-failed`; review: `reviewing`, `reviewed` (`review`, `meta`), `review-skipped`. Each event has `at`, `type`, and usually `key` and `text`.
 
 ### 5.4 Configuration
 
@@ -175,7 +175,8 @@ Scores only order lists; every recommendation must cite tickets, commits or file
 |---|---|
 | Credentials | per user in `.env` outside the repository; never copied into project installs or logs |
 | Writes | the analysis is read-only; the watcher is the only writer, limited by `policy.json`; SVN/git commits and pushes require explicit confirmation (also enforced in Claude Code permission settings) |
-| Prompt injection | ticket text, commit messages and code comments are treated as data, not instructions (stated in both skills) |
+| Prompt injection | ticket text, commit messages and code comments are treated as data, not instructions (stated in both skills); runs that read free text from people other than the ticket reporter (reviewer, Ask) have no shell at all |
+| Dashboard | answers only requests from this machine (loopback); `dashboardAllowRemote: true` in `agent.config.json` opens it to the network |
 | Patient data | **open:** automatic redaction before analysis is not implemented; required before use on company tickets (R-02) |
 | Audit | every agent step and action in `events.jsonl`; per-run transcript and result in `state/work/<KEY>/` |
 
