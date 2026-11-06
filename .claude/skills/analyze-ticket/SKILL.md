@@ -2,6 +2,7 @@
 name: analyze-ticket
 description: Analyze a Jira ticket (support request, bug or user story) from its ID and title, inside the project's code repository (git or SVN). Explains the problem and current status, finds related tickets, locates the code component involved, shows who worked on it and what they changed (including suspect changes made right before the problem started), proposes a concrete fix and next steps, and drafts a handoff message, a customer reply and a Jira comment. Use when someone gets a ticket and needs to understand it fast, asks for a ticket's status, wants to speed a ticket up or find who should handle it, or pastes a ticket link.
 argument-hint: <TICKET-ID> "<ticket title>" [--env <environment>]
+model: sonnet
 ---
 
 # Analyze ticket
@@ -51,7 +52,7 @@ Keep facts (with ticket keys, commit hashes and file paths) separate from your i
 4. **`components`**: ranked parts of the codebase, with the `reasons` each was picked. The top one or two are where to look.
 5. **`suspectCommits`**: changes to those components in the days before the ticket was created, with patches. **Read every patch against the symptom.** A suspect commit that removes or changes exactly what an earlier fix added is usually the answer; say so and quote the diff lines.
 6. **`ticketCommits`**: commits that reference this ticket or related tickets, with patches. They show how similar problems were fixed in code. Commits referencing the current ticket mean work has already started; check `branchesForTicket` too.
-7. **`grepHits`**: where the ticket's terms appear in the code. **Open the 2–5 most relevant files** with your file tools to understand the logic before proposing a fix. Don't propose a fix to code you haven't read.
+7. **`grepHits`**: where the ticket's terms appear in the code. **Open the 1–3 most relevant files** with your file tools, and read only the code around the hits (offset/limit), not whole files, to understand the logic before proposing a fix. Don't propose a fix to code you haven't read.
 8. **`knowledgeDocs`**: earlier documented problems. If a component's `knowledgeDoc.exists` or there are `hits`, read them first: the problem may already be documented.
 
 **People**
