@@ -21,6 +21,7 @@ import { currentBranch, previewBranch } from './lib/preview.mjs';
 import { reviewPullRequest } from './lib/review.mjs';
 import { buildInsights, readRecommendations, writeRecommendations } from './lib/insights.mjs';
 import { askQuestion } from './lib/ask.mjs';
+import { attachMailUpdates } from './lib/mail-updates.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const cfg = JSON.parse(readFileSync(join(HERE, 'agent.config.json'), 'utf8'));
@@ -77,6 +78,7 @@ if (previous?.pid && previous.pid !== process.pid && alive(previous.pid)) {
 
 const events = createEventLog(join(stateDir, 'events.jsonl'));
 const jira = createJira();
+const mail = attachMailUpdates({ events, policy, cfg, browseUrl: (key) => jira.browseUrl(key) });
 
 const agentLabels = Object.values(cfg.labels);
 // A ticket is picked only after it has not changed for settleMinutes: reporters often create it with a title and
@@ -334,6 +336,7 @@ server.listen(cfg.dashboardPort, () => {
   writeFileSync(PID_FILE, JSON.stringify({ pid: process.pid, startedAt: status.startedAt }));
   console.log(`Dashboard: http://localhost:${cfg.dashboardPort}`);
   console.log(`Watching ${cfg.project} every ${cfg.pollSeconds}s · repo ${repoDir} · app shows ${status.appBranch}`);
+  console.log(mail.enabled ? `Email updates to ${mail.to.join(', ')}` : `Email updates off: ${mail.reason}`);
 });
 const cleanup = () => {
   if (readPid()?.pid === process.pid) rmSync(PID_FILE, { force: true });

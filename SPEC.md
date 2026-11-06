@@ -99,6 +99,7 @@ Ticket Intelligence gives every Jira ticket a fast, evidence-based first analysi
 | FR-43 | Preview: switch the served application clone to a fix branch and wait for the dev server rebuild (dashboard button, `demo/preview.mjs`); the dashboard shows which branch the app serves | Implemented |
 | FR-44 | The analysis always reads `origin/main` (detached worktree `state/analysis-repo`), never the branch the application clone is on | Implemented |
 | FR-45 | Single watcher instance (`state/watcher.pid`); `--replace` stops the running one; preflight fails when the watcher runs older agent code | Implemented |
+| FR-46 | Update emails: with `emailUpdates: auto`, one email per milestone (`mail.on`: analysis ready, draft fix PR, fix stopped, AI review, documentation PR, failures) to `MAIL_TO`, over SMTP with TLS/STARTTLS (plain Node, `agent/lib/mail.mjs`); sent after the event, one at a time; outcome as `mailed` / `mail-failed`; off with the reason when SMTP is not configured | Implemented (tested against a local SMTP server; real Gmail delivery pending credentials) |
 
 ### 4.5 Documentation of resolved tickets
 
@@ -139,16 +140,16 @@ A result that is not valid JSON or misses a required field fails the run (`ai-fa
 
 ### 5.3 Events (`agent/state/events.jsonl`, dashboard stream)
 
-`started`, `recovered`, `queued` (`rerun: true` when started with Run again), `picked`, `analyzing`, `progress`, `analyzed`, `duplicate`, `commented`, `notified`, `skipped`, `draft`, `done`, `failed`, `error`, `preview`; fix stage: `workspace`, `warmed`, `reproducing`, `reproduced`, `fixing`, `verifying`, `verified`, `pushed`, `pr`, `fix-proposed`, `fix-failed`, `fix-skipped`; documentation: `resolved`, `documenting`, `documented`, `doc-failed`; review: `reviewing`, `reviewed` (`review`, `meta`), `review-skipped`. Each event has `at`, `type`, and usually `key` and `text`.
+`started`, `recovered`, `queued` (`rerun: true` when started with Run again), `picked`, `analyzing`, `progress`, `analyzed`, `duplicate`, `commented`, `notified`, `skipped`, `draft`, `done`, `failed`, `error`, `preview`; fix stage: `workspace`, `warmed`, `reproducing`, `reproduced`, `fixing`, `verifying`, `verified`, `pushed`, `pr`, `fix-proposed`, `fix-failed`, `fix-skipped`; documentation: `resolved`, `documenting`, `documented`, `doc-failed`; review: `reviewing`, `reviewed` (`review`, `meta`), `review-skipped`; email: `mailed` (`subject`, `for`), `mail-failed`. Each event has `at`, `type`, and usually `key` and `text`.
 
 ### 5.4 Configuration
 
 | File | Scope | Content |
 |---|---|---|
-| `~/.claude/skills/analyze-ticket/.env` | per user, secret | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` or `JIRA_PAT`, `JIRA_MOCK`, `SVN_BIN`, `TEAMS_WEBHOOK_URL` |
+| `~/.claude/skills/analyze-ticket/.env` | per user, secret | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` or `JIRA_PAT`, `JIRA_MOCK`, `SVN_BIN`, `TEAMS_WEBHOOK_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `MAIL_TO` |
 | `~/.claude/skills/analyze-ticket/config.json` | per user | `environmentField`, `environmentMatch`, `projects`, `lookbackDays`, `maxRelated`, `halfLifeDays`, `doneStatuses`, `excludeUsers` |
 | `<repo>/.ticket-intel.json` | per project | `docsPath`, `commitMode`, `baseBranch`, `componentContainers`, `suspectWindowDays`, `authorAliases` |
-| `agent/agent.config.json` | agent | `project`, `repo`, `pollSeconds`, `lookbackHours`, `analysisTimeoutMinutes`, `dashboardPort`, `labels`, `claude.*` |
+| `agent/agent.config.json` | agent | `project`, `repo`, `pollSeconds`, `lookbackHours`, `analysisTimeoutMinutes`, `dashboardPort`, `labels`, `claude.*`, `mail.on` |
 | `agent/policy.json` | agent | action → `auto|draft|off`, `notifyMinConfidence`, comment header and size |
 
 ### 5.5 External systems
@@ -160,6 +161,7 @@ A result that is not valid JSON or misses a required field fails the run (`ai-fa
 | SVN | `info`, `status --xml`, `log --xml --search`, `diff -c`, `ls` | read-only for analysis; credentials must be cached |
 | Claude Code CLI | `claude -p --output-format stream-json --strict-mcp-config --disallowedTools Edit Write NotebookEdit …` (reviewer, Ask: `--tools Read,Grep,Glob`) | prompt via stdin |
 | Teams | Workflows webhook, Adaptive Card | optional |
+| SMTP (e.g. Gmail) | `EHLO`, `STARTTLS`, `AUTH PLAIN`, `MAIL FROM`, `RCPT TO`, `DATA` over TLS | optional; update emails (FR-46) |
 
 ## 6. Scoring (transparent heuristics)
 
@@ -201,7 +203,7 @@ Scores only order lists; every recommendation must cite tickets, commits or file
 | Warm-up | the fix workspace and dev server are prepared during the analysis: reproduction 64 s instead of 197 s (DEM-10 vs DEM-9) |
 | Done → docs | DEM-10 moved to Done → documentation PR #4 in 1 min 32 s |
 | Reproduce and fix | DEM-9 created → analysis 63 s → test written and failing (verified) → fix → 2 browser tests + `ng build` passing (verified) → draft PR #1 + Jira comment with 4 attachments; 6 min 24 s end to end, no human action |
-| Not yet validated | GitHub Copilot, real company tickets, real SVN server, real Teams channel |
+| Not yet validated | GitHub Copilot, real company tickets, real SVN server, real Teams channel, real email delivery (Gmail SMTP) |
 
 ## 10. Open questions
 

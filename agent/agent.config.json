@@ -23,6 +23,9 @@
     "model": null,
     "analysisModel": "sonnet"
   },
+  "mail": {
+    "on": ["analyzed", "fix-proposed", "fix-failed", "reviewed", "documented", "doc-failed", "failed"]
+  },
   "fixTimeoutMinutes": 15,
   "toolsDir": "../tools",
   "insights": {

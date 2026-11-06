@@ -44,6 +44,7 @@ Requirements: the Claude Code CLI (`npm install -g @anthropic-ai/claude-code`, l
 | `node agent/review-one.mjs DEM-7` / `--pr 14` | AI review of a pull request (posted on GitHub; `--dry-run` prints only) | no |
 | `node agent/insights.mjs` | hotspot map in the terminal (`--json`, `--recommend`) | no |
 | `node agent/ask.mjs "question"` | ask the knowledge base (sourced answer or "not found") | no |
+| `node agent/mail-test.mjs` / `DEM-7` / `DEM-7 --dry-run` | send a test email, or the "analysis ready" email of a saved analysis, to `MAIL_TO` | no |
 | `node --test agent/test` | unit tests of the agent's plain-code parts | no |
 
 ## Which tickets are picked
@@ -71,6 +72,7 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
   | notify the owner | auto, only for a real person and at least `notifyMinConfidence` |
   | assign the owner | draft |
   | reply to the reporter | draft |
+  | update emails to `MAIL_TO` | auto (off until SMTP is configured) |
   | change priority / status | off |
 
 - **Validated output.** A result that is not valid JSON or misses required fields is rejected: the ticket gets `ai-failed`, and nothing is posted.
@@ -92,12 +94,33 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 | `askTimeoutSeconds`, `askMaxTurns` | limits of one Ask question (defaults 120 s, 16 turns) |
 | `insights.months`, `insights.churnDays`, `insights.components` | hotspot map: months shown, churn window, path rules per component |
 | `labels` | the agent's label names |
+| `mail.on` | which events send an update email (see [Update emails](#update-emails)) |
 | `claude.command`, `claude.maxTurns`, `claude.model` | how the headless agent is started |
 | `claude.analysisModel` | model for the analysis only (the analyze-ticket skill), e.g. `sonnet`; the fix, the review and Ask keep `claude.model` (null = the CLI default) |
 
 ## Notifications
 
 Without configuration, owner notifications are shown on the dashboard as Teams-style cards. To post them to a real Teams channel, create a webhook in the channel (Workflows › "Post to a channel when a webhook request is received") and set `TEAMS_WEBHOOK_URL=` in `~/.claude/skills/analyze-ticket/.env`.
+
+### Update emails
+
+With `emailUpdates: auto` in `policy.json`, the agent mails one update per milestone of a ticket to `MAIL_TO`:
+
+| Event (`mail.on` in `agent.config.json`) | Email |
+|---|---|
+| `analyzed` | analysis ready: recommended person and why, confidence, escalation, summary, likely cause, proposed fix, next steps, possible duplicate, related tickets, the handoff message and the draft reply to the reporter (marked "not sent") |
+| `fix-proposed` / `fix-failed` | draft PR ready (link, checks, changed files) / automatic fix stopped (reason) |
+| `reviewed` | AI review: risk, verdict, findings |
+| `documented` / `doc-failed` | documentation PR ready / documentation failed |
+| `failed` | analysis failed |
+
+Settings in `~/.claude/skills/analyze-ticket/.env` (see `.env.example`): `SMTP_HOST` (default `smtp.gmail.com`), `SMTP_PORT` (465 = TLS, 587 = STARTTLS), `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` (default `SMTP_USER`), `MAIL_TO` (comma separated). For Gmail, `SMTP_PASS` is an **app password** (https://myaccount.google.com/apppasswords, needs 2-step verification), not the account password.
+
+- Every update goes to `MAIL_TO` (a test or team inbox). Sending to the recommended person directly needs a Jira user → email mapping, which is not built yet.
+- The email is sent after the event, one at a time, so a slow or failing mail server never holds up a ticket. The outcome is an event: `mailed` or `mail-failed` (with the server's answer), shown in the ticket's timeline.
+- Without the settings the feature is off, and the watcher says why at start (`Email updates off: …`).
+- The SMTP client is plain Node (`agent/lib/mail.mjs`, no npm packages). It refuses to send a password over an unencrypted connection to another host.
+- Check the settings with `node agent/mail-test.mjs`; `node agent/mail-test.mjs DEM-40` sends the analysis email of a saved analysis.
 
 ## Automatic reproduction and fix
 
