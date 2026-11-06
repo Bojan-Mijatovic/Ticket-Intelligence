@@ -93,6 +93,7 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 | `insights.months`, `insights.churnDays`, `insights.components` | hotspot map: months shown, churn window, path rules per component |
 | `labels` | the agent's label names |
 | `claude.command`, `claude.maxTurns`, `claude.model` | how the headless agent is started |
+| `claude.analysisModel` | model for the analysis only (the analyze-ticket skill), e.g. `sonnet`; the fix, the review and Ask keep `claude.model` (null = the CLI default) |
 
 ## Notifications
 

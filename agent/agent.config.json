@@ -20,7 +20,8 @@
   "claude": {
     "command": "claude",
     "maxTurns": 40,
-    "model": null
+    "model": null,
+    "analysisModel": "sonnet"
   },
   "fixTimeoutMinutes": 15,
   "toolsDir": "../tools",

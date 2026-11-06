@@ -15,6 +15,7 @@ Analyze Jira ticket ${key} for the project in the current directory, using the a
 - Use "${workDir}" as your scratch directory (for --out and --attachments-dir).
 - Read-only: do NOT post Jira comments, change Jira, edit or create project files, commit, or ask questions. Skip the skill's drafts/offers/approval steps; the result below replaces them.
 - Open the relevant source files before proposing a fix, as the skill says.
+- Comments starting with "(robot)" on this ticket are earlier runs of this agent. They may be outdated (the ticket or the code changed since), so they are not evidence: check every claim again against Jira, git and the code, including whether tickets and branches they mention still exist.
 
 When you are done, reply with ONLY one \`\`\`json fenced block, nothing else, matching exactly this shape (all text in English):
 {
@@ -179,10 +180,12 @@ function invokeClaude({ cwd, prompt, cfg, addDirs = [], disallowedTools = [], to
 export async function runAnalysis({ key, repoDir, stateDir, cfg, onProgress = () => {} }) {
   const workDir = join(stateDir, 'work', key);
   mkdirSync(workDir, { recursive: true });
+  // The analysis (the analyze-ticket skill) may run on a cheaper model than the fix and the review (claude.analysisModel).
+  const analysisCfg = cfg.claude.analysisModel ? { ...cfg, claude: { ...cfg.claude, model: cfg.claude.analysisModel } } : cfg;
   const out = await runClaude({
     cwd: repoDir,
     prompt: buildPrompt(key, workDir),
-    cfg,
+    cfg: analysisCfg,
     transcriptFile: join(workDir, 'transcript.jsonl'),
     addDirs: [workDir],
     disallowedTools: ['Edit', 'Write', 'NotebookEdit'],

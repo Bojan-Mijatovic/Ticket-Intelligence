@@ -71,7 +71,9 @@ export function analysisCheckout({ repoDir, stateDir, name = 'analysis-repo' }) 
     return repoDir;
   }
   const path = resolve(stateDir, name); // absolute: git resolves relative paths against repoDir
-  git(repoDir, ['fetch', '-q', 'origin', 'main']);
+  // --prune: a branch deleted on GitHub (closed PR, demo reset) must not stay visible as origin/<KEY>, or the
+  // analysis concludes that "the fix is already on branch DEM-36" for a branch that no longer exists.
+  git(repoDir, ['fetch', '-q', '--prune', 'origin']);
   if (!existsSync(join(path, '.git'))) {
     git(repoDir, ['worktree', 'prune']);
     mkdirSync(dirname(path), { recursive: true });
