@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Merges the agent's pull request of a ticket into MediAgenda main and shows the result in the running app:
+// Merges the agent's pull request of a ticket into its app's main and shows the result in the running app:
 // what a person does by hand on GitHub (Ready for review → Squash and merge → delete branch), then the local clone
-// back on an up-to-date main, so http://localhost:4200 shows the fix without "Preview". Dry run by default.
+// back on an up-to-date main, so the app (MediAgenda: http://localhost:4200) shows the fix without "Preview". Dry run by default.
 //
 //   node demo/merge-fix.mjs DEM-32           show what would be done
 //   node demo/merge-fix.mjs DEM-32 --yes     do it
@@ -15,10 +15,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { previewBranch } from '../agent/lib/preview.mjs';
+import { loadProjects } from '../agent/lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const APP = join(HERE, 'mediagenda');
-const STATE = join(HERE, '..', 'agent', 'state');
 const args = process.argv.slice(2);
 const APPLY = args.includes('--yes');
 const key = args.find((a) => /^[A-Z][A-Z0-9_]+-\d+$/i.test(a))?.toUpperCase();
@@ -26,12 +25,20 @@ if (!key) {
   console.error('usage: node demo/merge-fix.mjs <KEY> [--yes] [--docs] [--force]');
   process.exit(1);
 }
+// The app of the ticket (DEM-32 → MediAgenda, LAB-21 → MediLab, …), agent/agent.config.json "projects".
+const project = loadProjects(join(HERE, '..', 'agent')).ofTicket(key);
+if (!project) {
+  console.error(`${key} belongs to none of the projects in agent/agent.config.json`);
+  process.exit(1);
+}
+const APP = project.repoDir;
+const STATE = project.stateDir;
 
 const sh = (cmd, a, cwd = APP) => execFileSync(cmd, a, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const step = (text) => console.log(`${APPLY ? '•' : '(dry run)'} ${text}`);
 const slug = sh('git', ['remote', 'get-url', 'origin']).match(/github\.com[/:]([^/]+)\/([^/.\s]+)/)?.slice(1, 3).join('/');
 if (!slug) {
-  console.error('demo/mediagenda has no GitHub remote');
+  console.error(`${APP} has no GitHub remote`);
   process.exit(1);
 }
 const openPr = (branch) => JSON.parse(sh('gh', ['pr', 'list', '--repo', slug, '--head', branch, '--state', 'open', '--json', 'number,title,isDraft,url']))[0] ?? null;
@@ -70,9 +77,9 @@ const merge = (p) => {
 merge(pr);
 if (docs) merge(docs);
 
-step('local clone: back on main, fast-forward to origin/main, wait until the app on :4200 serves it');
+step(`local clone: back on main, fast-forward to origin/main, wait until the app on :${project.app.frontend} serves it`);
 if (APPLY) {
-  const r = await previewBranch({ repoDir: APP, branch: 'main' });
+  const r = await previewBranch({ repoDir: APP, branch: 'main', appUrl: project.app.url });
   console.log(`  the app shows main${r.changed.length ? ` (${r.changed.length} frontend file(s) changed${r.served ? ', rebuilt' : ', not rebuilt yet: refresh in a few seconds'})` : ''}`);
 }
 for (const branch of [key, `docs/${key}`]) {
@@ -94,4 +101,4 @@ if (APPLY) {
     console.log(`  Jira comment skipped: ${e.message.split('\n')[0]}`);
   }
 }
-console.log(APPLY ? `\nDone: http://localhost:4200 shows main with ${key}. Move the ticket to Done in Jira (or node demo/resolve-ticket.mjs ${key}) when it is finished.` : '\nNothing changed. Run with --yes to merge.');
+console.log(APPLY ? `\nDone: ${project.app.url} shows main with ${key}. Move the ticket to Done in Jira (or node demo/resolve-ticket.mjs ${key}) when it is finished.` : '\nNothing changed. Run with --yes to merge.');

@@ -1,23 +1,65 @@
 #!/usr/bin/env node
-// Starts the MediAgenda demo: Spring Boot backend on :8080 and Angular dev server on :4200.
+// Starts an app of the demo suite: its Spring Boot backend and its Angular dev server (MediAgenda: :8080 and :4200).
 // Uses the portable JDK/Maven in tools/ when java/mvn are not on PATH.  Ctrl+C stops both.
 // Stays on the current code: pulls a merged main by itself and restarts the backend (or the frontend, for build
 // configuration changes) whenever the clone's commit changes, so an old version never keeps running.
-//   node demo/run-mediagenda.mjs [--svn] [--no-auto-pull]
+//   node demo/run-mediagenda.mjs [--svn] [--no-auto-pull]      MediAgenda
+//   node demo/run-mediagenda.mjs --project LAB                  another app (ports from agent/agent.config.json)
+//   node demo/run-mediagenda.mjs --all                          every app that has a clone (the apps call each other)
 
 import { spawn, execSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadProjects } from '../agent/lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-// --svn runs the SVN working copy (demo/mediagenda-svn) instead of the git repository.
-const REPO = join(HERE, process.argv.includes('--svn') ? 'mediagenda-svn' : 'mediagenda');
 const TOOLS = join(HERE, '..', 'tools');
 const win = process.platform === 'win32';
+const suite = loadProjects(join(HERE, '..', 'agent'));
+const argv = process.argv.slice(2);
+const projectArg = argv.includes('--project') ? argv[argv.indexOf('--project') + 1] : null;
+
+// --all: one runner per app with a clone, in this terminal; Ctrl+C stops them all.
+if (argv.includes('--all')) {
+  const ready = suite.projects.filter((p) => existsSync(p.repoDir));
+  const runners = ready.map((p) => {
+    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), '--project', p.key, ...argv.filter((a) => a === '--no-auto-pull')], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = (chunk) => chunk.toString().split(/\r?\n/).filter(Boolean).forEach((l) => console.log(`${p.key.padEnd(4)}${l}`));
+    child.stdout.on('data', out);
+    child.stderr.on('data', out);
+    return child;
+  });
+  console.log(`Starting ${ready.map((p) => `${p.name} (:${p.app.backend} / :${p.app.frontend})`).join(', ')}`);
+  const stopAll = () => {
+    for (const c of runners) {
+      try {
+        if (win) execSync(`taskkill /pid ${c.pid} /T /F`, { stdio: 'ignore' });
+        else c.kill('SIGINT');
+      } catch {
+        /* already gone */
+      }
+    }
+    process.exit(0);
+  };
+  process.on('SIGINT', stopAll);
+  process.on('SIGTERM', stopAll);
+  await new Promise(() => {});
+}
+
+const project = projectArg ? suite.byKey(projectArg) : suite.byKey('DEM') ?? suite.projects[0];
+if (!project) {
+  console.error(`Unknown project ${projectArg}. Projects: ${suite.projects.map((p) => p.key).join(', ')}`);
+  process.exit(1);
+}
+// --svn runs the SVN working copy of MediAgenda (demo/mediagenda-svn) instead of the git repository.
+const REPO = argv.includes('--svn') ? join(HERE, 'mediagenda-svn') : project.repoDir;
+const FRONTEND_PORT = project.app.frontend;
+const BACKEND_PORT = project.app.backend;
 
 if (!existsSync(REPO)) {
-  console.error(`${REPO} does not exist yet: run "node demo/make-mediagenda.mjs${process.argv.includes('--svn') ? ' --svn' : ''}" first.`);
+  const build = project.key === 'DEM' ? `node demo/make-mediagenda.mjs${argv.includes('--svn') ? ' --svn' : ''}` : `node demo/make-project.mjs ${REPO.split(/[\\/]/).pop()}`;
+  console.error(`${REPO} does not exist yet: run "${build}" first.`);
   process.exit(1);
 }
 
@@ -48,7 +90,7 @@ if (!onPath('mvn') || !onPath('java')) {
 
 const SERVICES = {
   backend: { label: 'backend ', cmd: mvn, args: ['-q', 'spring-boot:run'], cwd: join(REPO, 'backend') },
-  frontend: { label: 'frontend', cmd: 'npx', args: ['ng', 'serve', '--port', '4200'], cwd: join(REPO, 'frontend') },
+  frontend: { label: 'frontend', cmd: 'npx', args: ['ng', 'serve', '--port', String(FRONTEND_PORT)], cwd: join(REPO, 'frontend') },
 };
 const children = {};
 const restarting = new Set();
@@ -86,7 +128,7 @@ async function restart(name, why) {
 start('backend');
 start('frontend');
 
-console.log('Starting… backend http://localhost:8080 · frontend http://localhost:4200 (Ctrl+C to stop)');
+console.log(`Starting ${project.name}… backend http://localhost:${BACKEND_PORT} · frontend http://localhost:${FRONTEND_PORT} (Ctrl+C to stop)`);
 const stop = () => {
   for (const c of Object.values(children)) kill(c);
   process.exit(0);
@@ -133,7 +175,7 @@ if (isGit) {
         try {
           execSync('npm install --no-audit --no-fund --loglevel=error', { cwd: join(REPO, 'frontend'), stdio: 'inherit' });
         } catch {
-          console.log('[runner  ] npm install failed; run it by hand in demo/mediagenda/frontend');
+          console.log(`[runner  ] npm install failed; run it by hand in ${join(REPO, 'frontend')}`);
         }
       }
       if (backend.length) await restart('backend', `${backend.length} backend file(s) changed`);
@@ -143,7 +185,7 @@ if (isGit) {
     }
   }, 3000);
 
-  if (!process.argv.includes('--no-auto-pull')) {
+  if (!argv.includes('--no-auto-pull')) {
     setInterval(() => {
       if (tryGit('rev-parse --abbrev-ref HEAD') !== 'main' || tryGit('status --porcelain --untracked-files=no')) return;
       if (tryGit('fetch -q origin main') === null) return;

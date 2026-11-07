@@ -4,6 +4,7 @@
 //
 //   node demo/new-ticket.mjs [--project DEM] [--screenshot path.png]   the demo target (CUP_DEMO-2629 scenario)
 //   node demo/new-ticket.mjs --scenario birth-date                     a scenario from demo/scenarios.json
+//   node demo/new-ticket.mjs --scenario far-renal                      … in its own project (FAR); --project overrides it
 //   node demo/new-ticket.mjs --delete DEM-7        removes a rehearsal ticket
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -17,7 +18,8 @@ const { loadConfig } = await import(new URL(`file:///${join(SKILL, 'scripts', 'l
 const cfg = loadConfig();
 const args = process.argv.slice(2);
 const opt = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null);
-const PROJECT = opt('--project') ?? 'DEM';
+// The Jira project: --project, else the scenario's own project (e.g. LAB for lab-decimal), else DEM.
+let PROJECT = opt('--project');
 // Tickets created by this script, so reset-demo.mjs deletes only those (never the seeded history or other tickets).
 const TRACK = join(HERE, '.demo-tickets.json');
 const tracked = () => (existsSync(TRACK) ? JSON.parse(readFileSync(TRACK, 'utf8')) : []);
@@ -50,7 +52,7 @@ if (opt('--delete')) {
 }
 
 const keys = existsSync(join(HERE, 'jira-keys.json')) ? JSON.parse(readFileSync(join(HERE, 'jira-keys.json'), 'utf8')) : {};
-const mapKeys = (s) => String(s ?? '').replace(/CUP_DEMO-\d+/g, (k) => keys[k] ?? k);
+const mapKeys = (s) => String(s ?? '').replace(/CUP_[A-Z]+-\d+/g, (k) => keys[k] ?? k);
 // The ticket: a scenario from scenarios.json (--scenario <name>), by default the demo target CUP_DEMO-2629.
 const { scenarios } = JSON.parse(readFileSync(join(HERE, 'scenarios.json'), 'utf8'));
 const name = opt('--scenario') ?? 'struttura';
@@ -59,6 +61,7 @@ if (!scenario) {
   console.error(`unknown scenario "${name}"; available: ${Object.keys(scenarios).join(', ')}`);
   process.exit(1);
 }
+PROJECT ??= scenario.project ?? 'DEM';
 const fixture = scenario.fixture ? JSON.parse(readFileSync(join(SKILL, 'fixtures', 'mock-jira.json'), 'utf8')).issues.find((i) => i.key === scenario.fixture) : null;
 const target = fixture
   ? { summary: fixture.summary, description: fixture.description, issueType: 'Bug', priority: 'High', labels: fixture.environments ?? [] }

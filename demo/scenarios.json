@@ -63,6 +63,65 @@
         "fix": "option value=\"ANNULLATA\" (better: options built from the BookingStatus type)",
         "agentFix": true
       }
+    },
+    "lab-decimal": {
+      "project": "LAB",
+      "summary": "[FE] - Inserimento risultati: a value with a decimal comma is saved without its decimals",
+      "description": "In Inserimento risultati I type Creatinina 1,35 and press SALVA: the saved value is 1 (flagged as normal). Potassio 4,6 becomes 4.\nIt started this week; before, the same values were saved correctly. Values typed with a dot (1.35) are saved right, but everybody types the comma.\n\nHow to reproduce:\n1 - Richieste > RL-2026-00058 (Ferrari Giulia) > Risultati\n2 - Creatinina: type 1,35 and press SALVA\n3 - the field shows 1 and the report would say 1 mg/dL",
+      "issueType": "Bug",
+      "priority": "Highest",
+      "labels": ["COLLAUDO"],
+      "expected": {
+        "component": "frontend/src/app/features/results (ResultEntryComponent)",
+        "cause": "since CUP_LAB-120 the value fields are text fields, and toNumber() uses parseFloat(), which stops at the comma: '1,35' → 1",
+        "files": ["frontend/src/app/features/results/result-entry.component.ts", "frontend/src/app/shared/utils/numbers.ts"],
+        "introducedBy": "CUP_LAB-120 (Francesca Lombardi, 2026-10-27): text fields instead of number fields",
+        "related": ["CUP_LAB-120", "CUP_LAB-117"],
+        "owner": "Francesca Lombardi",
+        "fix": "parse the Italian decimal comma (replace ',' with '.' before Number(), ideally a parseDecimal next to formatDecimal in shared/utils/numbers.ts)",
+        "fixInProject": "LAB",
+        "agentFix": true
+      }
+    },
+    "far-renal": {
+      "project": "FAR",
+      "summary": "[BE] - Nuova prescrizione: no renal warning for metformin, although the patient's eGFR is about 28",
+      "description": "Marino Paolo (MRNPLA61S03C351V) has creatinine 2,50 mg/dL in MediLab (request of 3 November), eGFR about 28 with the CKD-EPI calculator of the ward. Metformina is contraindicated below 30, but Nuova prescrizione shows no warning at all, and the panel says eGFR 270.\nIn August the same check worked for him (red warning). Nothing was changed in the drug rules.\n\nHow to reproduce:\n1 - Nuova prescrizione, patient Marino Paolo\n2 - add Metformina 500 mg compresse\n3 - the warnings panel shows eGFR 270 and \"Nessun avviso\"",
+      "issueType": "Bug",
+      "priority": "Highest",
+      "labels": ["COLLAUDO"],
+      "expected": {
+        "component": "backend/src/main/java/com/medifarma/safety (RenalCheckService)",
+        "cause": "RenalCheckService always divides the MediLab creatinine by 88.4 (µmol/L → mg/dL), but since CUP_LAB-118 (MediLab, Flyway V6) creatinine comes in mg/dL: 2.50 / 88.4 = 0.028 mg/dL → eGFR far too high. The unit field of the MediLab result is ignored.",
+        "files": ["backend/src/main/java/com/medifarma/safety/RenalCheckService.java"],
+        "introducedBy": "CUP_LAB-118 (Alessandro Moretti, MediLab, 2026-10-21): creatinine in mg/dL",
+        "related": ["CUP_LAB-118", "CUP_FAR-211"],
+        "owner": "Valentina Rinaldi",
+        "fix": "convert by the unit MediLab sends (LabValue.unit): mg/dL as is, µmol/L ÷ 88.4, anything else → no eGFR plus an INFO warning; regression test with FakeMediLabClient returning 2.50 mg/dL",
+        "otherProjects": ["LAB"],
+        "fixInProject": "FAR",
+        "agentFix": true
+      }
+    },
+    "bil-cancelled": {
+      "project": "BIL",
+      "summary": "[BE] - Import addebiti: a cancelled visit is charged to the patient",
+      "description": "Costa Andrea got a receipt for the cardiology visit of 17/11 (PR-2026-00590), but he cancelled it on 2/11 and MediAgenda shows the booking as ANNULLATA. Other patients called with the same problem since September.\n\nHow to reproduce:\n1 - Addebiti: import the day 17/11/2026\n2 - the visit PR-2026-00590 of Costa Andrea is charged (Prima visita cardiologica, 22,50 €)\n3 - in MediAgenda > Prenotazioni the booking is ANNULLATA",
+      "issueType": "Bug",
+      "priority": "High",
+      "labels": ["COLLAUDO"],
+      "expected": {
+        "component": "backend/src/main/java/com/medibill/charge (ChargeImportService)",
+        "cause": "the visit import (CUP_BIL-304, June) charges every MediAgenda booking of the day, whatever its status; since CUP_DEMO-2533 (MediAgenda, September) bookings can be ANNULLATA, and those are charged too",
+        "files": ["backend/src/main/java/com/medibill/charge/ChargeImportService.java"],
+        "introducedBy": "CUP_DEMO-2533 (Luca Bianchi, MediAgenda, 2026-09-08): booking cancellation, status ANNULLATA",
+        "related": ["CUP_BIL-304", "CUP_DEMO-2533"],
+        "owner": "Davide Greco",
+        "fix": "skip bookings with status ANNULLATA in ChargeImportService.importDay (or charge only CONFERMATA/COMPLETATA), plus a regression test with a cancelled booking in FakeMediAgendaClient",
+        "otherProjects": ["DEM"],
+        "fixInProject": "BIL",
+        "agentFix": true
+      }
     }
   }
 }

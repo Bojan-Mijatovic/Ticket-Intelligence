@@ -10,12 +10,14 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
-const APP = join(HERE, 'mediagenda');
 const SKILL = join(homedir(), '.claude', 'skills', 'analyze-ticket');
-const agentCfg = JSON.parse(readFileSync(join(ROOT, 'agent', 'agent.config.json'), 'utf8'));
+const { loadProjects } = await import('../agent/lib/projects.mjs');
+const suite = loadProjects(join(ROOT, 'agent'));
+const agentCfg = suite.global;
+const APPS = suite.projects.filter((p) => existsSync(p.repoDir));
 const AGENT_BRANCH = /^(docs\/)?[A-Z][A-Z0-9_]+-\d+$/;
 
-const sh = (cmd, args, cwd = APP, timeout = 60_000) => execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout, shell: process.platform === 'win32' && cmd === 'claude' }).trim();
+const sh = (cmd, args, cwd = ROOT, timeout = 60_000) => execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout, shell: process.platform === 'win32' && cmd === 'claude' }).trim();
 const results = [];
 async function check(name, fn, { optional = false } = {}) {
   try {
@@ -50,27 +52,37 @@ await check('Claude CLI answers headless', () => {
   return 'OK';
 });
 await check('GitHub CLI logged in', () => sh('gh', ['api', 'user', '--jq', '.login']));
-await check('MediAgenda clone on main, clean, up to date', () => {
-  sh('git', ['fetch', '-q', '--prune', 'origin']);
-  const branch = sh('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
-  if (branch !== 'main') throw new Error(`on branch ${branch} (a preview?): node demo/preview.mjs main`);
-  if (sh('git', ['status', '--porcelain'])) throw new Error('uncommitted changes');
-  if (sh('git', ['rev-parse', 'HEAD']) !== sh('git', ['rev-parse', 'origin/main'])) throw new Error('not equal to origin/main');
-  return sh('git', ['log', '--oneline', '-1']);
-});
-await check('No agent branches or open agent pull requests', () => {
-  const remote = sh('git', ['branch', '-r', '--format=%(refname:short)']).split('\n').map((b) => b.replace(/^origin\//, '')).filter((b) => AGENT_BRANCH.test(b));
-  const local = sh('git', ['branch', '--format=%(refname:short)']).split('\n').filter((b) => AGENT_BRANCH.test(b));
-  const slug = sh('git', ['remote', 'get-url', 'origin']).match(/github\.com[/:]([^/]+)\/([^/.]+)/)?.slice(1, 3).join('/');
-  const prs = slug ? JSON.parse(sh('gh', ['pr', 'list', '--repo', slug, '--state', 'open', '--json', 'headRefName'])).filter((p) => AGENT_BRANCH.test(p.headRefName)) : [];
-  const left = [...remote.map((b) => `origin/${b}`), ...local, ...prs.map((p) => `PR ${p.headRefName}`)];
-  if (left.length) throw new Error(`${left.join(', ')} (node demo/reset-demo.mjs --yes)`);
-  return 'none';
-});
-await check('Playwright and node_modules installed', () => {
-  for (const p of ['frontend/node_modules/@angular/core', 'e2e/node_modules/@playwright/test']) if (!existsSync(join(APP, p))) throw new Error(`missing ${p}`);
-  return 'frontend + e2e';
-});
+const slugOf = (APP) => {
+  try {
+    return sh('git', ['remote', 'get-url', 'origin'], APP).match(/github\.com[/:]([^/]+)\/([^/.]+)/)?.slice(1, 3).join('/') ?? null;
+  } catch {
+    return null; // no remote yet
+  }
+};
+for (const app of APPS) {
+  const APP = app.repoDir;
+  await check(`${app.name} clone on main, clean, up to date`, () => {
+    sh('git', ['fetch', '-q', '--prune', 'origin'], APP);
+    const branch = sh('git', ['rev-parse', '--abbrev-ref', 'HEAD'], APP);
+    if (branch !== 'main') throw new Error(`on branch ${branch} (a preview?): node demo/preview.mjs main --project ${app.key}`);
+    if (sh('git', ['status', '--porcelain'], APP)) throw new Error('uncommitted changes');
+    if (sh('git', ['rev-parse', 'HEAD'], APP) !== sh('git', ['rev-parse', 'origin/main'], APP)) throw new Error('not equal to origin/main');
+    return sh('git', ['log', '--oneline', '-1'], APP);
+  });
+  await check(`${app.name}: no agent branches or open agent pull requests`, () => {
+    const remote = sh('git', ['branch', '-r', '--format=%(refname:short)'], APP).split('\n').map((b) => b.replace(/^origin\//, '')).filter((b) => AGENT_BRANCH.test(b));
+    const local = sh('git', ['branch', '--format=%(refname:short)'], APP).split('\n').filter((b) => AGENT_BRANCH.test(b));
+    const slug = slugOf(APP);
+    const prs = slug ? JSON.parse(sh('gh', ['pr', 'list', '--repo', slug, '--state', 'open', '--json', 'headRefName'], APP)).filter((p) => AGENT_BRANCH.test(p.headRefName)) : [];
+    const left = [...remote.map((b) => `origin/${b}`), ...local, ...prs.map((p) => `PR ${p.headRefName}`)];
+    if (left.length) throw new Error(`${left.join(', ')} (node demo/reset-demo.mjs --yes)`);
+    return 'none';
+  });
+  await check(`${app.name}: Playwright and node_modules installed`, () => {
+    for (const p of ['frontend/node_modules/@angular/core', 'e2e/node_modules/@playwright/test']) if (!existsSync(join(APP, p))) throw new Error(`missing ${p}`);
+    return 'frontend + e2e';
+  });
+}
 await check(`Watcher dashboard on :${agentCfg.dashboardPort}`, () => httpOk(`http://localhost:${agentCfg.dashboardPort}/`));
 await check('Watcher runs the current agent code', async () => {
   const res = await fetch(`http://localhost:${agentCfg.dashboardPort}/api/status`);
@@ -83,12 +95,16 @@ await check('Watcher runs the current agent code', async () => {
   return `PID ${s.pid}, started ${new Date(s.startedAt).toLocaleTimeString('en-GB')}`;
 });
 await check('GitHub pull request links open in the demo browser', () => {
-  const slug = sh('git', ['remote', 'get-url', 'origin']).match(/github\.com[/:]([^/]+)\/([^/.]+)/)?.slice(1, 3).join('/');
-  const visibility = sh('gh', ['repo', 'view', slug, '--json', 'visibility', '--jq', '.visibility']);
-  return visibility === 'PRIVATE' ? `${slug} is private: the browser must be signed in to GitHub as ${sh('gh', ['api', 'user', '--jq', '.login'])} (otherwise 404)` : `${slug} is public`;
+  const slugs = APPS.map((a) => slugOf(a.repoDir)).filter(Boolean);
+  const priv = slugs.filter((slug) => sh('gh', ['repo', 'view', slug, '--json', 'visibility', '--jq', '.visibility']) === 'PRIVATE');
+  return priv.length ? `${priv.join(', ')} private: the browser must be signed in to GitHub as ${sh('gh', ['api', 'user', '--jq', '.login'])} (otherwise 404)` : `${slugs.join(', ')} public`;
 });
-await check('MediAgenda frontend on :4200 (for the opening)', () => httpOk('http://localhost:4200/agenda'), { optional: true });
-await check('MediAgenda backend on :8080', () => httpOk('http://localhost:8080/api/structures?q=svil'), { optional: true });
+// The running apps (node demo/run-mediagenda.mjs --all): optional, and each app calls the ones it is linked to.
+const BACKEND_PROBE = { DEM: '/api/structures?q=svil', LAB: '/api/exams', FAR: '/api/drugs', BIL: '/api/tariffs' };
+for (const app of APPS) {
+  await check(`${app.name} frontend on :${app.app.frontend}`, () => httpOk(`${app.app.url}${app.app.home}`), { optional: true });
+  await check(`${app.name} backend on :${app.app.backend}`, () => httpOk(`http://localhost:${app.app.backend}${BACKEND_PROBE[app.key] ?? '/'}`), { optional: true });
+}
 
 const blocking = results.filter((r) => !r.ok && !r.optional);
 console.log(blocking.length ? `\nNO-GO: ${blocking.length} blocking problem(s).` : '\nGO: ready for the demo.');
