@@ -1,0 +1,146 @@
+{
+  "_note": "MediFarma Jira history, seeded with: node demo/seed-jira.mjs --app medifarma. Keys CUP_FAR-2xx are placeholders, mapped to the real keys in demo/jira-keys.json (CUP_LAB-1xx refer to MediLab tickets). Oldest first.",
+  "project": "FAR",
+  "links": [
+    ["CUP_FAR-204", "CUP_FAR-203"], ["CUP_FAR-208", "CUP_FAR-203"],
+    ["CUP_FAR-206", "CUP_FAR-205"], ["CUP_FAR-207", "CUP_FAR-205"], ["CUP_FAR-216", "CUP_FAR-205"],
+    ["CUP_FAR-210", "CUP_FAR-209"], ["CUP_FAR-212", "CUP_FAR-209"],
+    ["CUP_FAR-213", "CUP_FAR-211"], ["CUP_FAR-214", "CUP_FAR-211"], ["CUP_FAR-215", "CUP_FAR-211"],
+    ["CUP_FAR-217", "CUP_FAR-203"], ["CUP_FAR-218", "CUP_FAR-201"],
+    ["CUP_FAR-214", "CUP_LAB-115"], ["CUP_FAR-211", "CUP_LAB-114"]
+  ],
+  "issues": [
+    {
+      "key": "CUP_FAR-201", "issueType": "Story", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE] - Farmaci e magazzino: hospital formulary and stock by lot",
+      "description": "The pharmacy needs the formulary (AIC code, name, active ingredient, ATC, pack size, price, minimum stock) and the stock by lot (lot number, expiry, packs left). Expired packs must not count as available.",
+      "reporter": { "id": "u-carla", "name": "Carla Benedetti" }, "assignee": { "id": "u-valentina", "name": "Valentina Rinaldi" },
+      "comments": [{ "author": { "id": "u-valentina", "name": "Valentina Rinaldi" }, "body": "GET /api/drugs and GET /api/stock, Flyway V1 with 12 drugs and their lots." }]
+    },
+    {
+      "key": "CUP_FAR-202", "issueType": "Story", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[FE] - Farmaci and Magazzino pages",
+      "description": "Pages for the formulary (search by name or active ingredient) and for the stock (available packs, minimum stock, lots with expiry).",
+      "reporter": { "id": "u-carla", "name": "Carla Benedetti" }, "assignee": { "id": "u-simone", "name": "Simone Galli" },
+      "comments": [{ "author": { "id": "u-simone", "name": "Simone Galli" }, "body": "features/drugs/drug-catalog and features/stock/stock. A drug under its minimum stock shows SOTTO SCORTA." }]
+    },
+    {
+      "key": "CUP_FAR-203", "issueType": "Story", "priority": "High", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE][FE] - Prescrizioni: prescriptions for MediAgenda patients",
+      "description": "The wards prescribe drugs for patients registered in MediAgenda (CUP). Like MediLab, MediFarma keeps no patient registry: the form searches MediAgenda and the prescription keeps a copy of fiscal code, name, sex and birth date. Each drug has dose, frequency, days and packs to dispense.",
+      "reporter": { "id": "u-carla", "name": "Carla Benedetti" }, "assignee": { "id": "u-elisa", "name": "Elisa Caruso" },
+      "comments": [{ "author": { "id": "u-elisa", "name": "Elisa Caruso" }, "body": "POST /api/prescriptions, Flyway V2; MediAgendaClient copied from MediLab, including the 502 for a MediAgenda that does not answer (CUP_LAB-113). Frontend: Prescrizioni list and Nuova prescrizione with the patient picker of MediLab." }]
+    },
+    {
+      "key": "CUP_FAR-204", "issueType": "Bug", "priority": "Low", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[FE] - Prescrizioni: dates shown month first",
+      "description": "A prescription written on 6 November shows 11/06/2026 in the list. In Italy we read 06/11/2026.",
+      "reporter": { "id": "u-carla", "name": "Carla Benedetti" }, "assignee": { "id": "u-simone", "name": "Simone Galli" },
+      "comments": [{ "author": { "id": "u-simone", "name": "Simone Galli" }, "body": "The DatePipe pattern was MM/dd/yyyy; now dd/MM/yyyy HH:mm." }]
+    },
+    {
+      "key": "CUP_FAR-205", "issueType": "Story", "priority": "High", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE][FE] - Erogazione: dispensing a prescription from stock",
+      "description": "The pharmacist dispenses a prescription: the packs come from the lot that expires first (FEFO), and the prescription is marked dispensed. The page shows which lots were used.",
+      "reporter": { "id": "u-carla", "name": "Carla Benedetti" }, "assignee": { "id": "u-valentina", "name": "Valentina Rinaldi" },
+      "comments": [{ "author": { "id": "u-valentina", "name": "Valentina Rinaldi" }, "body": "DispensingService (FEFO over findByAicOrderByExpiryAscIdAsc), Flyway V3. Page by Simone (features/dispensing)." }]
+    },
+    {
+      "key": "CUP_FAR-206", "issueType": "Bug", "priority": "Highest", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Erogazione: an expired lot was dispensed",
+      "description": "Metformina for a patient of Medicina 2 was handed out from lot L-MF2601, which expired on 31/10. The nurse noticed it on the box.",
+      "reporter": { "id": "u-carla", "name": "Carla Benedetti" }, "assignee": { "id": "u-valentina", "name": "Valentina Rinaldi" },
+      "comments": [{ "author": { "id": "u-valentina", "name": "Valentina Rinaldi" }, "body": "FEFO took the lots in expiry order, expired ones first. DispensingService now skips lots that expired before today. Test DispensingServiceTest.neverUsesAnExpiredLot." }]
+    },
+    {
+      "key": "CUP_FAR-207", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Erogazione: prescription marked dispensed with only part of the packs",
+      "description": "Amoxicillina, 5 packs prescribed, 3 in stock: EROGA handed out 3 and the prescription is \"Erogata\". The ward never got the other 2.",
+      "reporter": { "id": "u-carla", "name": "Carla Benedetti" }, "assignee": { "id": "u-valentina", "name": "Valentina Rinaldi" },
+      "comments": [{ "author": { "id": "u-valentina", "name": "Valentina Rinaldi" }, "body": "All or nothing now: too few packs → 409 \"not enough packs of … (3 of 5)\", the transaction rolls back and no lot is touched." }]
+    },
+    {
+      "key": "CUP_FAR-208", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[FE] - Nuova prescrizione: Rimuovi removes another drug",
+      "description": "I added Warfarin, Ibuprofene and Paracetamolo, then clicked Rimuovi on Ibuprofene: Warfarin disappeared instead.",
+      "reporter": { "id": "u-paolo", "name": "Paolo Brambilla" }, "assignee": { "id": "u-simone", "name": "Simone Galli" },
+      "comments": [{ "author": { "id": "u-simone", "name": "Simone Galli" }, "body": "The rows are shown sorted by name, but remove() used the index of the unsorted list. Rows are removed by their id now." }]
+    },
+    {
+      "key": "CUP_FAR-209", "issueType": "Story", "priority": "High", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE][FE] - Nuova prescrizione: interaction warnings, acknowledgement of high warnings",
+      "description": "Warn the prescriber about known interactions (e.g. warfarin and NSAIDs). High warnings must be acknowledged explicitly before the prescription is issued.",
+      "reporter": { "id": "u-carla", "name": "Carla Benedetti" }, "assignee": { "id": "u-elisa", "name": "Elisa Caruso" },
+      "comments": [{ "author": { "id": "u-elisa", "name": "Elisa Caruso" }, "body": "POST /api/safety/check, interaction_rules (Flyway V4), 409 for ALTA warnings without acknowledgeWarnings. Warnings panel: features/prescriptions/warnings." }]
+    },
+    {
+      "key": "CUP_FAR-210", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Interactions: warfarin + ibuprofene not reported",
+      "description": "No warning for a prescription with Ibuprofene and Warfarin. The same two drugs added in the other order (Warfarin first) give the red warning.",
+      "reporter": { "id": "u-paolo", "name": "Paolo Brambilla" }, "assignee": { "id": "u-elisa", "name": "Elisa Caruso" },
+      "comments": [{ "author": { "id": "u-elisa", "name": "Elisa Caruso" }, "body": "InteractionRule.matches only compared (a, b), not (b, a). Fixed, test with both orders." }]
+    },
+    {
+      "key": "CUP_FAR-211", "issueType": "Story", "priority": "High", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE][FE] - Renal dose check with the MediLab creatinine (eGFR)",
+      "description": "Drugs cleared by the kidneys need a lower dose, or must be avoided, when the kidney function is low. Compute the eGFR (CKD-EPI 2021) from the patient's latest validated creatinine in MediLab, the age and the sex, and warn by the renal rule of each drug.",
+      "reporter": { "id": "u-carla", "name": "Carla Benedetti" }, "assignee": { "id": "u-valentina", "name": "Valentina Rinaldi" },
+      "comments": [
+        { "author": { "id": "u-giorgio", "name": "Giorgio Esposito" }, "body": "MediLabClient over MediLab's GET /api/patients/{fiscalCode}/results?exam=CREA (CUP_LAB-114). Every value comes with its unit; today creatinine is in µmol/L." },
+        { "author": { "id": "u-valentina", "name": "Valentina Rinaldi" }, "body": "RenalCheckService converts the MediLab creatinine from µmol/L to mg/dL (÷ 88.4) for RenalFunction.egfr. Renal rules in Flyway V5 (metformina: reduce < 45, avoid < 30)." }
+      ]
+    },
+    {
+      "key": "CUP_FAR-212", "issueType": "Bug", "priority": "Medium", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[FE] - Nuova prescrizione: the warning of a removed drug stays and EMETTI stays disabled",
+      "description": "I removed Ibuprofene because of the interaction with Warfarin, but the red warning is still there and I cannot issue the prescription.",
+      "reporter": { "id": "u-paolo", "name": "Paolo Brambilla" }, "assignee": { "id": "u-simone", "name": "Simone Galli" },
+      "comments": [{ "author": { "id": "u-simone", "name": "Simone Galli" }, "body": "remove() did not run the checks again. It does now, like add()." }]
+    },
+    {
+      "key": "CUP_FAR-213", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Renal check: women with normal kidneys get renal warnings",
+      "description": "Gabapentin for Bianchi Laura gives \"ridurre la dose\" with eGFR 52, but her creatinine is normal. The ward computed 74 with the regional calculator.",
+      "reporter": { "id": "u-paolo", "name": "Paolo Brambilla" }, "assignee": { "id": "u-valentina", "name": "Valentina Rinaldi" },
+      "comments": [{ "author": { "id": "u-valentina", "name": "Valentina Rinaldi" }, "body": "RenalFunction used κ = 0.9 and α = -0.302 for everyone; the female constants (0.7, -0.241) are applied now. Reference values in RenalFunctionTest (same lesson as CUP_LAB-108 in MediLab: the sex comes as \"F\")." }]
+    },
+    {
+      "key": "CUP_FAR-214", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Renal check: a warning for a creatinine that the laboratory corrected",
+      "description": "Nuova prescrizione showed \"Metformina controindicata, eGFR 22\" for a patient whose creatinine had been entered wrong in MediLab and corrected the same morning (validated value normal).",
+      "reporter": { "id": "u-paolo", "name": "Paolo Brambilla" }, "assignee": { "id": "u-valentina", "name": "Valentina Rinaldi" },
+      "comments": [
+        { "author": { "id": "u-valentina", "name": "Valentina Rinaldi" }, "body": "The value came from MediLab's results API, which returned results that were not validated yet. Opened CUP_LAB-115 in MediLab." },
+        { "author": { "id": "u-valentina", "name": "Valentina Rinaldi" }, "body": "Fixed in MediLab (CUP_LAB-115, Giorgio): the API returns validated results only. Nothing to change in MediFarma; checked on COLLAUDO." }
+      ]
+    },
+    {
+      "key": "CUP_FAR-215", "issueType": "Bug", "priority": "Highest", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Nuova prescrizione: error 500 for a patient without creatinine",
+      "description": "For Ferrari Giulia the warnings panel shows \"Errore 500\" and nothing can be prescribed. She has never had a blood test in MediLab.",
+      "reporter": { "id": "u-paolo", "name": "Paolo Brambilla" }, "assignee": { "id": "u-giorgio", "name": "Giorgio Esposito" },
+      "comments": [{ "author": { "id": "u-giorgio", "name": "Giorgio Esposito" }, "body": "RenalCheckService called .get() on an empty Optional. Without a creatinine the renal check is skipped with an INFO warning." }]
+    },
+    {
+      "key": "CUP_FAR-216", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[FE] - Erogazione: a double click dispenses twice",
+      "description": "On a slow afternoon EROGA was double-clicked: two dispensings for the same prescription and the stock is 1 pack short.",
+      "reporter": { "id": "u-carla", "name": "Carla Benedetti" }, "assignee": { "id": "u-simone", "name": "Simone Galli" },
+      "comments": [{ "author": { "id": "u-simone", "name": "Simone Galli" }, "body": "EROGA is disabled while the request runs, and a second click is ignored." }]
+    },
+    {
+      "key": "CUP_FAR-217", "issueType": "Bug", "priority": "Medium", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - A dispensed prescription can be cancelled",
+      "description": "RX-2026-00019 was dispensed, then cancelled by the ward by mistake: the drugs are out but the prescription says Annullata.",
+      "reporter": { "id": "u-carla", "name": "Carla Benedetti" }, "assignee": { "id": "u-elisa", "name": "Elisa Caruso" },
+      "comments": [{ "author": { "id": "u-elisa", "name": "Elisa Caruso" }, "body": "Prescription.cancel() now requires EMESSA (409 otherwise), like dispensed()." }]
+    },
+    {
+      "key": "CUP_FAR-218", "issueType": "Story", "priority": "Low", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE][FE] - Magazzino: lots expiring within 60 days",
+      "description": "Every month the pharmacy checks the lots that expire soon to move them to the wards that use them.",
+      "reporter": { "id": "u-carla", "name": "Carla Benedetti" }, "assignee": { "id": "u-simone", "name": "Simone Galli" },
+      "comments": [{ "author": { "id": "u-simone", "name": "Simone Galli" }, "body": "GET /api/stock/expiring?days=60 and the \"Solo lotti in scadenza\" filter." }]
+    }
+  ]
+}

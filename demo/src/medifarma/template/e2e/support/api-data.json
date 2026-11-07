@@ -1,0 +1,64 @@
+{
+  "_note": "Mirrors the Flyway seed (V1__drugs_and_stock.sql … V5__renal_rules.sql), the MediAgenda patients and, in kidney, what the backend computes from the MediLab creatinine (RenalCheckService).",
+  "drugs": [
+    { "aic": "012345016", "name": "Metformina 500 mg compresse", "activeIngredient": "metformina", "atc": "A10BA02", "packSize": 30, "unitPrice": 2.85, "minStock": 10, "active": true, "renalReduceBelow": 45, "renalAvoidBelow": 30, "renalNote": "Max 1000 mg/die sotto 45; rischio di acidosi lattica" },
+    { "aic": "023456018", "name": "Ramipril 5 mg compresse", "activeIngredient": "ramipril", "atc": "C09AA05", "packSize": 28, "unitPrice": 3.4, "minStock": 10, "active": true, "renalReduceBelow": null, "renalAvoidBelow": null, "renalNote": null },
+    { "aic": "034567010", "name": "Enoxaparina 4000 UI siringhe", "activeIngredient": "enoxaparina", "atc": "B01AB05", "packSize": 10, "unitPrice": 31.2, "minStock": 10, "active": true, "renalReduceBelow": 30, "renalAvoidBelow": null, "renalNote": "2000 UI una volta al giorno sotto 30" },
+    { "aic": "045678012", "name": "Amoxicillina 1 g compresse", "activeIngredient": "amoxicillina", "atc": "J01CA04", "packSize": 12, "unitPrice": 5.95, "minStock": 10, "active": true, "renalReduceBelow": 30, "renalAvoidBelow": null, "renalNote": "Allungare l'intervallo a 12 ore sotto 30" },
+    { "aic": "056789014", "name": "Ibuprofene 400 mg compresse", "activeIngredient": "ibuprofene", "atc": "M01AE01", "packSize": 30, "unitPrice": 3.1, "minStock": 10, "active": true, "renalReduceBelow": null, "renalAvoidBelow": 30, "renalNote": "FANS: peggiorano la funzione renale" },
+    { "aic": "067890016", "name": "Warfarin 5 mg compresse", "activeIngredient": "warfarin", "atc": "B01AA03", "packSize": 30, "unitPrice": 3.8, "minStock": 5, "active": true, "renalReduceBelow": null, "renalAvoidBelow": null, "renalNote": null },
+    { "aic": "078901018", "name": "Acido acetilsalicilico 100 mg compresse", "activeIngredient": "acido acetilsalicilico", "atc": "B01AC06", "packSize": 30, "unitPrice": 2.05, "minStock": 10, "active": true, "renalReduceBelow": null, "renalAvoidBelow": null, "renalNote": null },
+    { "aic": "089012010", "name": "Paracetamolo 1000 mg compresse", "activeIngredient": "paracetamolo", "atc": "N02BE01", "packSize": 16, "unitPrice": 2.7, "minStock": 20, "active": true, "renalReduceBelow": null, "renalAvoidBelow": null, "renalNote": null },
+    { "aic": "090123012", "name": "Pantoprazolo 40 mg compresse", "activeIngredient": "pantoprazolo", "atc": "A02BC02", "packSize": 28, "unitPrice": 4.6, "minStock": 10, "active": true, "renalReduceBelow": null, "renalAvoidBelow": null, "renalNote": null },
+    { "aic": "101234014", "name": "Atorvastatina 20 mg compresse", "activeIngredient": "atorvastatina", "atc": "C10AA05", "packSize": 30, "unitPrice": 4.2, "minStock": 10, "active": true, "renalReduceBelow": null, "renalAvoidBelow": null, "renalNote": null },
+    { "aic": "112345016", "name": "Gabapentin 300 mg capsule", "activeIngredient": "gabapentin", "atc": "N03AX12", "packSize": 50, "unitPrice": 9.7, "minStock": 10, "active": true, "renalReduceBelow": 60, "renalAvoidBelow": null, "renalNote": "Ridurre la dose giornaliera secondo la clearance" },
+    { "aic": "123456018", "name": "Digossina 0,25 mg compresse", "activeIngredient": "digossina", "atc": "C01AA05", "packSize": 30, "unitPrice": 2.25, "minStock": 5, "active": true, "renalReduceBelow": 50, "renalAvoidBelow": null, "renalNote": "Ridurre la dose e controllare la digossinemia" }
+  ],
+  "lots": [
+    { "aic": "012345016", "lotNumber": "L-MF2601", "expiry": "2026-10-31", "quantity": 6 },
+    { "aic": "012345016", "lotNumber": "L-MF2604", "expiry": "2027-04-30", "quantity": 40 },
+    { "aic": "023456018", "lotNumber": "L-RA2602", "expiry": "2027-02-28", "quantity": 25 },
+    { "aic": "034567010", "lotNumber": "L-EN2603", "expiry": "2026-12-15", "quantity": 8 },
+    { "aic": "034567010", "lotNumber": "L-EN2608", "expiry": "2027-08-31", "quantity": 30 },
+    { "aic": "045678012", "lotNumber": "L-AM2605", "expiry": "2027-05-31", "quantity": 3 },
+    { "aic": "056789014", "lotNumber": "L-IB2601", "expiry": "2026-12-31", "quantity": 18 },
+    { "aic": "067890016", "lotNumber": "L-WA2606", "expiry": "2027-06-30", "quantity": 12 },
+    { "aic": "078901018", "lotNumber": "L-AS2602", "expiry": "2027-02-28", "quantity": 50 },
+    { "aic": "089012010", "lotNumber": "L-PA2603", "expiry": "2027-03-31", "quantity": 60 },
+    { "aic": "090123012", "lotNumber": "L-PP2604", "expiry": "2027-04-30", "quantity": 35 },
+    { "aic": "101234014", "lotNumber": "L-AT2605", "expiry": "2027-05-31", "quantity": 22 },
+    { "aic": "112345016", "lotNumber": "L-GB2606", "expiry": "2027-06-30", "quantity": 9 },
+    { "aic": "123456018", "lotNumber": "L-DG2607", "expiry": "2027-07-31", "quantity": 14 }
+  ],
+  "interactions": [
+    { "a": "warfarin", "b": "ibuprofene", "severity": "ALTA", "note": "Rischio emorragico: evitare i FANS con gli anticoagulanti orali" },
+    { "a": "warfarin", "b": "acido acetilsalicilico", "severity": "ALTA", "note": "Rischio emorragico: associare solo su indicazione specialistica" },
+    { "a": "ramipril", "b": "ibuprofene", "severity": "MEDIA", "note": "Ridotto effetto antipertensivo e rischio di danno renale" },
+    { "a": "digossina", "b": "amoxicillina", "severity": "MEDIA", "note": "Possibile aumento della digossinemia: controllare i livelli" }
+  ],
+  "kidney": {
+    "1": { "creatinine": 1.0, "creatinineUnit": "mg/dL", "creatinineDate": "2026-10-05T13:20:00", "egfr": 94 },
+    "9": { "creatinine": 2.5, "creatinineUnit": "mg/dL", "creatinineDate": "2026-11-03T14:05:00", "egfr": 28 }
+  },
+  "patients": [
+    { "id": 1, "fiscalCode": "RSSMRA80A01F205X", "firstName": "Mario", "lastName": "Rossi", "birthDate": "1980-01-01", "sex": "M" },
+    { "id": 2, "fiscalCode": "BNCLRA85C45L219Y", "firstName": "Laura", "lastName": "Bianchi", "birthDate": "1985-03-05", "sex": "F" },
+    { "id": 3, "fiscalCode": "VRDGPP72D12H501Z", "firstName": "Giuseppe", "lastName": "Verdi", "birthDate": "1972-04-12", "sex": "M" },
+    { "id": 4, "fiscalCode": "FRRGLI90E50A794K", "firstName": "Giulia", "lastName": "Ferrari", "birthDate": "1990-05-10", "sex": "F" },
+    { "id": 5, "fiscalCode": "RMNLCU66H20D969W", "firstName": "Luca", "lastName": "Romano", "birthDate": "1966-06-20", "sex": "M" },
+    { "id": 6, "fiscalCode": "GLLSFN78M41F839J", "firstName": "Stefania", "lastName": "Gallo", "birthDate": "1978-08-01", "sex": "F" },
+    { "id": 9, "fiscalCode": "MRNPLA61S03C351V", "firstName": "Paolo", "lastName": "Marino", "birthDate": "1961-11-03", "sex": "M" }
+  ],
+  "prescriptions": [
+    { "id": "RX-2026-00028", "patientId": 2, "prescriber": "Dr.ssa Elena Sala", "status": "DISPENSATA", "issuedAt": "2026-10-28T10:15:00", "egfr": null, "warningsAcknowledged": false,
+      "items": [{ "aic": "045678012", "dose": "1 compressa", "frequency": "3 volte al giorno", "days": 6, "packs": 2 }] },
+    { "id": "RX-2026-00031", "patientId": 1, "prescriber": "Dr. Marco Fumagalli", "status": "EMESSA", "issuedAt": "2026-11-04T09:40:00", "egfr": null, "warningsAcknowledged": false,
+      "items": [{ "aic": "089012010", "dose": "1 compressa", "frequency": "al bisogno, max 3/die", "days": 5, "packs": 1 }, { "aic": "090123012", "dose": "1 compressa", "frequency": "1 volta al giorno", "days": 30, "packs": 1 }] },
+    { "id": "RX-2026-00033", "patientId": 3, "prescriber": "Dr.ssa Elena Sala", "status": "EMESSA", "issuedAt": "2026-11-05T11:05:00", "egfr": null, "warningsAcknowledged": false,
+      "items": [{ "aic": "101234014", "dose": "1 compressa", "frequency": "la sera", "days": 30, "packs": 1 }, { "aic": "023456018", "dose": "1 compressa", "frequency": "al mattino", "days": 30, "packs": 1 }] },
+    { "id": "RX-2026-00034", "patientId": 5, "prescriber": "Dr. Paolo Brambilla", "status": "ANNULLATA", "issuedAt": "2026-11-05T15:30:00", "egfr": null, "warningsAcknowledged": false,
+      "items": [{ "aic": "056789014", "dose": "1 compressa", "frequency": "2 volte al giorno", "days": 7, "packs": 1 }] },
+    { "id": "RX-2026-00036", "patientId": 6, "prescriber": "Dr. Marco Fumagalli", "status": "EMESSA", "issuedAt": "2026-11-06T08:50:00", "egfr": null, "warningsAcknowledged": false,
+      "items": [{ "aic": "034567010", "dose": "1 siringa", "frequency": "1 volta al giorno (sc)", "days": 10, "packs": 1 }] }
+  ]
+}
