@@ -141,6 +141,10 @@
   .answer .q { font-weight: 700; }
   .answer .a { white-space: pre-wrap; }
   .answer ul { margin: 0; padding-left: 18px; }
+  .project-pick { display: inline-flex; align-items: center; gap: 6px; }
+  .project-pick select { font: inherit; font-weight: 600; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: inherit; }
+  .pick-first { padding: 14px 16px; margin-bottom: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .proj { font-size: 11px; font-weight: 700; letter-spacing: .02em; padding: 1px 6px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); }
   .rec { border-left: 3px solid var(--accent); padding: 6px 10px; background: var(--accent-soft); border-radius: 0 6px 6px 0; font-size: 13px; }
   @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hotspots { grid-template-columns: 1fr; } }
   @media (max-width: 600px) { header, main { padding-left: 16px; padding-right: 16px; } .result .row { grid-template-columns: 1fr; } }
@@ -150,11 +154,14 @@
 <header>
   <div class="brand"><span class="logo">✦</span> Ticket Intelligence <span class="meta" style="font-weight:500">agent</span></div>
   <span class="pill" id="state"><span class="dot"></span><span id="state-text">connecting…</span></span>
-  <span class="meta" id="project"></span>
+  <label class="project-pick" title="Which project the dashboard shows: its tickets, its hotspot map and its knowledge base">
+    <span class="meta">Project</span>
+    <select id="project-sel" aria-label="Project"><option value="all">All projects</option></select>
+  </label>
   <nav class="tabs" id="tabs"><button data-tab="tickets" class="active">Tickets</button><button data-tab="insights">Insights</button><button data-tab="ask">Ask</button></nav>
   <span class="spacer"></span>
   <span class="meta" id="poll"></span>
-  <span class="pill" id="app-branch" title="Branch the MediAgenda app on http://localhost:4200 shows"></span>
+  <span class="pill" id="app-branch" title="Branch the selected project's app shows"></span>
   <form class="run-form" id="run-form" title="Run the agent on a ticket now (again, if it was processed before)">
     <input id="run-key" placeholder="DEM-12" autocomplete="off" aria-label="Ticket key"><button type="submit">Run ticket</button>
   </form>
@@ -163,6 +170,9 @@
 
 <main>
   <section id="tab-insights" hidden>
+    <div class="pick-first panel" id="ins-pick" hidden></div>
+    <div id="ins-body">
+    <h2 id="ins-title" style="margin-top:0">Insights</h2>
     <div class="kpis" id="ins-kpis"></div>
     <h2>Bugs per component and month</h2>
     <div class="panel" style="margin-bottom:20px"><div class="heat" id="ins-heat"><div class="empty">Loading…</div></div>
@@ -171,9 +181,11 @@
       <span class="meta" id="ins-rec-state"></span><button class="small" id="ins-recommend" title="One headless run writes a recommendation per hotspot, citing tickets and commits">✦ Write recommendations (AI)</button>
       <button class="small" id="ins-refresh">Refresh</button></div>
     <div class="hotspots" id="ins-hotspots"></div>
+    </div>
   </section>
   <section id="tab-ask" hidden>
-    <h2>Ask the knowledge base</h2>
+    <h2 id="ask-title">Ask the knowledge base</h2>
+    <div class="pick-first panel" id="ask-pick" hidden></div>
     <form class="panel ask-form" id="ask-form">
       <textarea id="ask-q" rows="2" maxlength="500" placeholder="e.g. Has the Struttura field bug happened before?" aria-label="Question"></textarea>
       <div class="actions"><button class="primary" type="submit" id="ask-go">Ask</button>
@@ -236,6 +248,41 @@ const drafts = [];
 let status = null;
 let live = false;
 
+// ---------------------------------------------------------------- projects
+// "all" shows the tickets of every project; Insights and Ask always work on one project.
+let selected = 'all';
+try { selected = localStorage.getItem('ti-project') || 'all'; } catch { /* storage blocked */ }
+const projOf = (key) => String(key ?? '').split('-')[0];
+const projects = () => status?.projects ?? [];
+const projectInfo = (k) => projects().find((p) => p.key === k) ?? null;
+const visible = (key) => selected === 'all' || projOf(key) === selected;
+/** The one project Insights and Ask work on: the selected one, or the only one. */
+const focus = () => (selected !== 'all' ? projectInfo(selected) : projects().length === 1 ? projects()[0] : null);
+const projLabel = (p) => `${p.name} (${p.key})`;
+
+function fillProjectSelect() {
+  const sel = $('#project-sel');
+  const want = ['all', ...projects().map((p) => p.key)].join(',');
+  if (sel.dataset.keys === want) return;
+  sel.dataset.keys = want;
+  sel.replaceChildren(h('option', { value: 'all' }, 'All projects'), ...projects().map((p) => h('option', { value: p.key, disabled: p.ready ? null : 'disabled' }, `${projLabel(p)}${p.ready ? '' : ' · no clone yet'}`)));
+  if (selected !== 'all' && !projectInfo(selected)) selected = 'all';
+  sel.value = selected;
+}
+function selectProject(key) {
+  selected = key;
+  $('#project-sel').value = key;
+  try { localStorage.setItem('ti-project', key); } catch { /* storage blocked */ }
+  render(); renderStatus(); renderAskHead();
+  if (tab === 'insights') loadInsights();
+}
+/** A row of project buttons, for Insights and Ask when "All projects" is selected. */
+function projectPicker(box, what) {
+  box.hidden = false;
+  box.replaceChildren(h('span', { class: 'meta' }, `${what} works on one project. Pick one:`),
+    ...projects().filter((p) => p.ready).map((p) => h('button', { type: 'button', class: 'small', onclick: () => selectProject(p.key) }, projLabel(p))));
+}
+
 function ticketOf(ev) {
   if (!tickets.has(ev.key)) tickets.set(ev.key, { key: ev.key, title: ev.text, url: ev.url, priority: ev.priority, state: 'queued', steps: [], startedAt: ev.at, fresh: live });
   return tickets.get(ev.key);
@@ -248,10 +295,11 @@ function apply(ev) {
   if (ev.priority) t.priority = ev.priority;
   switch (ev.type) {
     case 'queued': t.title = ev.text; t.state = 'queued'; break;
-    case 'picked': t.title = ev.text || t.title; t.state = 'analyzing'; t.startedAt = ev.at; t.steps = []; t.result = null; t.fix = null; t.review = null; t.fixSkipped = null; t.duplicateOf = null; t.error = null; t.expanded = false; break;
+    case 'picked': t.title = ev.text || t.title; t.state = 'analyzing'; t.startedAt = ev.at; t.steps = []; t.result = null; t.fix = null; t.review = null; t.fixSkipped = null; t.duplicateOf = null; t.cross = null; t.error = null; t.expanded = false; break;
     case 'analyzed': t.result = ev.result; t.meta = ev.meta; break;
     case 'commented': t.commentUrl = ev.url; break;
-    case 'notified': teams.unshift({ ...ev.card, at: ev.at, channel: ev.channel }); break;
+    case 'notified': teams.unshift({ ...ev.card, key: ev.key, at: ev.at, channel: ev.channel }); break;
+    case 'cross-project': t.cross = { projects: ev.projects ?? [], fixIn: ev.fixIn }; break;
     case 'draft': drafts.unshift({ ...ev }); break;
     case 'done': t.state = 'done'; t.doneAt = ev.at; t.totalMs = ev.totalMs; break;
     case 'failed': t.state = 'failed'; t.error = ev.text; break;
@@ -271,7 +319,7 @@ function apply(ev) {
     case 'reviewed': t.review = { stage: 'done', ...ev.review, url: ev.url }; break;
     case 'review-skipped': t.review = { stage: 'skipped', error: ev.text }; break;
   }
-  if (['picked', 'analyzing', 'progress', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'warmed', 'workspace', 'reproducing', 'reproduced', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-skipped', 'reviewing', 'reviewed', 'review-skipped', 'mailed', 'mail-failed'].includes(ev.type)) {
+  if (['picked', 'analyzing', 'progress', 'cross-project', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'warmed', 'workspace', 'reproducing', 'reproduced', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-skipped', 'reviewing', 'reviewed', 'review-skipped', 'mailed', 'mail-failed'].includes(ev.type)) {
     t.steps.push({ at: ev.at, type: ev.type, text: ev.step ?? ev.text });
   }
 }
@@ -284,6 +332,7 @@ function stepRow(t, s) {
 
 function fixView(t) {
   const f = t.fix;
+  const p = projectInfo(projOf(t.key));
   if (!f) return t.fixSkipped ? h('div', { class: 't-sub' }, t.fixSkipped) : null;
   const chip = (label, state) => h('span', { class: `chip ${state}` }, label);
   const c = f.checks;
@@ -301,11 +350,11 @@ function fixView(t) {
     f.failure && !f.after ? h('pre', { class: 'err' }, f.failure) : null,
     f.error ? h('pre', { class: 'err' }, f.error) : null,
     f.prUrl ? h('div', {}, h('a', { class: 'pr-link', href: f.prUrl, target: '_blank' }, `⇄ Open draft pull request${f.title ? `: ${f.title}` : ''}`),
-      status?.github?.private ? h('div', { class: 'hint' }, `Private repository: sign in to GitHub as ${status.github.login} to open the link (signed out, GitHub shows 404).`) : null) : null,
-    f.prUrl ? h('div', { class: 'actions' },
-      status?.appBranch === t.key
-        ? [h('span', { class: 'chip done' }, `the app on :4200 shows ${t.key}`), h('button', { class: 'small', onclick: (e) => preview('main', e.target) }, 'Back to main')]
-        : h('button', { class: 'small', onclick: (e) => preview(t.key, e.target), title: 'Switch the app on http://localhost:4200 to this branch' }, '👁 Preview in app (:4200)')) : null,
+      p?.github?.private ? h('div', { class: 'hint' }, `Private repository: sign in to GitHub as ${p.github.login} to open the link (signed out, GitHub shows 404).`) : null) : null,
+    f.prUrl && p ? h('div', { class: 'actions' },
+      p.appBranch === t.key
+        ? [h('span', { class: 'chip done' }, `the ${p.name} app on :${p.app.frontend} shows ${t.key}`), h('button', { class: 'small', onclick: (e) => preview('main', e.target, p.key) }, 'Back to main')]
+        : h('button', { class: 'small', onclick: (e) => preview(t.key, e.target), title: `Switch the ${p.name} app on ${p.app.url} to this branch` }, `👁 Preview in app (:${p.app.frontend})`)) : null,
     f.files?.length ? h('div', { class: 'files' }, f.files.map((x) => h('code', {}, x))) : null);
 }
 
@@ -326,9 +375,12 @@ function resultView(t) {
   const confCls = r.confidence === 'high' ? 'done' : r.confidence === 'medium' ? 'analyzing' : 'failed';
   return h('div', { class: 'result' },
     t.duplicateOf ? h('div', { class: 'row' }, h('span', { class: 'k' }, 'Duplicate?'), h('span', {}, h('span', { class: 'chip analyzing' }, `possible duplicate of ${t.duplicateOf.key}`), ' ', t.duplicateOf.why ?? '')) : null,
+    t.cross?.projects?.length ? h('div', { class: 'row' }, h('span', { class: 'k' }, 'Other projects'), h('div', {},
+      t.cross.projects.map((o) => h('div', {}, h('span', { class: 'proj' }, projectInfo(o.key)?.name ?? o.key), ' ', o.why ?? '', o.evidence ? h('div', { class: 't-sub' }, linkify(o.evidence)) : null)),
+      t.cross.fixIn && t.cross.fixIn !== projOf(t.key) ? h('div', { class: 't-sub' }, `The fix belongs in ${projectInfo(t.cross.fixIn)?.name ?? t.cross.fixIn} (${t.cross.fixIn}).`) : null)) : null,
     h('div', { class: 'row' }, h('span', { class: 'k' }, 'Summary'), h('span', {}, r.summary)),
     h('div', { class: 'row' }, h('span', { class: 'k' }, 'Likely cause'), h('span', {}, r.likelyCause, h('span', { class: `chip ${confCls} conf` }, `${r.confidence} confidence`))),
-    h('div', { class: 'row' }, h('span', { class: 'k' }, 'Where'), h('div', { class: 'files' }, (r.files ?? []).slice(0, 6).map((f) => h('code', {}, f.replace(/^.*?(frontend|backend)\//, '$1/'))))),
+    h('div', { class: 'row' }, h('span', { class: 'k' }, 'Where'), h('div', { class: 'files' }, (r.files ?? []).slice(0, 6).map((f) => h('code', {}, /^[A-Z][A-Z0-9_]+:/.test(f) ? f : f.replace(/^.*?(frontend|backend)\//, '$1/'))))),
     h('div', { class: 'row' }, h('span', { class: 'k' }, 'Owner'), h('div', { class: 'owner' }, h('span', { class: 'avatar' }, initials(r.owner?.name)), h('div', {}, h('b', {}, r.owner?.name), h('div', { class: 't-sub' }, r.owner?.why)))),
     r.escalate?.yes ? h('div', { class: 'row' }, h('span', { class: 'k' }, 'Escalate'), h('span', {}, h('span', { class: 'chip failed' }, 'yes'), ' ', r.escalate.reason)) : null,
     h('div', { class: 'row' }, h('span', { class: 'k' }, 'Next steps'), h('ul', {}, (r.nextSteps ?? []).slice(0, 6).map((s) => h('li', {}, s)))),
@@ -385,24 +437,28 @@ async function runTicket(key, button) {
   catch (e) { alert(`Could not run ${key}: ${e.message}`); if (button) { button.disabled = false; button.textContent = '↻ Run again'; } }
 }
 
-async function preview(branch, button) {
+/** Switch a project's app to a ticket branch (the project comes from the key), or back to main (`project` needed). */
+async function preview(branch, button, project = null) {
   const label = button?.textContent;
   if (button) { button.disabled = true; button.textContent = 'Switching the app… (until ng serve has rebuilt)'; }
   try {
-    const r = await post('/api/preview', { branch });
-    if (status) status.appBranch = r.branch;
+    const r = await post('/api/preview', { branch, project });
+    const p = projectInfo(r.project);
+    if (p) p.appBranch = r.branch;
     render(); renderStatus();
-    if (r.branch !== 'main') window.open('http://localhost:4200/agenda', 'mediagenda');
+    if (r.branch !== 'main') window.open(r.appUrl, `app-${r.project}`);
   } catch (e) { alert(`Preview failed: ${e.message}`); if (button) { button.disabled = false; button.textContent = label; } }
 }
 
 function render() {
-  const list = [...tickets.values()].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
+  const list = [...tickets.values()].filter((t) => visible(t.key)).sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
+  const many = selected === 'all' && projects().length > 1;
   const box = $('#tickets');
   box.replaceChildren(...(list.length ? list.map((t) => {
     const showSteps = t.state !== 'done' || t.expanded;
     const el = h('div', { class: `panel ticket ${t.fresh ? 'new' : ''}` },
       h('div', { class: 't-head' },
+        many ? h('span', { class: 'proj', title: projectInfo(projOf(t.key))?.description ?? '' }, projectInfo(projOf(t.key))?.name ?? projOf(t.key)) : null,
         h('a', { class: 't-key', href: t.url ?? '#', target: '_blank' }, t.key),
         h('div', { class: 't-title' }, t.title, h('div', { class: 't-sub' }, t.state === 'done' ? `finished in ${Math.round((t.totalMs ?? 0) / 1000)} s · ${ago(t.doneAt)}${t.fixSkipped ? ` · ${t.fixSkipped.replace(/^no automatic fix: /, 'no fix: ')}` : ''}` : t.state === 'analyzing' || t.state === 'fixing' ? `working for ${Math.round((Date.now() - Date.parse(t.startedAt)) / 1000)} s` : t.state === 'failed' ? t.error : `queued ${ago(t.startedAt)}`)),
         t.priority ? h('span', { class: `chip ${/high|highest|critical/i.test(t.priority) ? 'high' : ''}` }, t.priority) : null,
@@ -414,11 +470,12 @@ function render() {
       resultView(t));
     t.fresh = false;
     return el;
-  }) : [h('div', { class: 'panel ticket empty' }, 'No tickets yet. Create one in Jira; the agent picks it up within the poll interval.')]));
+  }) : [h('div', { class: 'panel ticket empty' }, `No tickets yet${selected === 'all' ? '' : ` in ${projectInfo(selected)?.name ?? selected}`}. Create one in Jira; the agent picks it up within the poll interval.`)]));
   const stepsBox = box.querySelector('.steps');
   if (stepsBox) stepsBox.scrollTop = stepsBox.scrollHeight;
 
-  $('#teams').replaceChildren(...(teams.length ? teams.map((m) => h('div', { class: 'msg' },
+  const shownTeams = teams.filter((m) => !m.key || visible(m.key));
+  $('#teams').replaceChildren(...(shownTeams.length ? shownTeams.map((m) => h('div', { class: 'msg' },
     h('span', { class: 'avatar', style: 'background:linear-gradient(135deg,var(--accent),var(--teams))' }, '✦'),
     h('div', {}, h('div', { class: 'who' }, h('b', {}, 'Ticket Intelligence'), ` · ${ago(m.at)}`),
       h('div', { class: 'card' }, h('div', { class: 'to' }, `@${m.to}`), h('div', { class: 'ct' }, m.title), h('div', {}, m.message),
@@ -426,7 +483,8 @@ function render() {
         h('div', { class: 'actions', style: 'margin-top:8px' }, h('a', { href: m.url, target: '_blank' }, 'Open in Jira ↗')))))) : [h('div', { class: 'empty' }, 'Handoff messages to owners appear here.')]));
   if (teams.some((m) => m.channel === 'teams')) $('#teams-mode').textContent = 'live channel (webhook)';
 
-  $('#drafts').replaceChildren(...(drafts.length ? drafts.slice(0, 8).map((d) => h('div', { class: 'draft' },
+  const shownDrafts = drafts.filter((d) => visible(d.key));
+  $('#drafts').replaceChildren(...(shownDrafts.length ? shownDrafts.slice(0, 8).map((d) => h('div', { class: 'draft' },
     h('div', { class: 'dk' }, `${d.key} · ${d.kind === 'assign' ? 'assignment' : 'reply to reporter'}`),
     h('div', {}, d.text), d.why ? h('div', { class: 't-sub' }, d.why) : null,
     d.body ? h('details', {}, h('summary', {}, 'Show text'), h('pre', { class: 'comment' }, d.body),
@@ -436,9 +494,9 @@ function render() {
   $('#k-done').textContent = done.length;
   const timed = done.filter((t) => (t.meta?.durationMs ?? 0) > 0);
   $('#k-time').textContent = timed.length ? `${Math.round(timed.reduce((s, t) => s + t.totalMs, 0) / timed.length / 1000)} s` : '–';
-  $('#k-notified').textContent = teams.length;
+  $('#k-notified').textContent = shownTeams.length;
   $('#k-esc').textContent = done.filter((t) => t.result?.escalate?.yes).length;
-  $('#k-queue').textContent = `${status?.queue?.length ?? 0} / ${list.filter((t) => t.state === 'failed').length}`;
+  $('#k-queue').textContent = `${(status?.queue ?? []).filter((q) => visible(q.key)).length} / ${list.filter((t) => t.state === 'failed').length}`;
 }
 
 function renderStatus() {
@@ -447,11 +505,18 @@ function renderStatus() {
   if (status?.processing) { pill.className = 'pill busy'; $('#state-text').textContent = `${{ review: 'reviewing', document: 'documenting' }[status.processing.kind] ?? 'analyzing'} ${status.processing.key}`; }
   else { pill.className = 'pill live'; $('#state-text').textContent = 'watching'; }
   if (status) {
-    $('#project').textContent = `Jira project ${status.project}`;
-    const onMain = status.appBranch === 'main';
-    $('#app-branch').className = `pill ${onMain ? '' : 'warn'}`;
-    $('#app-branch').replaceChildren(`app :4200 → ${status.appBranch ?? '?'}`,
-      onMain ? '' : h('button', { class: 'small', style: 'padding:0 6px;margin-left:4px', onclick: (e) => preview('main', e.target) }, 'back to main'));
+    fillProjectSelect();
+    const fp = focus();
+    const pill = $('#app-branch');
+    pill.hidden = !fp?.ready;
+    if (fp?.ready) {
+      const onMain = fp.appBranch === 'main';
+      pill.className = `pill ${onMain ? '' : 'warn'}`;
+      pill.title = `Branch the ${fp.name} app on ${fp.app.url} shows`;
+      pill.replaceChildren(`${fp.name} :${fp.app.frontend} → ${fp.appBranch ?? '?'}`,
+        onMain ? '' : h('button', { class: 'small', style: 'padding:0 6px;margin-left:4px', onclick: (e) => preview('main', e.target, fp.key) }, 'back to main'));
+    }
+    $('#run-key').placeholder = `${fp?.key ?? projects()[0]?.key ?? 'DEM'}-12`;
     const next = status.nextPoll ? Math.max(0, Math.round((Date.parse(status.nextPoll) - Date.now()) / 1000)) : null;
     $('#poll').textContent = `last check ${ago(status.lastPoll)}${next != null ? ` · next in ${next}s` : ''}`;
     $('#policy').replaceChildren(h('span', { class: 'meta', style: 'width:100%' }, 'Policy'), ...Object.entries(status.policy ?? {}).map(([k, v]) =>
@@ -466,7 +531,12 @@ function connect() {
   es.onmessage = (msg) => {
     const ev = JSON.parse(msg.data);
     if (ev.type === 'history') { tickets.clear(); teams.length = 0; drafts.length = 0; const was = live; live = false; ev.events.forEach(apply); live = was; render(); return; }
-    if (ev.type === 'status') { status = ev.status; renderStatus(); render(); return; }
+    if (ev.type === 'status') {
+      const first = !status;
+      status = ev.status; renderStatus(); render();
+      if (first) { renderAskHead(); if (tab === 'insights') loadInsights(); }
+      return;
+    }
     if (ev.type === 'ping') return;
     if (ev.type === 'ask-progress') return onAskProgress(ev);
     apply(ev); render();
@@ -493,23 +563,32 @@ function showTab(name) {
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === name);
   for (const s of ['tickets', 'insights', 'ask']) $(`#tab-${s}`).hidden = s !== name;
   if (name === 'insights') loadInsights();
+  if (name === 'ask') renderAskHead();
   try { localStorage.setItem('ti-tab', name); } catch { /* storage blocked */ }
 }
 $('#tabs').addEventListener('click', (e) => { if (e.target.dataset.tab) showTab(e.target.dataset.tab); });
+$('#project-sel').addEventListener('change', (e) => selectProject(e.target.value));
 
 // ---------------------------------------------------------------- insights (FR-64)
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const monthLabel = (m) => `${MONTHS[Number(m.slice(5, 7)) - 1]} ${m.slice(2, 4)}`;
 const jiraLink = (key) => h('a', { href: `${status?.jiraUrl ?? ''}/browse/${key}`, target: '_blank' }, key);
 
+let insightsFor = null; // the project whose insights are shown (a late answer for another project is dropped)
 async function loadInsights(refresh = false) {
-  $('#ins-heat').replaceChildren(h('div', { class: 'empty' }, 'Reading git history, Jira and the saved analyses…'));
+  const p = focus();
+  $('#ins-body').hidden = !p;
+  if (!p) { if (status) projectPicker($('#ins-pick'), 'The hotspot map'); return; }
+  $('#ins-pick').hidden = true;
+  insightsFor = p.key;
+  $('#ins-title').textContent = `Insights · ${projLabel(p)}`;
+  $('#ins-heat').replaceChildren(h('div', { class: 'empty' }, `Reading the ${p.name} git history, Jira and the saved analyses…`));
   try {
-    const res = await fetch(`/api/insights${refresh ? '?refresh=1' : ''}`);
+    const res = await fetch(`/api/insights?project=${encodeURIComponent(p.key)}${refresh ? '&refresh=1' : ''}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-    renderInsights(data);
-  } catch (e) { $('#ins-heat').replaceChildren(h('pre', { class: 'err' }, `Insights failed: ${e.message}`)); }
+    if (insightsFor === p.key) renderInsights(data);
+  } catch (e) { if (insightsFor === p.key) $('#ins-heat').replaceChildren(h('pre', { class: 'err' }, `Insights failed: ${e.message}`)); }
 }
 
 function renderInsights(d) {
@@ -566,20 +645,29 @@ $('#ins-refresh').addEventListener('click', () => loadInsights(true));
 $('#ins-recommend').addEventListener('click', async (e) => {
   const b = e.target;
   b.disabled = true; b.textContent = 'Writing… (about a minute)';
-  try { await post('/api/insights/recommend', {}); await loadInsights(); }
+  try { await post('/api/insights/recommend', { project: focus()?.key }); await loadInsights(); }
   catch (err) { alert(`Recommendations failed: ${err.message}`); }
   finally { b.disabled = false; b.textContent = '✦ Write recommendations (AI)'; }
 });
 
 // ---------------------------------------------------------------- ask (FR-65)
-const EXAMPLES = ['Has the Struttura field bug happened before?', 'Which bugs did Prenotazioni have since June, and why?', 'Why can a cancelled booking not be cancelled again?', 'Who knows the time slot code best?'];
 const answers = [];
 let askId = null;
-$('#ask-examples').replaceChildren(h('span', { class: 'meta' }, 'Try:'), ...EXAMPLES.map((q) => h('button', { type: 'button', class: 'small', onclick: () => { $('#ask-q').value = q; ask(); } }, q)));
+/** Title, examples and placeholder of the Ask tab for the selected project; a picker when "All projects" is selected. */
+function renderAskHead() {
+  const p = focus();
+  $('#ask-form').hidden = !p;
+  $('#ask-title').textContent = p ? `Ask the knowledge base · ${projLabel(p)}` : 'Ask the knowledge base';
+  if (!p) { if (status) projectPicker($('#ask-pick'), 'The knowledge base'); return; }
+  $('#ask-pick').hidden = true;
+  const examples = p.askExamples ?? [];
+  $('#ask-q').placeholder = examples[0] ? `e.g. ${examples[0]}` : `A question about ${p.name}`;
+  $('#ask-examples').replaceChildren(...(examples.length ? [h('span', { class: 'meta' }, 'Try:'), ...examples.map((q) => h('button', { type: 'button', class: 'small', onclick: () => { $('#ask-q').value = q; ask(); } }, q))] : []));
+}
 
-/** Ticket keys and commit hashes in the answer become links. */
-function linkify(text) {
-  const repo = status?.github?.repo;
+/** Ticket keys and commit hashes in the answer become links (commits: in the repository of `projectKey`). */
+function linkify(text, projectKey = focus()?.key) {
+  const repo = projectInfo(projectKey)?.github?.repo;
   return String(text).split(/(\b[A-Z][A-Z0-9_]+-\d+\b|\b[0-9a-f]{7}\b)/).map((part, i) => {
     if (i % 2 === 0) return part;
     if (/^[0-9a-f]{7}$/.test(part)) return repo ? h('a', { href: `https://github.com/${repo}/commit/${part}`, target: '_blank' }, h('code', {}, part)) : h('code', {}, part);
@@ -589,11 +677,11 @@ function linkify(text) {
 
 function renderAnswers() {
   $('#ask-answers').replaceChildren(...answers.map((a) => h('div', { class: 'panel answer' },
-    h('div', { class: 'q' }, a.question),
+    h('div', { class: 'q' }, a.project ? h('span', { class: 'proj', style: 'margin-right:8px' }, projectInfo(a.project)?.name ?? a.project) : null, a.question),
     a.error ? h('pre', { class: 'err' }, a.error) : [
       h('div', {}, h('span', { class: `chip ${a.found ? 'done' : 'analyzing'}` }, a.found ? 'answered from sources' : 'not in the knowledge base'),
         h('span', { class: 'meta', style: 'margin-left:8px' }, `${Math.round((a.meta?.durationMs ?? 0) / 1000)} s · ~$${(a.meta?.costUsd ?? 0).toFixed(2)}`)),
-      h('div', { class: 'a' }, linkify(a.answer)),
+      h('div', { class: 'a' }, linkify(a.answer, a.project)),
       a.sources?.length ? h('div', {}, h('div', { class: 't-sub' }, 'Sources'), h('ul', {}, a.sources.map((s) => h('li', {},
         s.url ? h('a', { href: s.url, target: '_blank' }, s.type === 'ticket' ? s.ref : h('code', {}, s.ref)) : h('code', {}, s.ref), s.why ? ` · ${s.why}` : '')))) : null,
       a.closest?.length ? h('div', { class: 't-sub' }, 'Closest tickets: ', a.closest.flatMap((c) => [jiraLink(c.key), ' '])) : null,
@@ -603,15 +691,16 @@ function renderAnswers() {
 
 async function ask() {
   const q = $('#ask-q').value.trim();
-  if (!q || askId) return;
+  const project = focus()?.key;
+  if (!q || askId || !project) return;
   askId = String(Date.now());
   const btn = $('#ask-go');
   btn.disabled = true; btn.textContent = 'Thinking…';
   const progress = $('#ask-progress');
   progress.hidden = false;
   progress.replaceChildren(h('div', { class: 'step' }, h('span'), h('span'), h('span', { class: 'typing m' }, 'working')));
-  try { answers.unshift(await post('/api/ask', { question: q, id: askId })); $('#ask-q').value = ''; }
-  catch (e) { answers.unshift({ question: q, error: e.message }); }
+  try { answers.unshift(await post('/api/ask', { question: q, id: askId, project })); $('#ask-q').value = ''; }
+  catch (e) { answers.unshift({ question: q, project, error: e.message }); }
   finally { askId = null; btn.disabled = false; btn.textContent = 'Ask'; progress.hidden = true; renderAnswers(); }
 }
 $('#ask-form').addEventListener('submit', (e) => { e.preventDefault(); ask(); });

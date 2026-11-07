@@ -1,20 +1,21 @@
 #!/usr/bin/env node
 // Hotspot map (FR-64) in the terminal: the same numbers as the dashboard's Insights tab. Read-only.
 //
-//   node agent/insights.mjs              table per component and the top hotspots
+//   node agent/insights.mjs              table per component and the top hotspots (first project)
+//   node agent/insights.mjs --project LAB   another project
 //   node agent/insights.mjs --json       the full data
 //   node agent/insights.mjs --recommend  also write the AI recommendations (one headless run, cached)
 
-import { readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createJira } from './lib/jira-actions.mjs';
 import { buildInsights, readRecommendations, writeRecommendations } from './lib/insights.mjs';
+import { cliProject, loadProjects } from './lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const cfg = JSON.parse(readFileSync(join(HERE, 'agent.config.json'), 'utf8'));
-const stateDir = join(HERE, 'state');
-const data = await buildInsights({ repoDir: resolve(HERE, cfg.repo), stateDir, cfg, jira: createJira() });
+const { cfg, stateDir, repoDir, name, key } = cliProject(loadProjects(HERE)); // --project <KEY>, default the first
+const data = await buildInsights({ repoDir, stateDir, cfg, jira: createJira() });
+if (!process.argv.includes('--json')) console.log(`${name} (${key})`);
 
 if (process.argv.includes('--json')) {
   console.log(JSON.stringify(data, null, 2));

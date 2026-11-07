@@ -1,6 +1,4 @@
 {
-  "project": "DEM",
-  "repo": "../demo/mediagenda",
   "pollSeconds": 30,
   "settleMinutes": 1,
   "lookbackHours": 72,
@@ -31,14 +29,30 @@
   "insights": {
     "months": 10,
     "churnDays": 90,
-    "_components": "Hotspot map: a file belongs to the first component with a matching path prefix (tests count with their main code: src/test/java is read as src/main/java). Files outside every component are not counted.",
-    "components": [
-      { "name": "Prenotazioni", "paths": ["frontend/src/app/features/booking/", "backend/src/main/java/com/mediagenda/booking/", "backend/src/main/java/com/mediagenda/timeslot/Availab"] },
-      { "name": "Fasce orarie", "paths": ["frontend/src/app/features/timeslots/", "backend/src/main/java/com/mediagenda/timeslot/TimeSlotAdmin", "backend/src/main/java/com/mediagenda/timeslot/TimeSlotCreate"] },
-      { "name": "Agenda search", "paths": ["frontend/src/app/features/agenda/", "frontend/src/app/shared/components/", "frontend/src/app/shared/services/structure", "backend/src/main/java/com/mediagenda/structure/", "backend/src/main/java/com/mediagenda/resource/", "backend/src/main/java/com/mediagenda/timeslot/"] },
-      { "name": "Pazienti", "paths": ["frontend/src/app/features/patients/", "backend/src/main/java/com/mediagenda/patient/"] },
-      { "name": "Report", "paths": ["frontend/src/app/features/reports/", "backend/src/main/java/com/mediagenda/report/"] },
-      { "name": "Shared (forms, dates, layout)", "paths": ["frontend/src/app/shared/", "frontend/src/app/core/", "frontend/src/styles.scss", "backend/src/main/java/com/mediagenda/common/"] }
-    ]
-  }
+    "_components": "Hotspot map: a file belongs to the first component with a matching path prefix (tests count with their main code: src/test/java is read as src/main/java). Files outside every component are not counted."
+  },
+  "_projects": "One entry per Jira project and application repository; one watcher and one dashboard for all. A project entry overrides the settings above (insights, backendTestDir, …). stateDir: the project's agent state (default state/projects/<KEY>). app: ports of the running app (demo/run-mediagenda.mjs --project <KEY>). linked: the projects whose APIs the app calls; their code (read-only) and Jira tickets are part of every analysis. A project without a clone at repo is not watched.",
+  "projects": [
+    {
+      "key": "DEM",
+      "name": "MediAgenda",
+      "description": "CUP booking: agendas, time slots, bookings, patient registry",
+      "repo": "../demo/mediagenda",
+      "stateDir": "state",
+      "app": { "frontend": 4200, "backend": 8080, "home": "/agenda" },
+      "backendTestDir": "backend/src/test/java/com/mediagenda/regression",
+      "linked": [],
+      "askExamples": ["Has the Struttura field bug happened before?", "Which bugs did Prenotazioni have since June, and why?", "Why can a cancelled booking not be cancelled again?", "Who knows the time slot code best?"],
+      "insights": {
+        "components": [
+          { "name": "Prenotazioni", "paths": ["frontend/src/app/features/booking/", "backend/src/main/java/com/mediagenda/booking/", "backend/src/main/java/com/mediagenda/timeslot/Availab"] },
+          { "name": "Fasce orarie", "paths": ["frontend/src/app/features/timeslots/", "backend/src/main/java/com/mediagenda/timeslot/TimeSlotAdmin", "backend/src/main/java/com/mediagenda/timeslot/TimeSlotCreate"] },
+          { "name": "Agenda search", "paths": ["frontend/src/app/features/agenda/", "frontend/src/app/shared/components/", "frontend/src/app/shared/services/structure", "backend/src/main/java/com/mediagenda/structure/", "backend/src/main/java/com/mediagenda/resource/", "backend/src/main/java/com/mediagenda/timeslot/"] },
+          { "name": "Pazienti", "paths": ["frontend/src/app/features/patients/", "backend/src/main/java/com/mediagenda/patient/"] },
+          { "name": "Report", "paths": ["frontend/src/app/features/reports/", "backend/src/main/java/com/mediagenda/report/"] },
+          { "name": "Shared (forms, dates, layout)", "paths": ["frontend/src/app/shared/", "frontend/src/app/core/", "frontend/src/styles.scss", "backend/src/main/java/com/mediagenda/common/"] }
+        ]
+      }
+    }
+  ]
 }

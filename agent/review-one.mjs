@@ -2,25 +2,24 @@
 // Runs the AI reviewer (FR-63) on one pull request, outside the watcher.
 //
 //   node agent/review-one.mjs DEM-21              the agent's PR for DEM-21 (state/work/DEM-21/fix.json)
-//   node agent/review-one.mjs --pr 14             any pull request of the application repository
+//   node agent/review-one.mjs --pr 14 [--project LAB]   any pull request of the project's application repository
 //   ... --dry-run                                 review and print, but do not post it on GitHub
 //
 // Nothing else is changed: no Jira writes, no labels.
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { reviewPullRequest } from './lib/review.mjs';
+import { cliProject, loadProjects } from './lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const cfg = JSON.parse(readFileSync(join(HERE, 'agent.config.json'), 'utf8'));
-const repoDir = resolve(HERE, cfg.repo);
-const stateDir = join(HERE, 'state');
 const args = process.argv.slice(2);
 const opt = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null);
 
 let key = args.find((a) => /^[A-Z][A-Z0-9_]+-\d+$/.test(a)) ?? null;
+// The project: from the ticket key, or --project <KEY> with --pr (default: the first project).
+const { cfg, repoDir, stateDir } = cliProject(loadProjects(HERE), { key });
 let pr = null;
 if (opt('--pr')) {
   const slug = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: repoDir, encoding: 'utf8' }).match(/github\.com[/:]([^/]+)\/([^/.\s]+)/)?.slice(1, 3).join('/');

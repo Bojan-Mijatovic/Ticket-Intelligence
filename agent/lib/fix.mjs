@@ -34,7 +34,7 @@ function reproducePrompt(issue, analysis, testEnv) {
 ${ticketContext(issue, analysis)}
 
 TASK (phase 1 of 2, reproduce): write ONE Playwright test file, e2e/tests/${issue.key}.spec.ts, that reproduces the bug from the user's point of view, following the ticket's reproduction steps.
-- First read e2e/README.md and the files in e2e/support/, and use those helpers (mockApi, pickStructure, clearStructureWithKeyboard, resourceCodes, evidence). Look at e2e/tests/agenda.smoke.spec.ts as an example.
+- First read e2e/README.md and the files in e2e/support/, and use those helpers (mockApi, the screen helpers, evidence). Look at one of the e2e/tests/*.smoke.spec.ts files of the same screen as an example.
 - The test asserts the CORRECT behaviour, so it fails now because of the bug. Name it test('${issue.key}: <expected behaviour>', ...).
 - Right before the final assertions, call: await evidence(page, '${issue.key}', api)
 - Do not change any other file. Do not commit.
@@ -72,6 +72,7 @@ ${ticketContext(issue, analysis)}
 
 TASK (phase 1 of 2, reproduce): this is a BACKEND ticket. Write ONE JUnit 5 test class, ${test.file} (package ${test.pkg}, class ${test.className}), that reproduces the bug through the application's own code (services, repositories, controllers) against the real H2 database with its Flyway data.
 - First look at the existing tests under backend/src/test/java/ (e.g. the *ServiceTest classes) and follow their setup (@SpringBootTest, @Transactional, the seed data the migrations insert).
+- When the code calls another application of the suite through a client (an integration/ package), never call the real service: give the client the answer the bug needs the way the existing tests do (their stub or @MockitoBean).
 - The test asserts the CORRECT behaviour, so it fails now because of the bug. Name the test method after the expected behaviour, and put "${issue.key}" in a @DisplayName.
 - Do not change any other file. Do not commit.
 - Run it from the backend folder: mvn -q test -Dtest=${test.className} ${javaHint}
@@ -107,7 +108,7 @@ ${updatable.map((t) => `    ${t.file} (${t.key}${t.why ? `: ${t.why}` : ''})`).j
 ${ticketContext(issue, analysis)}
 
 TASK (phase 2 of 2, fix): the committed test e2e/tests/${issue.key}.spec.ts reproduces the bug and fails. Implement the smallest correct fix in the application code.
-- Follow the proposed fix unless you find a smaller correct one. Keep existing behaviour working (for example the footer PULISCI button).
+- Follow the proposed fix unless you find a smaller correct one. Keep existing behaviour working (the other buttons and flows of the same screen).
 ${e2eRule}
 - Match the style of the surrounding code; a short comment referencing ${issue.key} only where it helps a reader.
 - Verify from the e2e folder: ${testEnv} npx playwright test   (all tests must pass; a compile error also makes them fail).

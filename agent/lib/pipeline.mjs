@@ -24,8 +24,9 @@ function inferredTag({ result, when }) {
     const dir = folder.replace(/\/?$/, '/');
     return f.startsWith(dir) || f.includes(`/${dir}`);
   };
-  // Test folders (inferIgnoreFiles, e.g. e2e/) say nothing about which side the change belongs to.
-  const files = (result?.files ?? []).map((f) => String(f).replace(/\\/g, '/')).filter((f) => !(when.inferIgnoreFiles ?? []).some((d) => under(f, d)));
+  // Test folders (inferIgnoreFiles, e.g. e2e/) say nothing about which side the change belongs to, and neither do
+  // files of a linked project ("DEM:backend/…"): the fix is made in this repository.
+  const files = (result?.files ?? []).map((f) => String(f).replace(/\\/g, '/')).filter((f) => !/^[A-Z][A-Z0-9_]+:/.test(f) && !(when.inferIgnoreFiles ?? []).some((d) => under(f, d)));
   if (!files.length) return null;
   for (const [tag, folder] of Object.entries(when.inferTagFromFiles ?? {})) {
     if (files.every((f) => under(f, folder))) return tag.toUpperCase();
@@ -38,6 +39,10 @@ export function fixBlocker({ issue, result, policy }) {
   if (policy.actions.proposeFix !== 'auto') return 'proposeFix is not enabled in policy.json';
   const when = policy.proposeFixWhen ?? {};
   if ((RANK[result.confidence] ?? 0) < (RANK[when.minConfidence] ?? 2)) return `confidence is ${result.confidence}`;
+  // The fix belongs in a linked project's code: this repository is the wrong place for it.
+  const own = String(issue.key).split('-')[0];
+  const fixIn = String(result.fixInProject ?? own).trim().toUpperCase();
+  if (fixIn && fixIn !== own) return `the fix belongs in project ${fixIn}, not in ${own}`;
   const wanted = (when.titleTags ?? []).map((t) => t.toUpperCase());
   const tags = titleTags(issue.summary);
   if (wanted.length && !wanted.some((t) => tags.includes(t))) {
@@ -154,7 +159,12 @@ function composeComment(result, meta, policy) {
  * @param {(job: {kind: string, key: string}) => void} [p.followUp]  queues work that runs after this ticket
  *   (the AI review of its pull request), so the next ticket is not held up
  */
-export async function processTicket({ issue, cfg, policy, jira, events, repoDir, stateDir, result: given, followUp = () => {} }) {
+/**
+ * @param {object} [p.project]  { key, name } of the ticket's project
+ * @param {() => object[]} [p.peers]  read-only checkouts of the linked projects (projects.mjs peerCheckouts), made
+ *   right before the analysis
+ */
+export async function processTicket({ issue, cfg, policy, jira, events, repoDir, stateDir, project = null, peers = () => [], result: given, followUp = () => {} }) {
   const { key } = issue;
   const auto = (action) => policy.actions[action] === 'auto';
   const started = Date.now();
@@ -174,7 +184,13 @@ export async function processTicket({ issue, cfg, policy, jira, events, repoDir,
       events.emit('analyzing', { key, text: 'headless agent started' });
       // Analyze origin/main, not whatever branch the application clone is on (a preview, a developer's branch).
       const analysisDir = analysisCheckout({ repoDir, stateDir });
-      ({ result, meta } = await runAnalysis({ key, repoDir: analysisDir, stateDir, cfg, onProgress: (step) => events.emit('progress', { key, step }) }));
+      const linked = peers((text) => events.emit('error', { key, text }));
+      if (linked.length) events.emit('progress', { key, step: `linked projects: ${linked.map((p) => `${p.name} (${p.key})`).join(', ')}` });
+      ({ result, meta } = await runAnalysis({ key, repoDir: analysisDir, stateDir, cfg, project, peers: linked, onProgress: (step) => events.emit('progress', { key, step }) }));
+    }
+    const others = (Array.isArray(result.otherProjects) ? result.otherProjects : []).filter((o) => o?.key && String(o.key).toUpperCase() !== key.split('-')[0]);
+    if (others.length) {
+      events.emit('cross-project', { key, text: `involves ${others.map((o) => o.key).join(', ')}: ${others.map((o) => o.why).filter(Boolean).join(' · ')}`, projects: others, fixIn: result.fixInProject ?? null });
     }
     events.emit('analyzed', {
       key,

@@ -8,7 +8,22 @@ import { join } from 'node:path';
 
 const REQUIRED = ['ticket', 'summary', 'likelyCause', 'confidence', 'component', 'proposedFix', 'owner', 'escalate', 'nextSteps', 'jiraComment', 'handoff'];
 
-export function buildPrompt(key, workDir) {
+/**
+ * What the analysis of a project with linked projects is told about them: the linked apps' code (a read-only
+ * checkout of their main) and their Jira projects (searched for related tickets by the skill).
+ * @param {{ key: string, name: string, dir: string, relation?: string }[]} peers
+ */
+export function peersSection(project, peers) {
+  if (!peers?.length) return '';
+  return `
+Linked projects: this application (${project.name}, Jira project ${project.key}) calls the APIs of other applications of the same suite. A bug here can be caused by a change there (a field, a format, a status, a unit), and the fix may belong on either side.
+${peers.map((p) => `- ${p.name} (Jira project ${p.key}): code on its main, read-only, at "${p.dir}"${p.relation ? ` · ${p.relation}` : ''}`).join('\n')}
+- The skill's related-ticket search already includes these Jira projects. To look at a linked project's history, run git with -C "<its folder>" (log, show, grep); open its files with your file tools.
+- Look there when the symptom involves data that comes from a linked app (the client classes under backend/…/integration/ show which calls are made). Cite its files as "<KEY>:<path>" (e.g. "DEM:backend/src/main/java/…") and its commits with their hash.
+`;
+}
+
+export function buildPrompt(key, workDir, { project = null, peers = [] } = {}) {
   return `You are running unattended: no human will read your intermediate messages or answer questions.
 
 Analyze Jira ticket ${key} for the project in the current directory, using the analyze-ticket skill (follow its steps 1–3).
@@ -16,7 +31,7 @@ Analyze Jira ticket ${key} for the project in the current directory, using the a
 - Read-only: do NOT post Jira comments, change Jira, edit or create project files, commit, or ask questions. Skip the skill's drafts/offers/approval steps; the result below replaces them.
 - Open the relevant source files before proposing a fix, as the skill says.
 - Comments starting with "(robot)" on this ticket are earlier runs of this agent. They may be outdated (the ticket or the code changed since), so they are not evidence: check every claim again against Jira, git and the code, including whether tickets and branches they mention still exist.
-
+${project ? peersSection(project, peers) : ''}
 When you are done, reply with ONLY one \`\`\`json fenced block, nothing else, matching exactly this shape (all text in English):
 {
   "ticket": "${key}",
@@ -29,6 +44,8 @@ When you are done, reply with ONLY one \`\`\`json fenced block, nothing else, ma
   "relatedTickets": [{ "key": "…", "why": "one line" }],
   "duplicateOf": null or { "key": "an open ticket reporting the same problem", "why": "one line" },
   "supersedes": [{ "key": "an earlier ticket whose implemented behaviour this ticket deliberately replaces (a change request, e.g. a new colour instead of the one DEM-32 introduced)", "why": "one line" }] — empty [] for a bug or when nothing earlier is replaced,
+  "otherProjects": [{ "key": "Jira project key of a linked project involved in the cause", "evidence": "its ticket keys, commit hashes or files", "why": "one line" }] — empty [] when only this project is involved,
+  "fixInProject": "Jira project key of the project whose code the fix belongs in (normally this ticket's own project)",
   "proposedFix": "concrete change: file, what to change, how to verify",
   "owner": { "name": "best person", "why": "evidence: tickets / commits" },
   "alternatives": [{ "name": "…", "why": "…" }],
@@ -111,7 +128,7 @@ const OUTWARD = ['Artifact', 'ArtifactComments', 'ArtifactData', 'DesignSync', '
  * @param {string[]} [p.tools]  an allow-list of built-in tools (e.g. ['Read','Grep','Glob']; [] = none). Without it the
  *   default set is used, minus `disallowedTools` and OUTWARD.
  */
-function invokeClaude({ cwd, prompt, cfg, addDirs = [], disallowedTools = [], tools = null, permissionMode = null, timeoutMinutes, resume = null, onProgress = () => {} }) {
+function invokeClaude({ cwd, prompt, cfg, addDirs = [], disallowedTools = [], tools = null, permissionMode = null, timeoutMinutes, resume = null, env = null, onProgress = () => {} }) {
   const win = process.platform === 'win32';
   const denied = [...disallowedTools, ...OUTWARD];
   const args = [
@@ -129,7 +146,7 @@ function invokeClaude({ cwd, prompt, cfg, addDirs = [], disallowedTools = [], to
   ];
 
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(cfg.claude.command, args, { cwd, shell: process.platform === 'win32', windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(cfg.claude.command, args, { cwd, env: env ? { ...process.env, ...env } : process.env, shell: process.platform === 'win32', windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     child.stdin.end(prompt);
     const transcript = [];
     let buffer = '';
@@ -176,18 +193,26 @@ function invokeClaude({ cwd, prompt, cfg, addDirs = [], disallowedTools = [], to
   });
 }
 
-/** Read-only analysis of one ticket (analyze-ticket skill). File-editing tools are disabled. */
-export async function runAnalysis({ key, repoDir, stateDir, cfg, onProgress = () => {} }) {
+/**
+ * Read-only analysis of one ticket (analyze-ticket skill). File-editing tools are disabled.
+ * @param {object} [p.project]  { key, name } of the ticket's project (for the linked-projects section)
+ * @param {{ key: string, name: string, dir: string, relation?: string }[]} [p.peers]  linked projects: their code
+ *   (read-only checkouts) is added to the run and their Jira projects to the skill's related-ticket search
+ */
+export async function runAnalysis({ key, repoDir, stateDir, cfg, project = null, peers = [], onProgress = () => {} }) {
   const workDir = join(stateDir, 'work', key);
   mkdirSync(workDir, { recursive: true });
   // The analysis (the analyze-ticket skill) may run on a cheaper model than the fix and the review (claude.analysisModel).
   const analysisCfg = cfg.claude.analysisModel ? { ...cfg, claude: { ...cfg.claude, model: cfg.claude.analysisModel } } : cfg;
   const out = await runClaude({
     cwd: repoDir,
-    prompt: buildPrompt(key, workDir),
+    prompt: buildPrompt(key, workDir, { project, peers }),
     cfg: analysisCfg,
     transcriptFile: join(workDir, 'transcript.jsonl'),
-    addDirs: [workDir],
+    addDirs: [workDir, ...peers.map((p) => p.dir)],
+    // The skill's config.mjs adds these Jira projects to the related-ticket search (the ticket's own is always in).
+    // The own key comes first: a configured list also scopes the skill's title search (resolve).
+    env: peers.length ? { TICKET_INTEL_PROJECTS: [project?.key ?? key.split('-')[0], ...peers.map((p) => p.key)].join(',') } : null,
     disallowedTools: ['Edit', 'Write', 'NotebookEdit'],
     required: REQUIRED,
     onProgress,

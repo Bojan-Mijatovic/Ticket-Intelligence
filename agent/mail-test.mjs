@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { createJira } from './lib/jira-actions.mjs';
 import { mailProblems, mailSettings, sendMail } from './lib/mail.mjs';
 import { composeUpdate } from './lib/mail-updates.mjs';
+import { cliProject, loadProjects } from './lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -21,7 +22,8 @@ const settings = mailSettings();
 
 let msg;
 if (key) {
-  const file = [join(HERE, 'state', 'results', `${key}.json`), join(HERE, 'state', 'work', key, 'result.json')].find(existsSync);
+  const { stateDir } = cliProject(loadProjects(HERE), { key });
+  const file = [join(stateDir, 'results', `${key}.json`), join(stateDir, 'work', key, 'result.json')].find(existsSync);
   if (!file) {
     console.error(`No saved analysis for ${key} (state/results/${key}.json). Run the agent on it first, or omit the key.`);
     process.exit(1);

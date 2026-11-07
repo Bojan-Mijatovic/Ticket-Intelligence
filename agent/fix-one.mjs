@@ -12,14 +12,15 @@ import { reproduceAndFix } from './lib/fix.mjs';
 import { createJira } from './lib/jira-actions.mjs';
 import { fixBlocker, fixSide } from './lib/pipeline.mjs';
 import { publishFix } from './lib/publish.mjs';
+import { cliProject, loadProjects } from './lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const cfg = JSON.parse(readFileSync(join(HERE, 'agent.config.json'), 'utf8'));
 const policy = JSON.parse(readFileSync(join(HERE, 'policy.json'), 'utf8'));
-const key = process.argv[2];
+const key = process.argv[2]?.toUpperCase();
 const local = process.argv.includes('--local');
-const stateDir = join(HERE, 'state');
-const saved = join(stateDir, 'work', key ?? '', 'result.json');
+const project = key ? cliProject(loadProjects(HERE), { key }) : null;
+const { cfg, stateDir, repoDir } = project ?? {};
+const saved = join(stateDir ?? HERE, 'work', key ?? '', 'result.json');
 if (!key || !existsSync(saved)) {
   console.error('usage: node agent/fix-one.mjs <KEY> [--local]   (needs a saved analysis: run agent/analyze-one.mjs <KEY> first)');
   process.exit(1);
@@ -27,7 +28,7 @@ if (!key || !existsSync(saved)) {
 
 const analysis = JSON.parse(readFileSync(saved, 'utf8'));
 const jira = createJira();
-const events = createEventLog(join(stateDir, 'events.jsonl'));
+const events = createEventLog(join(HERE, 'state', 'events.jsonl'));
 const issue = await jira.getIssue(key);
 const blocker = fixBlocker({ issue, result: analysis, policy });
 if (blocker) console.warn(`note: the watcher would skip this ticket (${blocker}); running anyway because it was asked for explicitly`);
@@ -35,7 +36,7 @@ if (blocker) console.warn(`note: the watcher would skip this ticket (${blocker})
 const started = Date.now();
 const side = fixSide({ issue, result: analysis, policy });
 console.log(`side: ${side}`);
-const fix = await reproduceAndFix({ issue, analysis, repoDir: resolve(HERE, cfg.repo), stateDir, cfg, events, toolsDir: resolve(HERE, cfg.toolsDir), allowSupersededTests: policy.proposeFixWhen?.allowSupersededTestUpdates === true, side });
+const fix = await reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg, events, toolsDir: resolve(HERE, cfg.toolsDir), allowSupersededTests: policy.proposeFixWhen?.allowSupersededTestUpdates === true, side });
 console.log(`\nbranch ${fix.branch}: test ${fix.test.commit}, fix ${fix.fix.commit} · ${fix.fix.files.join(', ')}`);
 console.log(`checks: ${JSON.stringify(fix.checks)}`);
 console.log(`evidence: ${JSON.stringify(fix.evidence)}`);

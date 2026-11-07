@@ -1,17 +1,17 @@
 #!/usr/bin/env node
-// Ticket Intelligence agent: watches a Jira project, analyzes every new ticket headless, acts per policy.json,
-// and serves a live dashboard.
+// Ticket Intelligence agent: watches the Jira projects of agent.config.json "projects", analyzes every new ticket
+// headless in its own application repository, acts per policy.json, and serves one live dashboard for all of them.
 //
 //   node agent/watcher.mjs              → dashboard on http://localhost:7070
 //   node agent/watcher.mjs --replace    stops a watcher that is already running (e.g. with older code), then starts
 //
-// A ticket is picked when it is in the project, not Done, created within lookbackHours, and has none of the
-// agent's labels (ai-analyzing, ai-analyzed, ai-failed) nor the opt-out label (no-ai).
+// A ticket is picked when it is in one of the projects, not Done, created within lookbackHours, and has none of the
+// agent's labels (ai-analyzing, ai-analyzed, ai-failed) nor the opt-out label (no-ai). One queue for all projects.
 
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createEventLog } from './lib/events.mjs';
 import { createJira } from './lib/jira-actions.mjs';
@@ -22,13 +22,22 @@ import { reviewPullRequest } from './lib/review.mjs';
 import { buildInsights, readRecommendations, writeRecommendations } from './lib/insights.mjs';
 import { askQuestion } from './lib/ask.mjs';
 import { attachMailUpdates } from './lib/mail-updates.mjs';
+import { loadProjects, peerCheckouts } from './lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const cfg = JSON.parse(readFileSync(join(HERE, 'agent.config.json'), 'utf8'));
+const all = loadProjects(HERE);
+const cfg = all.global; // settings shared by all projects (labels, poll, dashboard, claude, mail)
 const policy = JSON.parse(readFileSync(join(HERE, 'policy.json'), 'utf8'));
-const stateDir = join(HERE, 'state');
-const repoDir = resolve(HERE, cfg.repo);
-const PID_FILE = join(stateDir, 'watcher.pid');
+const rootState = join(HERE, 'state'); // the watcher's own files: pid, event log
+const PID_FILE = join(rootState, 'watcher.pid');
+const KEYS = all.projects.map((p) => p.key);
+const badRequest = (message, code = 400) => Object.assign(new Error(message), { status: code });
+/** The project of a request: by its key, or by the ticket key; the only project when there is just one. */
+function projectFor({ project, key } = {}) {
+  const p = project ? all.byKey(project) : key ? all.ofTicket(key) : all.projects.length === 1 ? all.projects[0] : null;
+  if (!p) throw badRequest(project || key ? `${project ?? key} is not one of the projects ${KEYS.join(', ')}` : `which project? one of ${KEYS.join(', ')}`);
+  return p;
+}
 
 // ---------------------------------------------------------------- single instance
 
@@ -76,22 +85,31 @@ if (previous?.pid && previous.pid !== process.pid && alive(previous.pid)) {
   console.log(`Stopped the previous watcher (PID ${previous.pid}).`);
 }
 
-const events = createEventLog(join(stateDir, 'events.jsonl'));
+const events = createEventLog(join(rootState, 'events.jsonl'));
 const jira = createJira();
 const mail = attachMailUpdates({ events, policy, cfg, browseUrl: (key) => jira.browseUrl(key) });
 
 const agentLabels = Object.values(cfg.labels);
+// Only projects whose application clone exists are watched: a ticket of a project without code cannot be analyzed,
+// and JQL rejects the whole query for a project key that does not exist in Jira yet.
+const WATCHED = all.projects.filter((p) => existsSync(p.repoDir)).map((p) => p.key);
+if (!WATCHED.length) {
+  console.error(`None of the application clones exist: ${all.projects.map((p) => p.repoDir).join(', ')}`);
+  process.exit(1);
+}
+const IN_PROJECTS = `project in (${WATCHED.join(', ')})`;
 // A ticket is picked only after it has not changed for settleMinutes: reporters often create it with a title and
 // add the description right after, and an analysis of the half-written ticket says "no description, low confidence"
 // (DEM-31, DEM-32, DEM-35). Run again on the dashboard does not wait.
 const SETTLE = Math.max(0, Number(cfg.settleMinutes ?? 1));
-const JQL = `project = ${cfg.project} AND created >= -${cfg.lookbackHours}h AND statusCategory != Done AND (labels is EMPTY OR labels not in (${agentLabels.join(', ')}))${SETTLE ? ` AND updated <= -${SETTLE}m` : ''} ORDER BY created ASC`;
+const JQL = `${IN_PROJECTS} AND created >= -${cfg.lookbackHours}h AND statusCategory != Done AND (labels is EMPTY OR labels not in (${agentLabels.join(', ')}))${SETTLE ? ` AND updated <= -${SETTLE}m` : ''} ORDER BY created ASC`;
 // Resolved tickets the agent analyzed and has not documented yet.
 const L = cfg.labels;
-const DONE_JQL = `project = ${cfg.project} AND statusCategory = Done AND labels = ${L.done} AND labels not in (${[L.documenting, L.documented, L.docFailed, L.skip].join(', ')}) AND updated >= -${cfg.lookbackHours}h ORDER BY updated ASC`;
+const DONE_JQL = `${IN_PROJECTS} AND statusCategory = Done AND labels = ${L.done} AND labels not in (${[L.documenting, L.documented, L.docFailed, L.skip].join(', ')}) AND updated >= -${cfg.lookbackHours}h ORDER BY updated ASC`;
 
-/** The GitHub repository of the application and whether it is private (a private repo answers 404 when signed out). */
-function githubInfo() {
+/** The GitHub repository of an application and whether it is private (a private repo answers 404 when signed out). */
+function githubInfo(repoDir) {
+  if (!existsSync(repoDir)) return null;
   try {
     const url = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: repoDir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     const slug = url.match(/github\.com[/:]([^/]+)\/([^/.]+)/)?.slice(1, 3).join('/');
@@ -103,22 +121,29 @@ function githubInfo() {
   }
 }
 
-const status = { project: cfg.project, repo: repoDir, jiraUrl: jira.baseUrl, policy: policy.actions, lastPoll: null, nextPoll: null, queue: [], processing: null, startedAt: new Date().toISOString(), pid: process.pid, appBranch: currentBranch(repoDir), github: githubInfo() };
+const projectStatus = (p) => ({
+  key: p.key, name: p.name, repo: p.repoDir, ready: existsSync(p.repoDir), app: p.app, linked: p.linked,
+  appBranch: existsSync(p.repoDir) ? currentBranch(p.repoDir) : null, github: githubInfo(p.repoDir), askExamples: p.askExamples,
+});
+const status = { projects: all.projects.map(projectStatus), jiraUrl: jira.baseUrl, policy: policy.actions, lastPoll: null, nextPoll: null, queue: [], processing: null, startedAt: new Date().toISOString(), pid: process.pid };
 const clients = new Set();
 const broadcast = (event) => {
   const line = `data: ${JSON.stringify(event)}\n\n`;
   for (const res of clients) res.write(line);
 };
 events.subscribe(broadcast);
+const refreshBranches = () => {
+  for (const s of status.projects) s.appBranch = s.ready ? currentBranch(s.repo) : null;
+};
 const pushStatus = () => {
-  status.appBranch = currentBranch(repoDir);
+  refreshBranches();
   broadcast({ type: 'status', status });
 };
 
 // ---------------------------------------------------------------- watching
 
 async function recoverStuckTickets() {
-  const stuck = await jira.search(`project = ${cfg.project} AND labels in (${cfg.labels.inProgress}, ${cfg.labels.documenting})`, 50);
+  const stuck = await jira.search(`${IN_PROJECTS} AND labels in (${cfg.labels.inProgress}, ${cfg.labels.documenting})`, 50);
   for (const t of stuck) {
     await jira.labels(t.key, { remove: [cfg.labels.inProgress, cfg.labels.documenting] });
     events.emit('recovered', { key: t.key, text: 'removed a stale in-progress label from an interrupted run' });
@@ -155,7 +180,7 @@ async function poll() {
  * the agent's result labels are removed and the ticket is queued now. `no-ai` is respected.
  */
 async function rerun(key) {
-  if (!new RegExp(`^${cfg.project}-\\d+$`).test(key)) throw Object.assign(new Error(`${key} is not a ${cfg.project} ticket key`), { status: 400 });
+  if (!/^[A-Z][A-Z0-9_]+-\d+$/.test(key) || !WATCHED.includes(key.split('-')[0])) throw badRequest(`${key} is not a ticket of the watched projects ${WATCHED.join(', ')}`);
   if (isBusyWith(key)) throw Object.assign(new Error(`${key} is already queued or running`), { status: 409 });
   const [issue] = await jira.search(`key = ${key}`, 1);
   if (!issue) throw Object.assign(new Error(`${key} not found`), { status: 404 });
@@ -167,11 +192,11 @@ async function rerun(key) {
   drain();
 }
 
-async function documentTicket(issue) {
+async function documentTicket(issue, p) {
   const key = issue.key;
   try {
     await jira.labels(key, { add: [L.documenting] });
-    await documentResolved({ issue, repoDir, stateDir, cfg, jira, events });
+    await documentResolved({ issue, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira, events });
     await jira.labels(key, { add: [L.documented], remove: [L.documenting] });
   } catch (e) {
     events.emit('doc-failed', { key, text: e.message });
@@ -184,9 +209,15 @@ async function drain() {
   const issue = status.queue.shift();
   status.processing = { key: issue.key, kind: issue.kind, since: new Date().toISOString() };
   pushStatus();
-  if (issue.kind === 'document') await documentTicket(issue);
-  else if (issue.kind === 'review') await reviewPullRequest({ key: issue.key, repoDir, stateDir, cfg, events, jira });
-  else await processTicket({ issue, cfg, policy, jira, events, repoDir, stateDir, followUp: (job) => status.queue.push(job) });
+  const p = all.ofTicket(issue.key);
+  if (issue.kind === 'document') await documentTicket(issue, p);
+  else if (issue.kind === 'review') await reviewPullRequest({ key: issue.key, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, events, jira });
+  else {
+    await processTicket({
+      issue, cfg: p.cfg, policy, jira, events, repoDir: p.repoDir, stateDir: p.stateDir, project: { key: p.key, name: p.name },
+      peers: (warn) => peerCheckouts(p, all, warn), followUp: (job) => status.queue.push(job),
+    });
+  }
   status.processing = null;
   pushStatus();
   drain();
@@ -194,15 +225,22 @@ async function drain() {
 
 // ---------------------------------------------------------------- insights
 
-let insightsCache = null;
+const insightsCache = new Map(); // project key → { at, data }
 let recommending = false;
 let asking = false;
-async function insightsCached(refresh = false) {
-  if (!refresh && insightsCache && Date.now() - insightsCache.at < 120_000) return insightsCache.data;
-  const data = await buildInsights({ repoDir, stateDir, cfg, jira });
-  insightsCache = { at: Date.now(), data };
+async function insightsCached(p, refresh = false) {
+  const hit = insightsCache.get(p.key);
+  if (!refresh && hit && Date.now() - hit.at < 120_000) return hit.data;
+  const data = await buildInsights({ repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira });
+  insightsCache.set(p.key, { at: Date.now(), data });
   return data;
 }
+const queryOf = (req) => new URL(req.url, 'http://localhost').searchParams;
+const readyProject = (sel) => {
+  const p = projectFor(sel);
+  if (!existsSync(p.repoDir)) throw badRequest(`${p.name} (${p.key}) has no application clone yet: ${p.repoDir}`, 409);
+  return p;
+};
 
 // ---------------------------------------------------------------- dashboard
 
@@ -246,15 +284,16 @@ const server = createServer(async (req, res) => {
     return;
   }
   if (path === '/api/status') {
-    status.appBranch = currentBranch(repoDir);
+    refreshBranches();
     return json(res, 200, status);
   }
-  // Evidence screenshots: /evidence/<KEY>/before.png|after.png (only these names, only from state/work).
+  // Evidence screenshots: /evidence/<KEY>/before.png|after.png (only these names, only from the project's state/work).
   // The dashboard adds ?<timestamp> to bust the cache, so the path is matched without the query string.
   const ev = path.match(/^\/evidence\/([A-Z][A-Z0-9_]+-\d+)\/(before|after)\.png$/);
   if (ev) {
-    const file = join(stateDir, 'work', ev[1], 'evidence', `${ev[2]}.png`);
-    if (!existsSync(file)) {
+    const p = all.ofTicket(ev[1]);
+    const file = p ? join(p.stateDir, 'work', ev[1], 'evidence', `${ev[2]}.png`) : '';
+    if (!p || !existsSync(file)) {
       res.writeHead(404);
       return res.end();
     }
@@ -275,51 +314,58 @@ const server = createServer(async (req, res) => {
     }
   }
   // Hotspot map (FR-64): computed on request (git + Jira + saved analyses), cached for two minutes.
+  // Hotspot map per project: /api/insights?project=LAB
   if (req.method === 'GET' && path === '/api/insights') {
     try {
-      const data = await insightsCached(req.url.includes('refresh=1'));
-      return json(res, 200, { ...data, recommendations: readRecommendations(stateDir, data) });
+      const p = readyProject({ project: queryOf(req).get('project') });
+      const data = await insightsCached(p, queryOf(req).get('refresh') === '1');
+      return json(res, 200, { ...data, project: p.key, recommendations: readRecommendations(p.stateDir, data) });
     } catch (e) {
-      return json(res, 500, { ok: false, error: e.message });
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
     }
   }
   if (req.method === 'POST' && path === '/api/insights/recommend') {
     if (recommending) return json(res, 409, { ok: false, error: 'recommendations are being written already' });
     recommending = true;
     try {
-      const data = await insightsCached(true);
-      const rec = await writeRecommendations({ insights: data, stateDir, cfg });
-      events.emit('insights', { text: `hotspot recommendations written for ${rec.recommendations.length} component(s)`, meta: rec.meta });
+      const p = readyProject(await readBody(req));
+      const data = await insightsCached(p, true);
+      const rec = await writeRecommendations({ insights: data, stateDir: p.stateDir, cfg: p.cfg });
+      events.emit('insights', { project: p.key, text: `${p.key}: hotspot recommendations written for ${rec.recommendations.length} component(s)`, meta: rec.meta });
       return json(res, 200, { ok: true, recommendations: { ...rec, stale: false } });
     } catch (e) {
-      return json(res, 500, { ok: false, error: e.message });
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
     } finally {
       recommending = false;
     }
   }
-  // Ask the knowledge base (FR-65): one question at a time; progress goes to the dashboard stream (not the event log).
+  // Ask the knowledge base of one project (FR-65): one question at a time; progress goes to the dashboard stream.
   if (req.method === 'POST' && path === '/api/ask') {
     if (asking) return json(res, 409, { ok: false, error: 'another question is being answered; try again in a minute' });
-    const { question, id } = await readBody(req);
+    const body = await readBody(req);
     asking = true;
     try {
-      const answer = await askQuestion({ question, repoDir, stateDir, cfg, jira, onProgress: (step) => broadcast({ type: 'ask-progress', id, step }) });
-      return json(res, 200, { ok: true, ...answer });
+      const p = readyProject(body);
+      const answer = await askQuestion({ question: body.question, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira, project: { key: p.key, name: p.name }, onProgress: (step) => broadcast({ type: 'ask-progress', id: body.id, step }) });
+      return json(res, 200, { ok: true, project: p.key, ...answer });
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     } finally {
       asking = false;
     }
   }
+  // Preview a ticket branch in that ticket's app; "main" needs the project.
   if (req.method === 'POST' && path === '/api/preview') {
-    const { branch } = await readBody(req);
+    const body = await readBody(req);
     try {
-      const r = await previewBranch({ repoDir, branch: String(branch ?? '') });
-      events.emit('preview', { key: r.branch === 'main' ? undefined : r.branch, text: `the app on :4200 now shows ${r.branch}` });
+      const branch = String(body.branch ?? '');
+      const p = readyProject(branch === 'main' ? { project: body.project } : { key: branch });
+      const r = await previewBranch({ repoDir: p.repoDir, branch, appUrl: p.app.url });
+      events.emit('preview', { project: p.key, key: r.branch === 'main' ? undefined : r.branch, text: `the ${p.name} app on :${p.app.frontend} now shows ${r.branch}` });
       pushStatus();
-      return json(res, 200, { ok: true, ...r });
+      return json(res, 200, { ok: true, project: p.key, appUrl: p.app.url + (p.app.home ?? '/'), ...r });
     } catch (e) {
-      return json(res, 409, { ok: false, error: e.message });
+      return json(res, e.status ?? 409, { ok: false, error: e.message });
     }
   }
   res.writeHead(404);
@@ -335,7 +381,10 @@ server.on('error', (e) => {
 server.listen(cfg.dashboardPort, () => {
   writeFileSync(PID_FILE, JSON.stringify({ pid: process.pid, startedAt: status.startedAt }));
   console.log(`Dashboard: http://localhost:${cfg.dashboardPort}`);
-  console.log(`Watching ${cfg.project} every ${cfg.pollSeconds}s · repo ${repoDir} · app shows ${status.appBranch}`);
+  for (const s of status.projects) {
+    console.log(`  ${s.key.padEnd(4)} ${s.name.padEnd(11)} ${s.ready ? `repo ${s.repo} · app :${s.app.frontend} shows ${s.appBranch}${s.linked.length ? ` · linked to ${s.linked.join(', ')}` : ''}` : `not watched: no clone at ${s.repo}`}`);
+  }
+  console.log(`Watching ${WATCHED.join(', ')} every ${cfg.pollSeconds}s`);
   console.log(mail.enabled ? `Email updates to ${mail.to.join(', ')}` : `Email updates off: ${mail.reason}`);
 });
 const cleanup = () => {
@@ -345,7 +394,7 @@ process.on('exit', cleanup);
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(0));
 
 setInterval(() => broadcast({ type: 'ping', at: new Date().toISOString() }), 15_000);
-events.emit('started', { text: `watching ${cfg.project} every ${cfg.pollSeconds}s` });
+events.emit('started', { text: `watching ${WATCHED.join(', ')} every ${cfg.pollSeconds}s` });
 await recoverStuckTickets().catch((e) => events.emit('error', { text: `recovery failed: ${e.message}` }));
 await poll();
 setInterval(poll, cfg.pollSeconds * 1000);

@@ -1,29 +1,33 @@
 #!/usr/bin/env node
-// Ask the knowledge base (FR-65) from the terminal; the same as the dashboard's Ask tab. Read-only.
+// Ask the knowledge base of one project (FR-65) from the terminal; the same as the dashboard's Ask tab. Read-only.
 //
-//   node agent/ask.mjs "Has the Struttura field bug happened before?"
+//   node agent/ask.mjs "Has the Struttura field bug happened before?"          the first project (MediAgenda)
+//   node agent/ask.mjs --project LAB "Which bugs did the Referti screen have?"
 
-import { readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createJira } from './lib/jira-actions.mjs';
 import { askQuestion } from './lib/ask.mjs';
+import { cliProject, loadProjects } from './lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const cfg = JSON.parse(readFileSync(join(HERE, 'agent.config.json'), 'utf8'));
-const question = process.argv.slice(2).join(' ').trim();
+const args = process.argv.slice(2);
+const question = args.filter((a, i) => a !== '--project' && args[i - 1] !== '--project').join(' ').trim();
 if (!question) {
-  console.error('usage: node agent/ask.mjs "your question"');
+  console.error('usage: node agent/ask.mjs [--project <KEY>] "your question"');
   process.exit(1);
 }
+const p = cliProject(loadProjects(HERE));
 
 const started = Date.now();
+console.log(`${p.name} (${p.key})`);
 const a = await askQuestion({
   question,
-  repoDir: resolve(HERE, cfg.repo),
-  stateDir: join(HERE, 'state'),
-  cfg,
+  repoDir: p.repoDir,
+  stateDir: p.stateDir,
+  cfg: p.cfg,
   jira: createJira(),
+  project: { key: p.key, name: p.name },
   onProgress: (step) => console.log(`  [${Math.round((Date.now() - started) / 1000)}s] ${step}`),
 });
 console.log(`\n${a.found ? 'Answer' : 'Not found'}: ${a.answer}\n`);

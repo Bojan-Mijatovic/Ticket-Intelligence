@@ -88,10 +88,11 @@ for (const key of [...tickets, ...also]) {
 // numbered after the seeded history (demo/jira-keys.json), and not created by new-ticket.mjs.
 try {
   const { createJira } = await import('../agent/lib/jira-actions.mjs');
-  const cfg = JSON.parse(readFileSync(join(ROOT, 'agent', 'agent.config.json'), 'utf8'));
+  const { loadProjects } = await import('../agent/lib/projects.mjs');
+  const { global: cfg } = loadProjects(join(ROOT, 'agent'));
   const seeded = existsSync(join(HERE, 'jira-keys.json')) ? Object.values(JSON.parse(readFileSync(join(HERE, 'jira-keys.json'), 'utf8'))) : [];
   const lastSeeded = Math.max(0, ...seeded.map((k) => Number(k.split('-')[1])));
-  const handled = (await createJira().search(`project = ${cfg.project} AND labels in (${cfg.labels.done}, ${cfg.labels.failed}) ORDER BY key ASC`, 50))
+  const handled = (await createJira().search(`project = DEM AND labels in (${cfg.labels.done}, ${cfg.labels.failed}) ORDER BY key ASC`, 50))
     .map((t) => t.key)
     .filter((k) => Number(k.split('-')[1]) > lastSeeded && !tickets.includes(k) && !also.includes(k));
   if (handled.length) console.log(`  note: tickets made by hand that the agent worked on are kept: ${handled.join(', ')}\n        to delete them as well: node demo/reset-demo.mjs --yes --also ${handled.join(',')}`);
