@@ -1,0 +1,158 @@
+{
+  "_note": "MediLab Jira history, seeded with: node demo/seed-jira.mjs --app medilab. Keys CUP_LAB-1xx are placeholders, mapped to the real keys in demo/jira-keys.json. Oldest first.",
+  "project": "LAB",
+  "links": [
+    ["CUP_LAB-103", "CUP_LAB-102"], ["CUP_LAB-104", "CUP_LAB-102"], ["CUP_LAB-110", "CUP_LAB-102"], ["CUP_LAB-119", "CUP_LAB-102"],
+    ["CUP_LAB-106", "CUP_LAB-105"], ["CUP_LAB-109", "CUP_LAB-105"], ["CUP_LAB-112", "CUP_LAB-105"],
+    ["CUP_LAB-108", "CUP_LAB-107"], ["CUP_LAB-111", "CUP_LAB-107"], ["CUP_LAB-117", "CUP_LAB-107"], ["CUP_LAB-120", "CUP_LAB-107"],
+    ["CUP_LAB-115", "CUP_LAB-114"], ["CUP_LAB-118", "CUP_LAB-114"]
+  ],
+  "issues": [
+    {
+      "key": "CUP_LAB-101", "issueType": "Story", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE] - Catalogo esami: test catalog with units, reference ranges and tariff codes",
+      "description": "As laboratory manager I want a catalog of the tests we run: code, name, sample type (siero, sangue intero), unit, number of decimals, reference range for men and for women, regional tariff code and price.\nThe catalog is the base of requests, results and of the MediBill charges (tariff code).",
+      "reporter": { "id": "u-anna", "name": "Anna Ferri" }, "assignee": { "id": "u-giorgio", "name": "Giorgio Esposito" },
+      "comments": [{ "author": { "id": "u-giorgio", "name": "Giorgio Esposito" }, "body": "GET /api/exams (Flyway V1, 12 tests). Creatinine is in µmol/L like the analyser exports it." }]
+    },
+    {
+      "key": "CUP_LAB-102", "issueType": "Story", "priority": "High", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE][FE] - Nuova richiesta: test requests for MediAgenda patients",
+      "description": "The wards ask for tests for patients that are registered in MediAgenda (the CUP application). MediLab must not keep its own patient registry: the request form searches the MediAgenda registry, and the request keeps a copy of fiscal code, name, sex and birth date.\nOne tube (provetta) per sample type of the chosen tests, each with a barcode.",
+      "reporter": { "id": "u-anna", "name": "Anna Ferri" }, "assignee": { "id": "u-luca", "name": "Luca Bianchi" },
+      "comments": [
+        { "author": { "id": "u-luca", "name": "Luca Bianchi" }, "body": "Backend: MediAgendaClient (GET /api/patients/{id} and the search of MediAgenda), POST /api/orders, Flyway V2/V3. MediAgenda's patient API is the one I wrote for DEM (CUP_DEMO-2441)." },
+        { "author": { "id": "u-francesca", "name": "Francesca Lombardi" }, "body": "Frontend: Richieste list, Nuova richiesta with the patient picker (shared/components/patient-picker) and profiles (renale, glicemico, epatico)." }
+      ]
+    },
+    {
+      "key": "CUP_LAB-103", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Nuova richiesta: error 500 when a test is in a profile and ticked by hand",
+      "description": "I add \"Profilo renale\" and then tick Creatinina again by hand (the doctor wrote it twice). CONFERMA gives \"Errore 500\" and the request is not created.",
+      "reporter": { "id": "u-monica", "name": "Monica Villa" }, "assignee": { "id": "u-luca", "name": "Luca Bianchi" },
+      "comments": [{ "author": { "id": "u-luca", "name": "Luca Bianchi" }, "body": "Cause: the frontend sends CREA twice and order_items has the primary key (order_id, exam_code): duplicate key → 500. Fix in OrderService.create: the codes are de-duplicated (distinct), the test is done and charged once. Test OrderServiceTest.aTestChosenTwiceIsDoneOnce." }]
+    },
+    {
+      "key": "CUP_LAB-104", "issueType": "Bug", "priority": "Medium", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[FE] - Richieste: the list is empty until a status is chosen",
+      "description": "When I open Richieste the table says \"Nessuna richiesta\". If I choose \"In lavorazione\" I see the requests; back to \"Tutte\" the list is empty again.",
+      "reporter": { "id": "u-monica", "name": "Monica Villa" }, "assignee": { "id": "u-francesca", "name": "Francesca Lombardi" },
+      "comments": [{ "author": { "id": "u-francesca", "name": "Francesca Lombardi" }, "body": "The option \"Tutte\" had the value TUTTE and it was sent as ?status=TUTTE. Now its value is empty and OrderApiService.list leaves an empty status out." }]
+    },
+    {
+      "key": "CUP_LAB-105", "issueType": "Story", "priority": "High", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE][FE] - Accettazione campioni: scan the tube, accept or reject it",
+      "description": "At the acceptance desk every tube is scanned. The operator sees the request and the tests of that tube, then accepts it or rejects it with a reason (emolizzato, coagulato, quantità insufficiente, etichetta errata).\nWhen all tubes of a request are accepted, the request is in work (IN_LAVORAZIONE).",
+      "reporter": { "id": "u-anna", "name": "Anna Ferri" }, "assignee": { "id": "u-alessandro", "name": "Alessandro Moretti" },
+      "comments": [{ "author": { "id": "u-alessandro", "name": "Alessandro Moretti" }, "body": "Backend: SampleService (accept / reject), GET /api/samples/{barcode}. Frontend by Francesca: features/samples/sample-acceptance." }]
+    },
+    {
+      "key": "CUP_LAB-106", "issueType": "Bug", "priority": "Medium", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[FE] - Accettazione campioni: \"Sample not found\" for a barcode that exists",
+      "description": "With the new scanner at desk 2 every tube gives \"Sample lb00000850 not found\". The same tube at desk 1 works.",
+      "reporter": { "id": "u-monica", "name": "Monica Villa" }, "assignee": { "id": "u-francesca", "name": "Francesca Lombardi" },
+      "comments": [{ "author": { "id": "u-francesca", "name": "Francesca Lombardi" }, "body": "The desk-2 scanner sends lower case (Caps Lock off), and barcodes are matched exactly. SampleAcceptanceComponent.scan() now upper-cases the code before the lookup." }]
+    },
+    {
+      "key": "CUP_LAB-107", "issueType": "Story", "priority": "High", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE][FE] - Inserimento risultati, validation and Referto",
+      "description": "The technician enters one value per test; values outside the reference range are flagged L or H (range by sex). The doctor validates (signs) the results and the report can be printed.",
+      "reporter": { "id": "u-anna", "name": "Anna Ferri" }, "assignee": { "id": "u-giorgio", "name": "Giorgio Esposito" },
+      "comments": [
+        { "author": { "id": "u-giorgio", "name": "Giorgio Esposito" }, "body": "Backend: ResultService (save + flags with Flags.range by sex, validate, report), Flyway V4. Values are rounded to the decimals of the test." },
+        { "author": { "id": "u-francesca", "name": "Francesca Lombardi" }, "body": "Frontend: features/results/result-entry (number fields) and features/reports/report-view." }
+      ]
+    },
+    {
+      "key": "CUP_LAB-108", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Risultati: women are flagged with the male reference range",
+      "description": "Bianchi Laura, Emoglobina 12,4 g/dL is flagged L. For a woman the range is 12,0 – 15,5, so it is normal. The report also shows 13,5 – 17,5 as reference range.",
+      "reporter": { "id": "u-anna", "name": "Anna Ferri" }, "assignee": { "id": "u-giorgio", "name": "Giorgio Esposito" },
+      "comments": [{ "author": { "id": "u-giorgio", "name": "Giorgio Esposito" }, "body": "Flags.range compared the sex with \"FEMALE\", but MediAgenda sends \"F\" (as in its PatientRequest): every patient got the male range. Fixed, test for both sexes (ResultServiceTest.flagsWithTheRangeOfThePatientsSex)." }]
+    },
+    {
+      "key": "CUP_LAB-109", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Accettazione campioni: a tube of a cancelled request can be accepted",
+      "description": "Request RL-2026-00034 was cancelled (duplicate). The tube arrived anyway, was scanned and ACCETTA worked: the request is now \"In lavorazione\" again and appeared in the worklist.",
+      "reporter": { "id": "u-monica", "name": "Monica Villa" }, "assignee": { "id": "u-alessandro", "name": "Alessandro Moretti" },
+      "comments": [{ "author": { "id": "u-alessandro", "name": "Alessandro Moretti" }, "body": "Two gaps: OrderService.cancel did not cancel the waiting tubes, and SampleService.accept did not check the request. Both fixed; tests in OrderServiceTest and SampleServiceTest." }]
+    },
+    {
+      "key": "CUP_LAB-110", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[FE] - Nuova richiesta: the URGENTE checkbox is not saved",
+      "description": "Requests from the emergency ward are marked Urgente in the form, but in Richieste they have no URGENTE chip and are processed with the normal ones.",
+      "reporter": { "id": "u-paolo", "name": "Paolo Brambilla" }, "assignee": { "id": "u-francesca", "name": "Francesca Lombardi" },
+      "comments": [{ "author": { "id": "u-francesca", "name": "Francesca Lombardi" }, "body": "OrderFormComponent.submit() sent urgent: false instead of the form value. Fixed." }]
+    },
+    {
+      "key": "CUP_LAB-111", "issueType": "Bug", "priority": "Medium", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Validation: a request with a missing value can be reported",
+      "description": "I validated RL-2026-00029 by mistake before entering Potassio: the report was printed with an empty Potassio row.",
+      "reporter": { "id": "u-anna", "name": "Anna Ferri" }, "assignee": { "id": "u-giorgio", "name": "Giorgio Esposito" },
+      "comments": [{ "author": { "id": "u-giorgio", "name": "Giorgio Esposito" }, "body": "ResultService.validate now rejects (409) a request with tests that have no value, naming them." }]
+    },
+    {
+      "key": "CUP_LAB-112", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Accettazione campioni: after RIFIUTA the request never goes in work",
+      "description": "I rejected a haemolysed tube. The new tube taken from the patient has no label to print and the request stays \"Richiesta\" forever, because the rejected tube is still counted.",
+      "reporter": { "id": "u-monica", "name": "Monica Villa" }, "assignee": { "id": "u-alessandro", "name": "Alessandro Moretti" },
+      "comments": [{ "author": { "id": "u-alessandro", "name": "Alessandro Moretti" }, "body": "Rejecting now creates a replacement tube (new barcode, same sample type), and the rejected one points to it (samples.replaced_by, Flyway V5). The page shows the new barcode." }]
+    },
+    {
+      "key": "CUP_LAB-113", "issueType": "Bug", "priority": "Medium", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Nuova richiesta: patient search shows \"Errore 500\" when MediAgenda is down",
+      "description": "During the MediAgenda maintenance on Saturday the patient field only said \"Errore 500\". We did not know whether it was our problem or MediAgenda's.",
+      "reporter": { "id": "u-monica", "name": "Monica Villa" }, "assignee": { "id": "u-luca", "name": "Luca Bianchi" },
+      "comments": [{ "author": { "id": "u-luca", "name": "Luca Bianchi" }, "body": "HttpMediAgendaClient now turns a connection error / timeout into PeerUnavailableException → 502 \"MediAgenda is not reachable\", shown under the patient field." }]
+    },
+    {
+      "key": "CUP_LAB-114", "issueType": "Story", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE] - Results API for the other apps (MediFarma: creatinine for the renal check)",
+      "description": "MediFarma needs the latest creatinine of a patient to check the doses of renally cleared drugs. Provide the validated results of a patient by fiscal code, optionally for one test.",
+      "reporter": { "id": "u-valentina", "name": "Valentina Rinaldi" }, "assignee": { "id": "u-giorgio", "name": "Giorgio Esposito" },
+      "comments": [{ "author": { "id": "u-giorgio", "name": "Giorgio Esposito" }, "body": "GET /api/patients/{fiscalCode}/results?exam=CREA, newest first. Every value comes with its unit (today µmol/L for CREA)." }]
+    },
+    {
+      "key": "CUP_LAB-115", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Results API returns results that are not validated yet",
+      "description": "MediFarma showed a renal warning for a creatinine that the laboratory had entered by mistake and corrected before validating. The API should only give validated results.",
+      "reporter": { "id": "u-valentina", "name": "Valentina Rinaldi" }, "assignee": { "id": "u-giorgio", "name": "Giorgio Esposito" },
+      "comments": [{ "author": { "id": "u-giorgio", "name": "Giorgio Esposito" }, "body": "ResultService.ofPatient reads only validated results now (findByOrderIdInAndValidatedTrue)." }]
+    },
+    {
+      "key": "CUP_LAB-116", "issueType": "Story", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE] - Requests API: reported requests of a day, for the MediBill import",
+      "description": "MediBill charges the tests of the requests reported each day. It needs the reported requests of a date range with the tariff code of every test.",
+      "reporter": { "id": "u-roberto", "name": "Roberto Ferri" }, "assignee": { "id": "u-alessandro", "name": "Alessandro Moretti" },
+      "comments": [{ "author": { "id": "u-alessandro", "name": "Alessandro Moretti" }, "body": "GET /api/orders?status=REFERTATA&from=…&to=… (report date, inclusive). exams[].tariffCode is in every request." }]
+    },
+    {
+      "key": "CUP_LAB-117", "issueType": "Bug", "priority": "Low", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[FE] - Referto: values printed with a dot and without the decimals of the test",
+      "description": "The report prints Creatinina 2.5 and TSH 2.1, while the reference ranges are 0,70 – 1,20 and 0,27 – 4,20. The ward asked for the same format.",
+      "reporter": { "id": "u-anna", "name": "Anna Ferri" }, "assignee": { "id": "u-francesca", "name": "Francesca Lombardi" },
+      "comments": [{ "author": { "id": "u-francesca", "name": "Francesca Lombardi" }, "body": "ReportViewComponent printed the raw number; it now uses formatDecimal (shared/utils/numbers.ts) with the decimals of the test, like rangeLabel." }]
+    },
+    {
+      "key": "CUP_LAB-118", "issueType": "Story", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE] - Creatinine in mg/dL",
+      "description": "The nephrology ward and the regional health record (FSE) want creatinine in mg/dL, like the other laboratories of the region. Convert the stored results as well, so old and new reports compare.",
+      "reporter": { "id": "u-anna", "name": "Anna Ferri" }, "assignee": { "id": "u-alessandro", "name": "Alessandro Moretti" },
+      "comments": [{ "author": { "id": "u-alessandro", "name": "Alessandro Moretti" }, "body": "Flyway V6: CREA in mg/dL (2 decimals, ranges 0,70–1,20 M / 0,50–1,00 F), stored values ÷ 88.4. The results API already returns the unit with every value, so nothing changes in its shape." }]
+    },
+    {
+      "key": "CUP_LAB-119", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[FE] - Nuova richiesta: the request is made for the previously picked patient",
+      "description": "I picked Rossi Mario by mistake, then typed Romano and confirmed without picking again: the request was made for Rossi Mario.",
+      "reporter": { "id": "u-monica", "name": "Monica Villa" }, "assignee": { "id": "u-francesca", "name": "Francesca Lombardi" },
+      "comments": [{ "author": { "id": "u-francesca", "name": "Francesca Lombardi" }, "body": "PatientPickerComponent.onInput() now emits null when the text is edited after a pick, so the form has no patient until one is picked again (like the Struttura field fix in MediAgenda)." }]
+    },
+    {
+      "key": "CUP_LAB-120", "issueType": "Story", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[FE] - Inserimento risultati: Enter moves to the next value, no number spinners",
+      "description": "The technicians type a whole request from the keyboard. Enter should move to the next value. The number fields also change the value when the mouse wheel scrolls over them, which already caused wrong results.",
+      "reporter": { "id": "u-monica", "name": "Monica Villa" }, "assignee": { "id": "u-francesca", "name": "Francesca Lombardi" },
+      "comments": [{ "author": { "id": "u-francesca", "name": "Francesca Lombardi" }, "body": "Text fields with inputmode=decimal; Enter → next value, the last one saves. Saved values are shown in the Italian format (formatDecimal)." }]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+-- Tubes: one per sample type of a request, labelled with a barcode (LB + 8 digits).
+CREATE TABLE samples (
+  barcode       VARCHAR(12)  PRIMARY KEY,
+  order_id      VARCHAR(20)  NOT NULL REFERENCES lab_orders (id),
+  sample_type   VARCHAR(20)  NOT NULL,
+  status        VARCHAR(20)  NOT NULL,
+  accepted_at   TIMESTAMP,
+  reject_reason VARCHAR(200)
+);
+
+CREATE SEQUENCE sample_seq START WITH 1000;
+
+INSERT INTO samples (barcode, order_id, sample_type, status, accepted_at) VALUES
+  ('LB00000801', 'RL-2026-00041', 'SIERO',  'ACCETTATO', '2026-10-05 08:40:00'),
+  ('LB00000812', 'RL-2026-00047', 'SIERO',  'ANNULLATO', NULL),
+  ('LB00000822', 'RL-2026-00052', 'SIERO',  'ACCETTATO', '2026-11-03 08:55:00'),
+  ('LB00000823', 'RL-2026-00052', 'SANGUE', 'ACCETTATO', '2026-11-03 08:55:00'),
+  ('LB00000830', 'RL-2026-00055', 'SANGUE', 'ACCETTATO', '2026-11-02 08:10:00'),
+  ('LB00000831', 'RL-2026-00055', 'SIERO',  'ACCETTATO', '2026-11-02 08:10:00'),
+  ('LB00000840', 'RL-2026-00058', 'SIERO',  'ACCETTATO', '2026-11-05 08:45:00'),
+  ('LB00000845', 'RL-2026-00060', 'SIERO',  'ACCETTATO', '2026-11-06 08:00:00'),
+  ('LB00000846', 'RL-2026-00060', 'SANGUE', 'ACCETTATO', '2026-11-06 08:00:00'),
+  ('LB00000850', 'RL-2026-00061', 'SIERO',  'ATTESO',    NULL),
+  ('LB00000855', 'RL-2026-00062', 'SANGUE', 'ATTESO',    NULL),
+  ('LB00000856', 'RL-2026-00062', 'SIERO',  'ATTESO',    NULL);

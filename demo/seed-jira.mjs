@@ -4,6 +4,8 @@
 // The target ticket (CUP_DEMO-2629) is not seeded: it is created live with new-ticket.mjs.
 //
 //   node demo/seed-jira.mjs [--project DEM]
+//   node demo/seed-jira.mjs --app medilab     another application of the suite: demo/src/<app>/tickets.json
+//                                             (its project, order and links; placeholders CUP_LAB-1xx → real keys)
 //
 // Jira credentials come from the analyze-ticket .env (JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN).
 // All comments are written by the token's user, so each one starts with the name of the (fictional) person.
@@ -18,10 +20,12 @@ const SKILL = existsSync(join(homedir(), '.claude', 'skills', 'analyze-ticket'))
 const { loadConfig } = await import(new URL(`file:///${join(SKILL, 'scripts', 'lib', 'config.mjs').replace(/\\/g, '/')}`));
 const cfg = loadConfig();
 const args = process.argv.slice(2);
-const PROJECT = args.includes('--project') ? args[args.indexOf('--project') + 1] : 'DEM';
+const APP = args.includes('--app') ? args[args.indexOf('--app') + 1] : null;
+const appTickets = APP ? JSON.parse(readFileSync(join(HERE, 'src', APP, 'tickets.json'), 'utf8')) : null;
+const PROJECT = args.includes('--project') ? args[args.indexOf('--project') + 1] : appTickets?.project ?? 'DEM';
 const KEYS_FILE = join(HERE, 'jira-keys.json');
 // Oldest first, so the Jira keys follow the story; tickets already in jira-keys.json are skipped.
-const SEED_ORDER = ['CUP_DEMO-2398', 'CUP_DEMO-2580', 'CUP_DEMO-2602', 'CUP_DEMO-2511', 'CUP_DEMO-2615', 'CUP_DEMO-2441', 'CUP_DEMO-2470', 'CUP_DEMO-2590', 'CUP_DEMO-2533', 'CUP_DEMO-2612', 'CUP_DEMO-2620',
+const SEED_ORDER = appTickets ? appTickets.issues.map((i) => i.key) : ['CUP_DEMO-2398', 'CUP_DEMO-2580', 'CUP_DEMO-2602', 'CUP_DEMO-2511', 'CUP_DEMO-2615', 'CUP_DEMO-2441', 'CUP_DEMO-2470', 'CUP_DEMO-2590', 'CUP_DEMO-2533', 'CUP_DEMO-2612', 'CUP_DEMO-2620',
   // Bugs fixed in the history, so the hotspot map (FR-64) has data: oldest first.
   'CUP_DEMO-2402', 'CUP_DEMO-2419', 'CUP_DEMO-2455', 'CUP_DEMO-2483', 'CUP_DEMO-2489', 'CUP_DEMO-2603', 'CUP_DEMO-2541', 'CUP_DEMO-2549', 'CUP_DEMO-2627'];
 
@@ -48,10 +52,11 @@ async function api(method, path, body) {
 }
 
 const OPT_OUT = 'no-ai'; // agent/agent.config.json → labels.skip
-const fixtures = JSON.parse(readFileSync(join(SKILL, 'fixtures', 'mock-jira.json'), 'utf8')).issues;
+const fixtures = appTickets ? appTickets.issues : JSON.parse(readFileSync(join(SKILL, 'fixtures', 'mock-jira.json'), 'utf8')).issues;
 const byKey = new Map(fixtures.map((i) => [i.key, i]));
 const keys = existsSync(KEYS_FILE) ? JSON.parse(readFileSync(KEYS_FILE, 'utf8')) : {};
-const mapKeys = (s) => String(s ?? '').replace(/CUP_DEMO-\d+/g, (k) => keys[k] ?? k);
+// Placeholders of every app of the suite (CUP_DEMO-2533, CUP_LAB-118, …): a ticket may name another app's ticket.
+const mapKeys = (s) => String(s ?? '').replace(/CUP_[A-Z]+-\d+/g, (k) => keys[k] ?? k);
 
 async function createIssue(issue) {
   const fields = {
@@ -104,7 +109,7 @@ for (const oldKey of SEED_ORDER) {
 }
 
 // Link related tickets, like a real team would (only links that involve a ticket created in this run).
-const LINKS = [
+const LINKS = appTickets ? appTickets.links ?? [] : [
   ['CUP_DEMO-2511', 'CUP_DEMO-2398'],
   ['CUP_DEMO-2533', 'CUP_DEMO-2470'],
   ['CUP_DEMO-2620', 'CUP_DEMO-2470'],

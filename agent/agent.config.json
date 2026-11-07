@@ -53,6 +53,71 @@
           { "name": "Shared (forms, dates, layout)", "paths": ["frontend/src/app/shared/", "frontend/src/app/core/", "frontend/src/styles.scss", "backend/src/main/java/com/mediagenda/common/"] }
         ]
       }
+    },
+    {
+      "key": "LAB",
+      "name": "MediLab",
+      "description": "Laboratory: test requests, samples, results and reports; patients from MediAgenda",
+      "repo": "../demo/medilab",
+      "app": { "frontend": 4201, "backend": 8081, "home": "/richieste" },
+      "backendTestDir": "backend/src/test/java/com/medilab/regression",
+      "linked": ["DEM"],
+      "relations": { "DEM": "MediLab reads patients from the MediAgenda patient registry (GET /api/patients)" },
+      "askExamples": ["Why are results flagged H or L, and where is that computed?", "Which bugs did Accettazione campioni have, and why?", "What changed in the creatinine unit, and who changed it?", "Who knows the MediAgenda integration best?"],
+      "insights": {
+        "components": [
+          { "name": "Richieste", "paths": ["frontend/src/app/features/orders/", "backend/src/main/java/com/medilab/order/"] },
+          { "name": "Campioni", "paths": ["frontend/src/app/features/samples/", "backend/src/main/java/com/medilab/sample/"] },
+          { "name": "Risultati e referti", "paths": ["frontend/src/app/features/results/", "frontend/src/app/features/reports/", "backend/src/main/java/com/medilab/result/"] },
+          { "name": "Catalogo esami", "paths": ["frontend/src/app/features/catalog/", "backend/src/main/java/com/medilab/catalog/"] },
+          { "name": "Integrazione MediAgenda", "paths": ["backend/src/main/java/com/medilab/integration/", "frontend/src/app/shared/components/patient-picker/"] },
+          { "name": "Shared (forms, values, layout)", "paths": ["frontend/src/app/shared/", "frontend/src/app/core/", "frontend/src/styles.scss", "backend/src/main/java/com/medilab/common/"] }
+        ]
+      }
+    },
+    {
+      "key": "FAR",
+      "name": "MediFarma",
+      "description": "Hospital pharmacy: prescriptions, renal and interaction checks, dispensing from stock",
+      "repo": "../demo/medifarma",
+      "app": { "frontend": 4202, "backend": 8082, "home": "/prescrizioni" },
+      "backendTestDir": "backend/src/test/java/com/medifarma/regression",
+      "linked": ["DEM", "LAB"],
+      "relations": { "DEM": "patients (age, sex) from the MediAgenda registry", "LAB": "the patient's latest creatinine from MediLab (GET /api/patients/{fiscalCode}/results) for the renal dose check" },
+      "askExamples": ["How is the renal dose check computed?", "Which bugs did Erogazione have, and why?", "Why can an expired lot not be dispensed?", "Who knows the MediLab integration best?"],
+      "insights": {
+        "components": [
+          { "name": "Prescrizioni", "paths": ["frontend/src/app/features/prescriptions/", "backend/src/main/java/com/medifarma/prescription/"] },
+          { "name": "Controlli (rene, interazioni)", "paths": ["backend/src/main/java/com/medifarma/safety/", "frontend/src/app/features/prescriptions/warnings"] },
+          { "name": "Erogazione", "paths": ["frontend/src/app/features/dispensing/", "backend/src/main/java/com/medifarma/dispensing/"] },
+          { "name": "Magazzino", "paths": ["frontend/src/app/features/stock/", "backend/src/main/java/com/medifarma/stock/"] },
+          { "name": "Farmaci", "paths": ["frontend/src/app/features/drugs/", "backend/src/main/java/com/medifarma/drug/"] },
+          { "name": "Integrazioni (MediAgenda, MediLab)", "paths": ["backend/src/main/java/com/medifarma/integration/"] },
+          { "name": "Shared (forms, layout)", "paths": ["frontend/src/app/shared/", "frontend/src/app/core/", "frontend/src/styles.scss", "backend/src/main/java/com/medifarma/common/"] }
+        ]
+      }
+    },
+    {
+      "key": "BIL",
+      "name": "MediBill",
+      "description": "Billing: charges imported from MediAgenda visits and MediLab tests, co-pay and exemptions, receipts",
+      "repo": "../demo/medibill",
+      "app": { "frontend": 4203, "backend": 8083, "home": "/addebiti" },
+      "backendTestDir": "backend/src/test/java/com/medibill/regression",
+      "linked": ["DEM", "LAB"],
+      "relations": { "DEM": "visits to charge: MediAgenda bookings (GET /api/bookings) and patients", "LAB": "tests to charge: reported MediLab requests (GET /api/orders?status=REFERTATA)" },
+      "askExamples": ["How is the co-pay (ticket) of a receipt computed?", "Which bugs did the charge import have, and why?", "Why is a receipt with an exemption 0 €?", "Who knows the MediAgenda import best?"],
+      "insights": {
+        "components": [
+          { "name": "Import addebiti", "paths": ["frontend/src/app/features/charges/", "backend/src/main/java/com/medibill/charge/"] },
+          { "name": "Ricevute", "paths": ["frontend/src/app/features/receipts/", "backend/src/main/java/com/medibill/receipt/"] },
+          { "name": "Esenzioni", "paths": ["frontend/src/app/features/exemptions/", "backend/src/main/java/com/medibill/exemption/"] },
+          { "name": "Tariffario", "paths": ["frontend/src/app/features/tariffs/", "backend/src/main/java/com/medibill/tariff/"] },
+          { "name": "Report incassi", "paths": ["frontend/src/app/features/reports/", "backend/src/main/java/com/medibill/report/"] },
+          { "name": "Integrazioni (MediAgenda, MediLab)", "paths": ["backend/src/main/java/com/medibill/integration/"] },
+          { "name": "Shared (forms, money, layout)", "paths": ["frontend/src/app/shared/", "frontend/src/app/core/", "frontend/src/styles.scss", "backend/src/main/java/com/medibill/common/"] }
+        ]
+      }
     }
   ]
 }

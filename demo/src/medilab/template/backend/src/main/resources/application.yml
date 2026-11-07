@@ -1,0 +1,29 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: medilab
+  datasource:
+    url: jdbc:h2:mem:medilab;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+  flyway:
+    locations: classpath:db/migration
+  h2:
+    console:
+      enabled: true
+
+# The other applications of the suite (MediAgenda: patient registry).
+medisuite:
+  mediagenda:
+    url: http://localhost:8080
+    timeout-ms: 3000
+
+logging:
+  level:
+    com.medilab: INFO

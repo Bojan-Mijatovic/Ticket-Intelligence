@@ -72,7 +72,7 @@ ${ticketContext(issue, analysis)}
 
 TASK (phase 1 of 2, reproduce): this is a BACKEND ticket. Write ONE JUnit 5 test class, ${test.file} (package ${test.pkg}, class ${test.className}), that reproduces the bug through the application's own code (services, repositories, controllers) against the real H2 database with its Flyway data.
 - First look at the existing tests under backend/src/test/java/ (e.g. the *ServiceTest classes) and follow their setup (@SpringBootTest, @Transactional, the seed data the migrations insert).
-- When the code calls another application of the suite through a client (an integration/ package), never call the real service: give the client the answer the bug needs the way the existing tests do (their stub or @MockitoBean).
+- When the code calls another application of the suite through a client (an integration/ package), never call the real service: give the client the answer the bug needs the way the existing tests do (their stub client, or @MockBean).
 - The test asserts the CORRECT behaviour, so it fails now because of the bug. Name the test method after the expected behaviour, and put "${issue.key}" in a @DisplayName.
 - Do not change any other file. Do not commit.
 - Run it from the backend folder: mvn -q test -Dtest=${test.className} ${javaHint}

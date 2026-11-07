@@ -1,0 +1,68 @@
+{
+  "_note": "Mirrors the Flyway seed (V1__exam_catalog.sql … V6__creatinine_mg_dl.sql) and the MediAgenda patients.",
+  "exams": [
+    { "code": "GLU", "name": "Glucosio", "sampleType": "SIERO", "unit": "mg/dL", "decimals": 0, "refMinM": 70, "refMaxM": 99, "refMinF": 70, "refMaxF": 99, "tariffCode": "90.27.1", "price": 1.13, "active": true },
+    { "code": "CREA", "name": "Creatinina", "sampleType": "SIERO", "unit": "mg/dL", "decimals": 2, "refMinM": 0.7, "refMaxM": 1.2, "refMinF": 0.5, "refMaxF": 1.0, "tariffCode": "90.16.3", "price": 1.13, "active": true },
+    { "code": "UREA", "name": "Urea (azotemia)", "sampleType": "SIERO", "unit": "mg/dL", "decimals": 0, "refMinM": 17, "refMaxM": 49, "refMinF": 17, "refMaxF": 49, "tariffCode": "90.44.1", "price": 1.13, "active": true },
+    { "code": "NA", "name": "Sodio", "sampleType": "SIERO", "unit": "mmol/L", "decimals": 0, "refMinM": 136, "refMaxM": 145, "refMinF": 136, "refMaxF": 145, "tariffCode": "90.40.4", "price": 1.13, "active": true },
+    { "code": "K", "name": "Potassio", "sampleType": "SIERO", "unit": "mmol/L", "decimals": 1, "refMinM": 3.5, "refMaxM": 5.1, "refMinF": 3.5, "refMaxF": 5.1, "tariffCode": "90.37.4", "price": 1.13, "active": true },
+    { "code": "ALT", "name": "ALT (GPT)", "sampleType": "SIERO", "unit": "U/L", "decimals": 0, "refMinM": 0, "refMaxM": 41, "refMinF": 0, "refMaxF": 33, "tariffCode": "90.09.2", "price": 1.13, "active": true },
+    { "code": "AST", "name": "AST (GOT)", "sampleType": "SIERO", "unit": "U/L", "decimals": 0, "refMinM": 0, "refMaxM": 40, "refMinF": 0, "refMaxF": 32, "tariffCode": "90.04.5", "price": 1.13, "active": true },
+    { "code": "CHOL", "name": "Colesterolo totale", "sampleType": "SIERO", "unit": "mg/dL", "decimals": 0, "refMinM": null, "refMaxM": 200, "refMinF": null, "refMaxF": 200, "tariffCode": "90.14.3", "price": 1.13, "active": true },
+    { "code": "URIC", "name": "Acido urico", "sampleType": "SIERO", "unit": "mg/dL", "decimals": 1, "refMinM": 3.4, "refMaxM": 7.0, "refMinF": 2.4, "refMaxF": 5.7, "tariffCode": "90.43.5", "price": 1.13, "active": true },
+    { "code": "TSH", "name": "TSH", "sampleType": "SIERO", "unit": "mUI/L", "decimals": 2, "refMinM": 0.27, "refMaxM": 4.2, "refMinF": 0.27, "refMaxF": 4.2, "tariffCode": "90.42.1", "price": 13.52, "active": true },
+    { "code": "HB", "name": "Emoglobina", "sampleType": "SANGUE", "unit": "g/dL", "decimals": 1, "refMinM": 13.5, "refMaxM": 17.5, "refMinF": 12.0, "refMaxF": 15.5, "tariffCode": "90.62.2", "price": 3.17, "active": true },
+    { "code": "HBA1C", "name": "Emoglobina glicata", "sampleType": "SANGUE", "unit": "mmol/mol", "decimals": 0, "refMinM": 20, "refMaxM": 42, "refMinF": 20, "refMaxF": 42, "tariffCode": "90.28.1", "price": 9.6, "active": true }
+  ],
+  "patients": [
+    { "id": 1, "fiscalCode": "RSSMRA80A01F205X", "firstName": "Mario", "lastName": "Rossi", "birthDate": "1980-01-01", "sex": "M" },
+    { "id": 2, "fiscalCode": "BNCLRA85C45L219Y", "firstName": "Laura", "lastName": "Bianchi", "birthDate": "1985-03-05", "sex": "F" },
+    { "id": 3, "fiscalCode": "VRDGPP72D12H501Z", "firstName": "Giuseppe", "lastName": "Verdi", "birthDate": "1972-04-12", "sex": "M" },
+    { "id": 4, "fiscalCode": "FRRGLI90E50A794K", "firstName": "Giulia", "lastName": "Ferrari", "birthDate": "1990-05-10", "sex": "F" },
+    { "id": 5, "fiscalCode": "RMNLCU66H20D969W", "firstName": "Luca", "lastName": "Romano", "birthDate": "1966-06-20", "sex": "M" },
+    { "id": 6, "fiscalCode": "GLLSFN78M41F839J", "firstName": "Stefania", "lastName": "Gallo", "birthDate": "1978-08-01", "sex": "F" },
+    { "id": 7, "fiscalCode": "CSTNDR93P10L736Q", "firstName": "Andrea", "lastName": "Costa", "birthDate": "1993-09-10", "sex": "M" },
+    { "id": 8, "fiscalCode": "FNTCHR88R55G273T", "firstName": "Chiara", "lastName": "Fontana", "birthDate": "1988-10-15", "sex": "F" },
+    { "id": 9, "fiscalCode": "MRNPLA61S03C351V", "firstName": "Paolo", "lastName": "Marino", "birthDate": "1961-11-03", "sex": "M" },
+    { "id": 10, "fiscalCode": "RCCFNC99T47E506M", "firstName": "Francesca", "lastName": "Ricci", "birthDate": "1999-12-07", "sex": "F" },
+    { "id": 11, "fiscalCode": "BRNMTT83A15B157R", "firstName": "Matteo", "lastName": "Bruno", "birthDate": "1983-01-15", "sex": "M" },
+    { "id": 12, "fiscalCode": "GRCSRA95B62F205N", "firstName": "Sara", "lastName": "Greco", "birthDate": "1995-02-22", "sex": "F" }
+  ],
+  "orders": [
+    { "id": "RL-2026-00041", "patientId": 1, "prescriber": "Dr. Marco Fumagalli", "prescriptionCode": "0301A4000556677", "urgent": false, "status": "REFERTATA", "requestedAt": "2026-10-05T08:10:00", "reportedAt": "2026-10-05T13:20:00", "cancelReason": null, "examCodes": ["GLU", "CREA", "CHOL"] },
+    { "id": "RL-2026-00047", "patientId": 7, "prescriber": "Dr.ssa Elena Sala", "prescriptionCode": null, "urgent": false, "status": "ANNULLATA", "requestedAt": "2026-10-20T09:00:00", "reportedAt": null, "cancelReason": "Richiesta duplicata", "examCodes": ["GLU"] },
+    { "id": "RL-2026-00052", "patientId": 9, "prescriber": "Dr. Paolo Brambilla", "prescriptionCode": "0301A4000771122", "urgent": false, "status": "REFERTATA", "requestedAt": "2026-11-03T08:30:00", "reportedAt": "2026-11-03T14:05:00", "cancelReason": null, "examCodes": ["CREA", "UREA", "K", "GLU", "HBA1C"] },
+    { "id": "RL-2026-00055", "patientId": 2, "prescriber": "Dr.ssa Elena Sala", "prescriptionCode": null, "urgent": false, "status": "REFERTATA", "requestedAt": "2026-11-02T07:50:00", "reportedAt": "2026-11-02T12:40:00", "cancelReason": null, "examCodes": ["HB", "GLU", "TSH"] },
+    { "id": "RL-2026-00058", "patientId": 4, "prescriber": "Dr. Marco Fumagalli", "prescriptionCode": "0301A4000993344", "urgent": false, "status": "IN_LAVORAZIONE", "requestedAt": "2026-11-05T08:15:00", "reportedAt": null, "cancelReason": null, "examCodes": ["GLU", "CREA", "ALT", "AST"] },
+    { "id": "RL-2026-00060", "patientId": 5, "prescriber": "Dr. Paolo Brambilla", "prescriptionCode": null, "urgent": true, "status": "IN_LAVORAZIONE", "requestedAt": "2026-11-06T07:40:00", "reportedAt": null, "cancelReason": null, "examCodes": ["K", "NA", "CREA", "HB"] },
+    { "id": "RL-2026-00061", "patientId": 3, "prescriber": "Dr.ssa Elena Sala", "prescriptionCode": "0301A4000118899", "urgent": false, "status": "RICHIESTA", "requestedAt": "2026-11-06T09:20:00", "reportedAt": null, "cancelReason": null, "examCodes": ["CHOL", "GLU", "URIC"] },
+    { "id": "RL-2026-00062", "patientId": 6, "prescriber": "Dr. Marco Fumagalli", "prescriptionCode": null, "urgent": false, "status": "RICHIESTA", "requestedAt": "2026-11-07T08:05:00", "reportedAt": null, "cancelReason": null, "examCodes": ["HB", "HBA1C", "GLU"] }
+  ],
+  "samples": [
+    { "barcode": "LB00000801", "orderId": "RL-2026-00041", "sampleType": "SIERO", "status": "ACCETTATO" },
+    { "barcode": "LB00000812", "orderId": "RL-2026-00047", "sampleType": "SIERO", "status": "ANNULLATO" },
+    { "barcode": "LB00000822", "orderId": "RL-2026-00052", "sampleType": "SIERO", "status": "ACCETTATO" },
+    { "barcode": "LB00000823", "orderId": "RL-2026-00052", "sampleType": "SANGUE", "status": "ACCETTATO" },
+    { "barcode": "LB00000830", "orderId": "RL-2026-00055", "sampleType": "SANGUE", "status": "ACCETTATO" },
+    { "barcode": "LB00000831", "orderId": "RL-2026-00055", "sampleType": "SIERO", "status": "ACCETTATO" },
+    { "barcode": "LB00000840", "orderId": "RL-2026-00058", "sampleType": "SIERO", "status": "ACCETTATO" },
+    { "barcode": "LB00000845", "orderId": "RL-2026-00060", "sampleType": "SIERO", "status": "ACCETTATO" },
+    { "barcode": "LB00000846", "orderId": "RL-2026-00060", "sampleType": "SANGUE", "status": "ACCETTATO" },
+    { "barcode": "LB00000850", "orderId": "RL-2026-00061", "sampleType": "SIERO", "status": "ATTESO" },
+    { "barcode": "LB00000855", "orderId": "RL-2026-00062", "sampleType": "SANGUE", "status": "ATTESO" },
+    { "barcode": "LB00000856", "orderId": "RL-2026-00062", "sampleType": "SIERO", "status": "ATTESO" }
+  ],
+  "results": [
+    { "orderId": "RL-2026-00041", "examCode": "GLU", "value": 92, "validated": true, "validatedBy": "Dr.ssa Anna Ferri" },
+    { "orderId": "RL-2026-00041", "examCode": "CREA", "value": 1.0, "validated": true, "validatedBy": "Dr.ssa Anna Ferri" },
+    { "orderId": "RL-2026-00041", "examCode": "CHOL", "value": 214, "validated": true, "validatedBy": "Dr.ssa Anna Ferri" },
+    { "orderId": "RL-2026-00052", "examCode": "CREA", "value": 2.5, "validated": true, "validatedBy": "Dr. Carlo Riva" },
+    { "orderId": "RL-2026-00052", "examCode": "UREA", "value": 71, "validated": true, "validatedBy": "Dr. Carlo Riva" },
+    { "orderId": "RL-2026-00052", "examCode": "K", "value": 5.3, "validated": true, "validatedBy": "Dr. Carlo Riva" },
+    { "orderId": "RL-2026-00052", "examCode": "GLU", "value": 131, "validated": true, "validatedBy": "Dr. Carlo Riva" },
+    { "orderId": "RL-2026-00052", "examCode": "HBA1C", "value": 58, "validated": true, "validatedBy": "Dr. Carlo Riva" },
+    { "orderId": "RL-2026-00055", "examCode": "HB", "value": 12.4, "validated": true, "validatedBy": "Dr.ssa Anna Ferri" },
+    { "orderId": "RL-2026-00055", "examCode": "GLU", "value": 85, "validated": true, "validatedBy": "Dr.ssa Anna Ferri" },
+    { "orderId": "RL-2026-00055", "examCode": "TSH", "value": 2.1, "validated": true, "validatedBy": "Dr.ssa Anna Ferri" }
+  ]
+}

@@ -2,6 +2,9 @@
 demo/mediagenda/
 demo/mediagenda-svn/
 demo/mediagenda-svn-repo/
+demo/medilab/
+demo/medifarma/
+demo/medibill/
 tools/
 *.local.json
 agent/state/
