@@ -1,0 +1,83 @@
+:root {
+  --bg: #f7f5f3;
+  --surface: #ffffff;
+  --text: #1f2333;
+  --muted: #676d80;
+  --border: #e0e1ea;
+  --primary: #9c4a12;
+  --primary-ink: #ffffff;
+  --primary-soft: #fbeee4;
+  --danger: #b42318;
+  --danger-soft: #fdecea;
+  --warn: #9a5b00;
+  --warn-soft: #fff3df;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text);
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; background: var(--bg); font-size: 14px; line-height: 1.45; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  overflow-x: auto;
+}
+
+.page-title { margin: 0 0 12px; font-size: 18px; }
+h2 { margin: 0 0 8px; font-size: 15px; }
+.hint { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+.muted { color: var(--muted); }
+
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.table th { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; background: #fbfaf9; }
+.table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.btn-primary, .btn-text, .btn-danger {
+  border: 0; border-radius: 6px; padding: 8px 16px; font-weight: 600; font-size: 13px; cursor: pointer;
+}
+.btn-primary { background: var(--primary); color: var(--primary-ink); }
+.btn-primary:disabled, .btn-danger:disabled { opacity: 0.5; cursor: default; }
+.btn-text { background: transparent; color: var(--primary); }
+.btn-text:hover { background: var(--primary-soft); }
+.btn-danger { background: var(--danger); color: #fff; }
+a.btn-primary, a.btn-text { text-decoration: none; display: inline-block; }
+
+input[type='text'], input[type='search'] {
+  font: inherit; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; min-width: 280px;
+}
+input:focus { outline: 2px solid var(--primary-soft); border-color: var(--primary); }
+select, textarea {
+  font: inherit; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text);
+}
+select:focus, textarea:focus { outline: 2px solid var(--primary-soft); border-color: var(--primary); }
+
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px 18px; }
+.form-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.form-field.wide { grid-column: 1 / -1; }
+.form-field > label, .form-field > .label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.form-field input, .form-field select, .form-field textarea { min-width: 0; width: 100%; }
+.form-field .error { color: var(--danger); font-size: 12px; }
+.required::after { content: ' *'; color: var(--danger); }
+.form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.check-row { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 6px 0; }
+.check-row label { display: inline-flex; align-items: center; gap: 6px; font-weight: 400; color: var(--text); }
+.toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.toolbar .page-title { margin: 0; margin-right: auto; }
+
+.alert { padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; }
+.alert.error { background: var(--danger-soft); color: var(--danger); }
+.alert.success { background: var(--primary-soft); color: var(--primary); }
+.alert ul { margin: 4px 0 0; padding-left: 18px; }
+
+.chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--bg); color: var(--muted); }
+.chip.aperto, .chip.emessa { background: var(--warn-soft); color: var(--warn); }
+.chip.in_ricevuta, .chip.pagata { background: #e5f4ea; color: #1d7a43; }
+.chip.stornata { background: var(--danger-soft); color: var(--danger); }
+.chip.exempt { background: var(--primary-soft); color: var(--primary); }
+.money { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }

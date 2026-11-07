@@ -1,0 +1,144 @@
+{
+  "_note": "MediBill Jira history, seeded with: node demo/seed-jira.mjs --app medibill. Keys CUP_BIL-3xx are placeholders, mapped to the real keys in demo/jira-keys.json (CUP_DEMO-… and CUP_LAB-… refer to MediAgenda and MediLab tickets). Oldest first.",
+  "project": "BIL",
+  "links": [
+    ["CUP_BIL-305", "CUP_BIL-304"], ["CUP_BIL-306", "CUP_BIL-304"], ["CUP_BIL-308", "CUP_BIL-307"], ["CUP_BIL-309", "CUP_BIL-307"],
+    ["CUP_BIL-310", "CUP_BIL-303"], ["CUP_BIL-312", "CUP_BIL-307"], ["CUP_BIL-313", "CUP_BIL-311"], ["CUP_BIL-314", "CUP_BIL-307"],
+    ["CUP_BIL-316", "CUP_BIL-315"], ["CUP_BIL-317", "CUP_BIL-303"], ["CUP_BIL-318", "CUP_BIL-315"],
+    ["CUP_BIL-311", "CUP_LAB-116"], ["CUP_BIL-317", "CUP_LAB-119"]
+  ],
+  "issues": [
+    {
+      "key": "CUP_BIL-301", "issueType": "Story", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE] - Tariffario: regional fee schedule for the services we charge",
+      "description": "The billing office charges the co-pay of visits and tests at the regional tariff. Each visit tariff belongs to a MediAgenda provider (resource code), so the visits can be charged automatically.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-roberto", "name": "Roberto Ferri" },
+      "comments": [{ "author": { "id": "u-roberto", "name": "Roberto Ferri" }, "body": "GET /api/tariffs, Flyway V1: six visit tariffs mapped to the MediAgenda providers (tariffs.mediagenda_resource)." }]
+    },
+    {
+      "key": "CUP_BIL-302", "issueType": "Story", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[FE] - App skeleton and Tariffario page",
+      "description": "Angular app with the layout of the suite and the Tariffario page.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-chiara", "name": "Chiara Marchetti" },
+      "comments": [{ "author": { "id": "u-chiara", "name": "Chiara Marchetti" }, "body": "Done; amounts with shared/utils/money.ts (formatMoney)." }]
+    },
+    {
+      "key": "CUP_BIL-303", "issueType": "Story", "priority": "High", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE][FE] - Esenzioni: co-pay exemptions of the patients",
+      "description": "Register the exemptions of MediAgenda patients: total ones (income, age, oncology) and disease ones (e.g. 013 diabetes: glucose, HbA1c and the eye visit are free), each with its validity.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-roberto", "name": "Roberto Ferri" },
+      "comments": [
+        { "author": { "id": "u-roberto", "name": "Roberto Ferri" }, "body": "POST /api/exemptions (patient read from MediAgenda), Flyway V2, ExemptionType with the covered tariff codes." },
+        { "author": { "id": "u-chiara", "name": "Chiara Marchetti" }, "body": "Esenzioni page. The patient picker is the one of MediLab (shared/components/patient-picker)." }
+      ]
+    },
+    {
+      "key": "CUP_BIL-304", "issueType": "Story", "priority": "High", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE][FE] - Import addebiti: the MediAgenda visits of a day",
+      "description": "Every morning the office charges the visits of the day before. Read the bookings from MediAgenda and charge each visit of the chosen day at the tariff of its provider.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-davide", "name": "Davide Greco" },
+      "comments": [
+        { "author": { "id": "u-davide", "name": "Davide Greco" }, "body": "ChargeImportService over MediAgenda's GET /api/bookings (the BookingView I know from DEM: appointmentAt, resourceCode, fiscalCode). Every booking with its appointment on the day is a visit to charge; MediAgenda bookings are CONFERMATA or COMPLETATA. Flyway V3." },
+        { "author": { "id": "u-chiara", "name": "Chiara Marchetti" }, "body": "Addebiti page: day picker with Ieri/Oggi, open charges by patient." }
+      ]
+    },
+    {
+      "key": "CUP_BIL-305", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Import addebiti: importing a day twice charges the visits twice",
+      "description": "On Monday the import of Friday was started twice (the first one seemed stuck). All Friday visits are now charged twice.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-davide", "name": "Davide Greco" },
+      "comments": [{ "author": { "id": "u-davide", "name": "Davide Greco" }, "body": "Each charge remembers its source (booking id); a booking charged already is counted as \"già presente\" and not charged again (existsBySourceAndSourceRef)." }]
+    },
+    {
+      "key": "CUP_BIL-306", "issueType": "Bug", "priority": "Medium", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[FE] - Addebiti: \"Ieri\" imports the day before yesterday",
+      "description": "The night operator clicks Ieri at 00:40 and the import is for the day before yesterday.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-chiara", "name": "Chiara Marchetti" },
+      "comments": [{ "author": { "id": "u-chiara", "name": "Chiara Marchetti" }, "body": "toISOString() is UTC: just after midnight it is still the day before in UTC. shared/utils/dates.ts localIsoDate() uses the local day." }]
+    },
+    {
+      "key": "CUP_BIL-307", "issueType": "Story", "priority": "High", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE][FE] - Ricevute: receipts with co-pay and exemptions",
+      "description": "Issue one receipt for the open charges of a patient: services covered by an exemption are free, the co-pay is at most 36,15 €. The receipt is paid at the desk; an unpaid receipt can be cancelled to correct it.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-matteo", "name": "Matteo Vitale" },
+      "comments": [{ "author": { "id": "u-matteo", "name": "Matteo Vitale" }, "body": "ReceiptService (co-pay, exemptions), Flyway V4. Ricevute page and EMETTI RICEVUTA on Addebiti by Chiara." }]
+    },
+    {
+      "key": "CUP_BIL-308", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Ricevute: co-pay above 36,15 € with two visits",
+      "description": "Fontana Chiara, two visits on the same day: the receipt asks 45,00 €. The co-pay of a receipt should never be above 36,15 €.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-matteo", "name": "Matteo Vitale" },
+      "comments": [{ "author": { "id": "u-matteo", "name": "Matteo Vitale" }, "body": "The cap was applied to each service and the lines added up. It is applied to the receipt now." }]
+    },
+    {
+      "key": "CUP_BIL-309", "issueType": "Bug", "priority": "Low", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[FE] - Ricevute: amounts shown as 22.5",
+      "description": "The Ricevute page shows 22.5 and 15.49 instead of 22,50 € and 15,49 €.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-chiara", "name": "Chiara Marchetti" },
+      "comments": [{ "author": { "id": "u-chiara", "name": "Chiara Marchetti" }, "body": "The page printed the raw numbers; it uses formatMoney like the other pages now." }]
+    },
+    {
+      "key": "CUP_BIL-310", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Ricevute: an expired exemption still makes the visit free",
+      "description": "Bianchi Laura's E02 exemption ended on 30/06, but her August visit was still charged 0 €.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-roberto", "name": "Roberto Ferri" },
+      "comments": [{ "author": { "id": "u-roberto", "name": "Roberto Ferri" }, "body": "ExemptionService.validOn returned every exemption of the patient; it keeps only those valid on the day of the service now." }]
+    },
+    {
+      "key": "CUP_BIL-311", "issueType": "Story", "priority": "High", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE] - Import addebiti: the tests reported in MediLab",
+      "description": "Charge the laboratory tests as well: every day the requests reported in MediLab, one charge per test at its tariff.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-matteo", "name": "Matteo Vitale" },
+      "comments": [{ "author": { "id": "u-matteo", "name": "Matteo Vitale" }, "body": "MediLabClient over GET /api/orders?status=REFERTATA&from=&to= (CUP_LAB-116 in MediLab, thanks Alessandro). Lab tariffs in Flyway V5." }]
+    },
+    {
+      "key": "CUP_BIL-312", "issueType": "Bug", "priority": "Medium", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Ricevute: co-pay 3,3899999999999997 €",
+      "description": "Rossi Mario, three tests of 1,13 €: the receipt PDF shows a co-pay of 3,3899999999999997 € and the cash register refuses it.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-matteo", "name": "Matteo Vitale" },
+      "comments": [{ "author": { "id": "u-matteo", "name": "Matteo Vitale" }, "body": "The sums were computed in double. ReceiptService uses BigDecimal throughout now." }]
+    },
+    {
+      "key": "CUP_BIL-313", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Import addebiti: error 500 when a test has no tariff",
+      "description": "The import of 25/09 fails with \"Errore 500\": nothing was imported for that day, not even the visits.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-matteo", "name": "Matteo Vitale" },
+      "comments": [{ "author": { "id": "u-matteo", "name": "Matteo Vitale" }, "body": "A new MediLab test (vitamin D, 90.99.9) is not in our fee schedule yet; findById(...).orElseThrow() ended the import. Such tests are skipped and listed under \"skipped\" now." }]
+    },
+    {
+      "key": "CUP_BIL-314", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Ricevute: a paid receipt can be cancelled",
+      "description": "A paid receipt was cancelled by mistake: its charges went back to Addebiti and the patient got a second receipt.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-roberto", "name": "Roberto Ferri" },
+      "comments": [{ "author": { "id": "u-roberto", "name": "Roberto Ferri" }, "body": "Receipt.storno() requires EMESSA now (409 otherwise)." }]
+    },
+    {
+      "key": "CUP_BIL-315", "issueType": "Story", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE][FE] - Report incassi: receipts and co-pay of a month",
+      "description": "The administration needs the monthly figures: receipts, amount at tariff, exempt part, co-pay issued and collected.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-roberto", "name": "Roberto Ferri" },
+      "comments": [{ "author": { "id": "u-roberto", "name": "Roberto Ferri" }, "body": "GET /api/reports/monthly?month=yyyy-MM; Report incassi page by Chiara." }]
+    },
+    {
+      "key": "CUP_BIL-316", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Report incassi: cancelled receipts are counted",
+      "description": "October shows 3 receipts and 60,49 € of co-pay; the cash register says 37,99 €. One receipt was cancelled.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-roberto", "name": "Roberto Ferri" },
+      "comments": [{ "author": { "id": "u-roberto", "name": "Roberto Ferri" }, "body": "STORNATA receipts are left out of the report now." }]
+    },
+    {
+      "key": "CUP_BIL-317", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[FE] - Esenzioni: the exemption is saved for the previously picked patient",
+      "description": "I picked Bianchi by mistake, typed Ricci and saved: the exemption went to Bianchi Laura.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-chiara", "name": "Chiara Marchetti" },
+      "comments": [{ "author": { "id": "u-chiara", "name": "Chiara Marchetti" }, "body": "We copied the patient picker from MediLab before their fix CUP_LAB-119 (same symptom). Same fix: onInput() forgets the picked patient as soon as the text is edited." }]
+    },
+    {
+      "key": "CUP_BIL-318", "issueType": "Bug", "priority": "Low", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[FE] - Report incassi opens on the previous month",
+      "description": "Today (2 November) Report incassi opens on ottobre 2026.",
+      "reporter": { "id": "u-ornella", "name": "Ornella Sartori" }, "assignee": { "id": "u-chiara", "name": "Chiara Marchetti" },
+      "comments": [{ "author": { "id": "u-chiara", "name": "Chiara Marchetti" }, "body": "monthOf() used getMonth(), which counts from 0. Fixed (+1)." }]
+    }
+  ]
+}
