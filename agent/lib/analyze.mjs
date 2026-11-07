@@ -20,6 +20,7 @@ Linked projects: this application (${project.name}, Jira project ${project.key})
 ${peers.map((p) => `- ${p.name} (Jira project ${p.key}): code on its main, read-only, at "${p.dir}"${p.relation ? ` · ${p.relation}` : ''}`).join('\n')}
 - The skill's related-ticket search already includes these Jira projects. To look at a linked project's history, run git with -C "<its folder>" (log, show, grep); open its files with your file tools.
 - Look there when the symptom involves data that comes from a linked app (the client classes under backend/…/integration/ show which calls are made). Cite its files as "<KEY>:<path>" (e.g. "DEM:backend/src/main/java/…") and its commits with their hash.
+- When the cause involves something a linked app returns (a status, a field, a unit, a format), find WHEN and WHY it started there: search that app's history for the value, e.g. git -C "<its folder>" log --format="%h %ad %an %s" --date=short -S"ANNULLATA", and open the commit. Its ticket key (in the commit subject) is the change that introduced the problem: put it in relatedTickets and in otherProjects[].evidence, with the commit hash and date, and say in likelyCause how it relates to the date the problem started.
 `;
 }
 
