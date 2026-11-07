@@ -1,6 +1,6 @@
 # Ticket Intelligence agent
 
-Runs the `/analyze-ticket` skill on its own: it watches a Jira project, analyzes every new ticket headless, posts the analysis to Jira, notifies the most suitable person, and shows everything live on a dashboard.
+Runs the `/analyze-ticket` skill on its own: it watches one or more Jira projects, analyzes every new ticket headless, posts the analysis to Jira, notifies the most suitable person, and shows everything live on a dashboard.
 
 ```
 Jira project ──poll──▶ watcher ──▶ headless agent (claude -p + analyze-ticket skill, read-only)
@@ -32,6 +32,25 @@ On the dashboard:
 | ticket status chip | `PR ready`, `fix failed`, `analyzed · no fix` (hover or the subtitle says why), or `analyzed` |
 
 Requirements: the Claude Code CLI (`npm install -g @anthropic-ai/claude-code`, logged in), the skills installed (`node install.mjs`), and a real Jira configured in `~/.claude/skills/analyze-ticket/.env`.
+
+## Several projects
+
+`agent.config.json` → `projects` lists the Jira projects the watcher works on, each with its application repository:
+
+| Field | Meaning |
+|---|---|
+| `key`, `name` | Jira project key and app name (e.g. `LAB`, `MediLab`) |
+| `repo` | the app's clone (relative to `agent/`); a project without a clone is not watched |
+| `stateDir` | the project's agent state (results, work, insights, Ask); default `state/projects/<KEY>` (MediAgenda keeps `state`) |
+| `app` | ports of the running app (`frontend`, `backend`) and its start page (`home`), for Preview |
+| `linked`, `relations` | the projects whose APIs the app calls, and what for |
+| `insights`, `backendTestDir`, `askExamples` | per project; anything else falls back to the shared settings at the top |
+
+One poll covers every watched project (`project in (DEM, LAB, …)`), and one queue runs their tickets in order. The dashboard has a **Project** selector: *All projects* shows every ticket (with its app's name); Insights and Ask work on the selected project. **Preview in app** switches the app of the ticket's project.
+
+A linked project's analysis also gets a read-only checkout of each linked app (its `main`) and searches the linked Jira projects for related tickets. It reports `otherProjects` (with evidence) and `fixInProject`; when the fix belongs in another project, no automatic fix is made, and the card says where it belongs. See [docs/SUITE.md](../docs/SUITE.md).
+
+The command-line tools take the project from the ticket key (`LAB-7` → MediLab), or `--project <KEY>` (`ask.mjs`, `insights.mjs`, `review-one.mjs --pr`).
 
 ## Tools
 

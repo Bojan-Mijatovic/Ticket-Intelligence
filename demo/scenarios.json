@@ -86,7 +86,7 @@
     "far-renal": {
       "project": "FAR",
       "summary": "[BE] - Nuova prescrizione: no renal warning for metformin, although the patient's eGFR is about 28",
-      "description": "Marino Paolo (MRNPLA61S03C351V) has creatinine 2,50 mg/dL in MediLab (request of 3 November), eGFR about 28 with the CKD-EPI calculator of the ward. Metformina is contraindicated below 30, but Nuova prescrizione shows no warning at all, and the panel says eGFR 270.\nIn August the same check worked for him (red warning). Nothing was changed in the drug rules.\n\nHow to reproduce:\n1 - Nuova prescrizione, patient Marino Paolo\n2 - add Metformina 500 mg compresse\n3 - the warnings panel shows eGFR 270 and \"Nessun avviso\"",
+      "description": "Marino Paolo (MRNPLA61S03C351V) has creatinine 2,50 mg/dL in MediLab (request of 3 November), eGFR about 28 with the CKD-EPI calculator of the ward. Metformina is contraindicated below 30, but Nuova prescrizione shows no warning at all, and the panel says eGFR 269.\nIn August the same check worked for him (red warning). Nothing was changed in the drug rules.\n\nHow to reproduce:\n1 - Nuova prescrizione, patient Marino Paolo\n2 - add Metformina 500 mg compresse\n3 - the warnings panel shows eGFR 269 and \"Nessun avviso\"",
       "issueType": "Bug",
       "priority": "Highest",
       "labels": ["COLLAUDO"],
