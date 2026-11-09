@@ -240,8 +240,8 @@ The agent also takes into account who committed to the component. The ticket's r
 
 ## Limitations
 
-- Tested on demo data. Not yet run against a real Jira Cloud or inside GitHub Copilot.
-- SVN is tested against a local (`file://`) repository; a real server needs cached credentials.
+- Tested on demo data in a real Jira Cloud. Not yet run inside GitHub Copilot, and not against Jira Server/Data Center.
+- SVN: the analysis is tested against a local (`file://`) repository (`demo/mediagenda-svn`, 2026-11-09: same components, people and related tickets as the git copy); a real server needs cached credentials. `/document-ticket` on SVN and the autonomous agent (automatic fixes, pull requests, Insights) are git only so far. A working copy inside a git repository is read as SVN (the nearer repository wins).
 - The search covers the last 365 days and at most 10 related tickets (`lookbackDays`, `maxRelated` in `config.json`).
 - Commits that don't mention a Jira key can't be reliably linked to a ticket.
 - Pull requests are opened automatically only on GitHub (`gh`). For GitLab, Bitbucket and Azure DevOps the skill gives the link or the steps.
