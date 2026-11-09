@@ -20,6 +20,7 @@ import { processTicket } from './lib/pipeline.mjs';
 import { currentBranch, previewBranch } from './lib/preview.mjs';
 import { reviewPullRequest } from './lib/review.mjs';
 import { buildInsights, readRecommendations, writeRecommendations } from './lib/insights.mjs';
+import { readReview, writeReview } from './lib/app-review.mjs';
 import { askQuestion } from './lib/ask.mjs';
 import { attachMailUpdates } from './lib/mail-updates.mjs';
 import { loadProjects, peerCheckouts } from './lib/projects.mjs';
@@ -227,6 +228,7 @@ async function drain() {
 
 const insightsCache = new Map(); // project key → { at, data }
 let recommending = false;
+let reviewing = null; // the project whose app review is running
 let asking = false;
 async function insightsCached(p, refresh = false) {
   const hit = insightsCache.get(p.key);
@@ -320,7 +322,7 @@ const server = createServer(async (req, res) => {
     try {
       const p = readyProject({ project: queryOf(req).get('project') });
       const data = await insightsCached(p, queryOf(req).get('refresh') === '1');
-      return json(res, 200, { ...data, project: p.key, recommendations: readRecommendations(p.stateDir, data) });
+      return json(res, 200, { ...data, project: p.key, recommendations: readRecommendations(p.stateDir, data), review: readReview(p, data), reviewing: reviewing === p.key });
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     }
@@ -338,6 +340,31 @@ const server = createServer(async (req, res) => {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     } finally {
       recommending = false;
+    }
+  }
+  // AI review of one app (evaluation, findings in the code, refactors, growth): one at a time, a few minutes.
+  if (req.method === 'POST' && path === '/api/insights/review') {
+    if (reviewing) return json(res, 409, { ok: false, error: `a review of ${reviewing} is running already` });
+    let p;
+    try {
+      p = readyProject(await readBody(req));
+    } catch (e) {
+      return json(res, e.status ?? 400, { ok: false, error: e.message });
+    }
+    reviewing = p.key;
+    const progress = (step) => broadcast({ type: 'review-progress', project: p.key, step });
+    try {
+      progress('collecting the Insights facts');
+      const data = await insightsCached(p, true);
+      const review = await writeReview({ insights: data, project: p, onProgress: progress });
+      const n = review.findings.length + review.refactors.length + review.growth.length;
+      events.emit('insights', { project: p.key, text: `${p.key}: app review written (${n} items${review.dropped ? `, ${review.dropped} without a citation dropped` : ''})`, meta: review.meta });
+      return json(res, 200, { ok: true, review });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    } finally {
+      reviewing = null;
+      broadcast({ type: 'review-progress', project: p.key, step: null });
     }
   }
   // Ask the knowledge base of one project (FR-65): one question at a time; progress goes to the dashboard stream.

@@ -162,6 +162,14 @@
   .pick-first { padding: 14px 16px; margin-bottom: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .pick-first[hidden], .ins-list[hidden] { display: none; }
   .proj { font-size: 11px; font-weight: 700; letter-spacing: .02em; padding: 1px 6px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); }
+  .review-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .review-grid .panel { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; overflow-wrap: anywhere; }
+  .review-grid .title { font-weight: 700; font-size: 14px; }
+  .score-bar { display: inline-flex; gap: 2px; vertical-align: middle; }
+  .score-bar i { width: 14px; height: 8px; border-radius: 2px; background: var(--border); }
+  .score-bar i.on { background: var(--accent); }
+  .review-list { margin: 4px 0 0; padding-left: 18px; }
+  .review-list li { margin: 3px 0; }
   .rec { border-left: 3px solid var(--accent); padding: 6px 10px; background: var(--accent-soft); border-radius: 0 6px 6px 0; font-size: 13px; }
   @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hotspots { grid-template-columns: 1fr; } }
   @media (max-width: 600px) { header, main { padding-left: 16px; padding-right: 16px; } .result .row { grid-template-columns: 1fr; } }
@@ -199,6 +207,10 @@
       <span class="meta" id="ins-rec-state"></span><button class="small" id="ins-recommend" title="One headless run writes a recommendation per hotspot, citing tickets and commits">✦ Write recommendations (AI)</button>
       <button class="small" id="ins-refresh">Refresh</button></div>
     <div class="hotspots" id="ins-hotspots"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin:22px 0 10px"><h2 style="margin:0">AI review of the app</h2><span class="spacer"></span>
+      <span class="meta" id="ins-review-state"></span><button class="small" id="ins-review" title="One headless run reads the facts on this page and the code on main (read-only), and writes an evaluation, findings, refactors and ways to grow">✦ Review the app (AI)</button></div>
+    <div class="hint" style="margin:-4px 0 8px">Runs only on the button (a few minutes; the cost is shown after the run). It reads the facts on this page and the code on main, read-only. Every item cites a ticket, a commit or a file; items without one are dropped.</div>
+    <div id="ins-review-body"></div>
     <h2 style="margin-top:20px">Risk files</h2>
     <div class="hint" style="margin:-4px 0 8px">Where the next bug is most likely: fixed by several bugs, changed often, big, and without a test of its own.</div>
     <div class="panel ins-list" id="ins-risk"></div>
@@ -576,6 +588,7 @@ function connect() {
     }
     if (ev.type === 'ping') return;
     if (ev.type === 'ask-progress') return onAskProgress(ev);
+    if (ev.type === 'review-progress') return onReviewProgress(ev);
     apply(ev); render();
   };
 }
@@ -629,6 +642,7 @@ async function loadInsights(refresh = false) {
 }
 
 let insightsData = null;
+let reviewRunning = false; // this page started an app review
 const HIGH = new Set(['Blocker', 'Critical', 'Highest', 'High']);
 const prioChip = (p) => p ? h('span', { class: `chip ${HIGH.has(p) ? 'prio-high' : ''}` }, p) : null;
 const VIA = { link: 'Jira link', file: 'same file fixed', analysis: "agent's analysis" };
@@ -661,6 +675,59 @@ function renderRecurring(d) {
       h('td', {}, r.component ?? '–'),
       h('td', { class: 't-sub' }, VIA[r.via] ?? r.via)))))]
     : [h('div', { class: 'empty' }, 'No recurring problems found.')]));
+}
+
+/** Text with ticket keys as Jira links and file paths as code. */
+function cite(text) {
+  const parts = String(text ?? '').split(/(\b[A-Z][A-Z0-9]+-\d+\b|[\w@.-]+(?:\/[\w@.-]+)*\.(?:java|ts|html|scss|sql)\b)/g);
+  return parts.map((p, i) => (i % 2 ? (/^[A-Z][A-Z0-9]+-\d+$/.test(p) ? jiraLink(p) : h('code', { title: p }, p.split('/').pop())) : p));
+}
+const EFFORT = { S: 'small', M: 'medium', L: 'large' };
+const PRIO_CLASS = { high: 'failed', medium: 'analyzing', low: '' };
+
+function renderReview(d) {
+  const r = d.review;
+  const box = $('#ins-review-body');
+  const btn = $('#ins-review');
+  if (!reviewRunning) btn.disabled = Boolean(d.reviewing);
+  $('#ins-review-state').textContent = d.reviewing ? 'running…' : r
+    ? `written ${ago(r.at)}${r.stale ? ' · data changed since' : ''} · $${(r.meta?.costUsd ?? 0).toFixed(2)} · ${Math.round((r.meta?.durationMs ?? 0) / 1000)} s${r.dropped ? ` · ${r.dropped} item(s) without a citation dropped` : ''}`
+    : '';
+  if (!r) { box.replaceChildren(h('div', { class: 'panel empty' }, 'No review yet for this project.')); return; }
+  const ev = r.evaluation ?? {};
+  const scores = (ev.scores ?? []).map((s) => h('div', { style: 'margin:4px 0' },
+    h('span', { style: 'display:inline-block;min-width:170px' }, s.area), ' ',
+    h('span', { class: 'score-bar', title: `${s.score}/5` }, [1, 2, 3, 4, 5].map((n) => h('i', { class: n <= s.score ? 'on' : '' }))), ` ${s.score}/5 `,
+    h('div', { class: 't-sub' }, cite(s.why))));
+  const bullets = (list) => h('ul', { class: 'review-list' }, list.map((t) => h('li', {}, cite(t))));
+  const evaluation = h('div', { class: 'panel', style: 'padding:14px 16px;margin-bottom:12px' },
+    h('div', { class: 'ins-grid' },
+      h('div', {}, h('div', { class: 't-sub' }, 'Evaluation'), h('p', { style: 'margin:6px 0' }, cite(ev.summary)), scores),
+      h('div', {}, h('div', { class: 't-sub' }, 'Strengths'), bullets(ev.strengths ?? [])),
+      h('div', {}, h('div', { class: 't-sub' }, 'Risks'), bullets(ev.risks ?? []))));
+  const card = (...children) => h('div', { class: 'panel' }, ...children);
+  const findings = r.findings.map((f) => card(
+    h('div', { class: 'stages' }, h('span', { class: `chip ${PRIO_CLASS[f.priority] ?? ''}` }, f.priority ?? '–'), h('span', { class: 'chip' }, f.component ?? '–'), h('code', { title: f.file }, f.file.split('/').pop())),
+    h('div', { class: 'title' }, cite(f.problem)),
+    h('div', { class: 't-sub' }, cite(f.evidence)),
+    h('div', {}, h('b', {}, 'Fix: '), cite(f.fix)),
+    h('div', {}, h('b', {}, 'Prevent: '), cite(f.prevent))));
+  const refactors = r.refactors.map((x) => card(
+    h('div', { class: 'stages' }, h('span', { class: 'chip' }, `effort: ${EFFORT[x.effort] ?? x.effort ?? '?'}`), x.files.map((f) => h('code', { title: f, style: 'margin-right:4px' }, f.split('/').pop()))),
+    h('div', { class: 'title' }, x.title),
+    h('div', {}, cite(x.why)),
+    (x.steps ?? []).length ? h('ol', { class: 'review-list' }, x.steps.map((s) => h('li', {}, cite(s)))) : null,
+    x.payoff ? h('div', {}, h('b', {}, 'Gives: '), cite(x.payoff)) : null));
+  const growth = r.growth.map((g) => card(
+    h('div', { class: 'title' }, g.title),
+    h('div', {}, cite(g.why)),
+    (g.buildsOn ?? []).length ? h('div', { class: 't-sub' }, 'Builds on: ', (g.buildsOn ?? []).flatMap((b) => [...cite(b), ' '])) : null,
+    g.prerequisites ? h('div', {}, h('b', {}, 'First: '), cite(g.prerequisites)) : null));
+  const part = (title, cards, empty) => [h('div', { class: 't-sub', style: 'margin:6px 0' }, title), cards.length ? h('div', { class: 'review-grid' }, cards) : h('div', { class: 'hint', style: 'margin-bottom:12px' }, empty)];
+  box.replaceChildren(evaluation,
+    ...part('Findings in the code: where the next bugs come from, the fix and how to prevent them', findings, 'No finding with a citation.'),
+    ...part('Refactor proposals', refactors, 'No refactor with a citation.'),
+    ...part('How the app can grow', growth, 'No proposal with a citation.'));
 }
 
 const projectName = (key) => projectInfo(projOf(key))?.name ?? projOf(key);
@@ -849,6 +916,7 @@ function renderInsights(d) {
       r ? h('div', { class: 'rec' }, '✦ ', r.text) : null,
       h('div', { class: 't-sub' }, `Main authors (context): ${c.authors.map((a) => a.name).join(', ') || '–'}${c.agentCommits ? ` · agent: ${c.agentCommits} commit(s)` : ''}`));
   }) : [h('div', { class: 'empty' }, 'No bugs found yet.')]));
+  renderReview(d);
   renderRecurring(d);
   renderOrigins(d);
   renderShared(d);
@@ -859,6 +927,20 @@ function renderInsights(d) {
 }
 
 $('#ins-refresh').addEventListener('click', () => loadInsights(true));
+$('#ins-review').addEventListener('click', async (e) => {
+  const b = e.target;
+  const p = focus();
+  if (!p || !confirm(`Review ${p.name} with AI? One headless run of a few minutes (it reads the code on main, read-only).`)) return;
+  reviewRunning = true;
+  b.disabled = true; b.textContent = 'Reviewing…';
+  try { await post('/api/insights/review', { project: p.key }); await loadInsights(); }
+  catch (err) { alert(`Review failed: ${err.message}`); }
+  finally { reviewRunning = false; b.disabled = false; b.textContent = '✦ Review the app (AI)'; }
+});
+function onReviewProgress(ev) {
+  if (ev.project !== focus()?.key || !ev.step) return;
+  $('#ins-review-state').textContent = ev.step;
+}
 $('#ins-recommend').addEventListener('click', async (e) => {
   const b = e.target;
   b.disabled = true; b.textContent = 'Writing… (about a minute)';

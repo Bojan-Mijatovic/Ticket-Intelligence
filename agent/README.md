@@ -61,7 +61,7 @@ The command-line tools take the project from the ticket key (`LAB-7` → MediLab
 | `node agent/process-one.mjs DEM-7` | full pipeline for one ticket | per policy |
 | `node agent/process-one.mjs DEM-7 --reuse-result` | act on the last saved analysis, without analyzing again | per policy |
 | `node agent/review-one.mjs DEM-7` / `--pr 14` | AI review of a pull request (posted on GitHub; `--dry-run` prints only) | no |
-| `node agent/insights.mjs` | hotspot map in the terminal (`--json`, `--recommend`) | no |
+| `node agent/insights.mjs` | hotspot map in the terminal (`--json`, `--recommend`, `--review` runs the AI review of the app) | no |
 | `node agent/ask.mjs "question"` | ask the knowledge base (sourced answer or "not found") | no |
 | `node agent/mail-test.mjs` / `DEM-7` / `DEM-7 --dry-run` | send a test email, or the "analysis ready" email of a saved analysis, to `MAIL_TO` | no |
 | `node --test agent/test` | unit tests of the agent's plain-code parts | no |
@@ -81,7 +81,7 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 ## Safety
 
 - **The agent cannot write.** The headless run has file-editing tools disabled and its prompt forbids any Jira or VCS write. It only returns a JSON result.
-- **No run can publish or message.** Every headless run starts without MCP servers (`--strict-mcp-config`) and without the Claude Code tools that publish, schedule or message (Artifact, Cron, RemoteTrigger, SendMessage, …). Runs that read free text from people other than the reporter (the AI reviewer, Ask) and the recommendation run get an allow-list instead (`--tools Read,Grep,Glob`, or no tools at all).
+- **No run can publish or message.** Every headless run starts without MCP servers (`--strict-mcp-config`) and without the Claude Code tools that publish, schedule or message (Artifact, Cron, RemoteTrigger, SendMessage, …). Runs that read free text from people other than the reporter (the AI reviewer, Ask, the app review) and the recommendation run get an allow-list instead (`--tools Read,Grep,Glob`, or no tools at all).
 - **The watcher acts, per `policy.json`.** Every action is `auto`, `draft` (prepared and shown on the dashboard for a human) or `off`:
 
   | Action | Default |
@@ -248,6 +248,15 @@ The tab also shows, per project (all plain code, no AI run):
 | Tickets | type × priority, still open by priority, per component, per environment label, opened per month (from git when the Jira dates were seeded in one go) |
 | Knowledge map | each component's people and their share of the commits; bus factor = people with at least 25% (the agent is not a person) |
 | People | commits, bugs fixed, stories, main areas and last commit per person, sortable. One name per person whatever the spelling; `insights.authorAliases` maps the rest |
+
+**✦ Review the app (AI)** (or `node agent/insights.mjs --project LAB --review`) runs one headless call of a few minutes for the selected project (MediLab: about $0.80 and 2–3 minutes). The code writes the facts of the tab to `insights/review-facts.json` (without people's names); the run reads them and the code on main in its own read-only checkout (`review-repo`), with Read, Grep and Glob only. It writes:
+
+- an **evaluation**: a summary, a score 1–5 for reliability, test safety net, design and structure, maintainability and knowledge spread, strengths and risks;
+- **findings in the code** (up to 6): the file, the problem, the evidence, the fix, how to prevent that kind of bug, and a priority;
+- **refactor proposals** (up to 4): files, why, steps, effort, what it gives (copies shared with the other apps are candidates for a shared library);
+- **how the app can grow** (up to 4): what it builds on and what must come first.
+
+Every item must cite a ticket or commit of the facts, or a file that exists on main (a score may also rest on a component's numbers, e.g. its bus factor); the others are dropped (the count is shown), and files that do not exist are removed from an item. The result is cached in `insights/review.json` and marked "data changed since" when the facts change. Limits: `insights.reviewTimeoutMinutes` (12), `insights.reviewMaxTurns` (40).
 
 Who wrote the change that brought a bug in is not shown by default: the table names the change (ticket and commit), not the person. Set `insights.showBugOrigin: true` to add the author column.
 

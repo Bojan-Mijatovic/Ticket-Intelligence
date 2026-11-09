@@ -5,12 +5,14 @@
 //   node agent/insights.mjs --project LAB   another project
 //   node agent/insights.mjs --json       the full data
 //   node agent/insights.mjs --recommend  also write the AI recommendations (one headless run, cached)
+//   node agent/insights.mjs --review     also run the AI review of the app (reads the code; a few minutes, cached)
 
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createJira } from './lib/jira-actions.mjs';
 import { buildInsights, readRecommendations, writeRecommendations } from './lib/insights.mjs';
 import { cliProject, loadProjects } from './lib/projects.mjs';
+import { readReview, writeReview } from './lib/app-review.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const all = loadProjects(HERE);
@@ -50,6 +52,18 @@ if (data.shared.pairs.length) console.log(`\nShared with ${data.shared.peers.joi
 for (const p of toCheck) {
   for (const k of p.checkHere) console.log(`- check ${p.path}: ${k} fixed the copy in ${p.peer}, its lines are not here`);
   for (const k of p.checkThere) console.log(`- check ${p.peer} ${p.peerPath}: ${k} fixed it here, its lines are not there`);
+}
+
+const project = all.byKey(key);
+const review = process.argv.includes('--review') ? await writeReview({ insights: data, project, onProgress: (s) => console.error(`  … ${s}`) }) : readReview(project, data);
+if (review) {
+  console.log(`\nApp review (${review.at}${review.stale ? ', data changed since' : ''}${review.dropped ? `, ${review.dropped} item(s) without a citation dropped` : ''})`);
+  console.log(`  ${review.evaluation.summary}`);
+  for (const s of review.evaluation.scores) console.log(`  ${s.area}: ${s.score}/5`);
+  for (const f of review.findings) console.log(`- [${f.priority}] ${f.file}: ${f.problem}`);
+  for (const r of review.refactors) console.log(`- refactor (${r.effort}): ${r.title}`);
+  for (const g of review.growth) console.log(`- grow: ${g.title}`);
+  if (review.meta) console.log(`  ~$${review.meta.costUsd.toFixed(2)} · ${Math.round(review.meta.durationMs / 1000)} s`);
 }
 
 const rec = process.argv.includes('--recommend') ? await writeRecommendations({ insights: data, stateDir, cfg }) : readRecommendations(stateDir, data);
