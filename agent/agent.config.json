@@ -5,7 +5,7 @@
   "maxParallel": 1,
   "analysisTimeoutMinutes": 10,
   "dashboardPort": 7070,
-  "tourReplay": ["DEM-36", "FAR-19", "BIL-20"],
+  "tourReplay": ["DEM-36", "FAR-19"],
   "labels": {
     "inProgress": "ai-analyzing",
     "done": "ai-analyzed",

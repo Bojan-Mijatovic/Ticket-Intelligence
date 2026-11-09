@@ -283,7 +283,7 @@ One question at a time (`409` otherwise); `askTimeoutSeconds` (default 120) and 
 
 ## Guided tour
 
-**▶ Tour** in the dashboard header presents the whole tool by itself, in English, in about fifteen to eighteen minutes, depending on the voice and the speed (captions only at 1×: 18 minutes). A cursor moves and clicks, the page scrolls and puts a spotlight on each part, explainer slides open over the page, and a voice explains it all while captions show the text. The caption bar names the chapter:
+**▶ Tour** in the dashboard header presents the whole tool by itself, in English, in about twelve minutes. A cursor moves and clicks, the page scrolls and puts a spotlight on each part, explainer slides open over the page, and a voice explains it all while captions show the text. The caption bar names the chapter:
 
 | Chapter | What it shows |
 |---|---|
@@ -292,17 +292,18 @@ One question at a time (`409` otherwise); `askTimeoutSeconds` (default 120) and 
 | The AI | a slide: which models do what (Sonnet for the analysis, Opus for the fix, review and Ask), code versus model, guardrails, why it is not trained, cost, patient data |
 | At work | a slide: the skills in GitHub Copilot (same `SKILL.md`; not tried inside Copilot yet), git and SVN detection, documentation on SVN (commit, branch or patch; asks first), what is git only (the automatic fix, pull requests, Insights) |
 | The dashboard | the live light and the four apps |
-| Case 1 | a frontend bug end to end, with what happens behind each step: the worktree and the warmed dev server, the facts script, Claude's reading, the validated result, cause, owner, Teams message, drafts, the Playwright test the watcher sees fail, the fix and the watcher's own checks, push, draft PR and Jira attachments, the read-only AI review |
+| Case 1 | a frontend bug end to end, with what happens behind each step: the worktree and the dev server, the facts script, Claude's reading, the validated result (cause, files, owner), Teams message and drafts, the Playwright test the watcher sees fail, the fix and the watcher's own checks, push, draft PR and Jira attachments, the read-only AI review |
 | Case 2 | a backend bug whose cause is in another app: read-only copies of the linked apps, the change it cites, where the fix belongs, the JUnit test (and why the tests were green before), the fix, the review |
-| Case 3 | a duplicate: the agent finds the same open report and makes no second fix |
-| Insights | every part of the page with its numbers: the suite, how the apps call each other, code copied between apps; one app's KPIs and test coverage, the heatmap (a cell clicked open), hotspots, the AI review, suggested tickets, risk files, recurring problems, where bugs come from, shared code, ticket stats, the trend, the knowledge map, people |
+| Insights | the suite (how the apps call each other, code copied between apps), one app's KPIs and test coverage, the heatmap (a cell clicked open), hotspots, the AI review |
+| A new ticket | a suggested ticket opened in the editor: the prepared summary, type, priority and Jira description, the assignee list from Jira with the suggested person, the `no-ai` box, and the confirmation. The cursor stops on **Create in Jira** without clicking it; the editor is closed again |
+| Insights (rest) | risk files, recurring problems, where bugs come from, the knowledge map and people |
 | Ask | a question typed and answered with checked sources, and one that is "not in the knowledge base" |
 | How it was built | a slide: the ideas, how it is tested and scored, results, what comes next |
 
 Numbers and names come from the data on the page (tickets, owners, causes, hotspots, counts); a part with no data is skipped.
 
-- **Replays.** When a ticket has been analyzed since the last reset, Case 1 is that ticket. Otherwise the cases are **recorded runs** from the event logs, archived ones included (`/api/tour/replay`): the ticket arrives, the steps stream in, then the analysis, the Teams message, the failing test, the fix, the pull request and the review appear one after the other, sped up, with the real timings. Ask replays **recorded answers** (`/api/tour/asks`): the example question that was asked before, and the newest "not found" one, with the steps rebuilt from the saved run. Every replay says **REPLAY** and its date, lives only in that browser page and is gone when the tour ends. `tourReplay` in `agent.config.json` lists the tickets (`DEM-36`, `FAR-19`, `BIL-20`); tickets never recorded are left out, and with none the fullest run is chosen.
-- **Read-only.** It never starts an agent run, an Ask question, an app review or a recommendation. Its Ask button press is only shown; nothing is sent.
+- **Replays.** When a ticket has been analyzed since the last reset, Case 1 is that ticket. Otherwise the cases are **recorded runs** from the event logs, archived ones included (`/api/tour/replay`): the ticket arrives, the steps stream in, then the analysis, the Teams message, the failing test, the fix, the pull request and the review appear one after the other, sped up, with the real timings. Ask replays **recorded answers** (`/api/tour/asks`): the example question that was asked before, and the newest "not found" one, with the steps rebuilt from the saved run. Every replay says **REPLAY** and its date, lives only in that browser page and is gone when the tour ends. `tourReplay` in `agent.config.json` lists the tickets (`DEM-36`, `FAR-19`); tickets never recorded are left out, and with none the fullest run is chosen.
+- **Read-only.** It never starts an agent run, an Ask question, an app review or a recommendation, and it creates no ticket. Its Ask button press is only shown; nothing is sent. Opening the ticket editor reads the assignable people from Jira, nothing more.
 - **Voice.** The browser's own speech synthesis: free, no key, nothing leaves the machine. The tour picks a natural English voice when there is one (Edge on Windows has *Aria*, *Jenny* and *Guy Natural*); the voice and speed can be changed in the caption bar, or switched to *captions only*.
 - **Controls.** Back / Pause / Next, or ← space →; Esc ends it. Afterwards the dashboard returns to the tab and project it showed before.
 - **For a presentation** open `http://localhost:7070/?tour`: a *Start the guided tour* button covers the page, because browsers let a page speak only after a click.
