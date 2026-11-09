@@ -141,6 +141,8 @@
   .answer .q { font-weight: 700; }
   .answer .a { white-space: pre-wrap; }
   .answer ul { margin: 0; padding-left: 18px; }
+  #ins-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  @media (max-width: 1100px) { #ins-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .ins-list { padding: 12px 16px; margin-bottom: 20px; overflow-x: auto; }
   .ins-list table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .ins-list th, .ins-list td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -148,9 +150,17 @@
   .hn.clickable, .hc.clickable { cursor: pointer; }
   .hn.clickable:hover { text-decoration: underline; }
   .prio-high { background: var(--bad-soft); color: var(--bad); }
+  .ins-list th.sortable { cursor: pointer; }
+  .ins-list td.num, .ins-list th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bars { display: flex; align-items: flex-end; gap: 6px; height: 90px; margin-top: 8px; }
+  .bars .bar { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; font-size: 11px; color: var(--muted); height: 100%; }
+  .bars .bar i { display: block; width: 100%; max-width: 34px; background: var(--accent-soft); border-radius: 3px 3px 0 0; position: relative; }
+  .bars .bar i b { position: absolute; bottom: 0; left: 0; right: 0; background: color-mix(in srgb, var(--bad) 55%, var(--surface)); border-radius: 0 0 0 0; }
+  .ins-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
   .project-pick { display: inline-flex; align-items: center; gap: 6px; }
   .project-pick select { font: inherit; font-weight: 600; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: inherit; }
   .pick-first { padding: 14px 16px; margin-bottom: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .pick-first[hidden], .ins-list[hidden] { display: none; }
   .proj { font-size: 11px; font-weight: 700; letter-spacing: .02em; padding: 1px 6px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); }
   .rec { border-left: 3px solid var(--accent); padding: 6px 10px; background: var(--accent-soft); border-radius: 0 6px 6px 0; font-size: 13px; }
   @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hotspots { grid-template-columns: 1fr; } }
@@ -189,8 +199,19 @@
       <span class="meta" id="ins-rec-state"></span><button class="small" id="ins-recommend" title="One headless run writes a recommendation per hotspot, citing tickets and commits">✦ Write recommendations (AI)</button>
       <button class="small" id="ins-refresh">Refresh</button></div>
     <div class="hotspots" id="ins-hotspots"></div>
-    <h2 style="margin-top:20px">Recurring problems</h2>
+    <h2 style="margin-top:20px">Risk files</h2>
+    <div class="hint" style="margin:-4px 0 8px">Where the next bug is most likely: fixed by several bugs, changed often, big, and without a test of its own.</div>
+    <div class="panel ins-list" id="ins-risk"></div>
+    <h2>Recurring problems</h2>
     <div class="panel ins-list" id="ins-recurring"></div>
+    <h2>Tickets: what they are opened for</h2>
+    <div class="panel ins-list" id="ins-stats"></div>
+    <h2>Knowledge map</h2>
+    <div class="hint" style="margin:-4px 0 8px">Who knows each component (share of its commits, the agent's not counted). Bus factor = people with at least a quarter of the commits; 1 means one person holds the knowledge.</div>
+    <div class="panel ins-list" id="ins-knowledge"></div>
+    <h2>People</h2>
+    <div class="hint" style="margin:-4px 0 8px">Activity and areas, to know whom to ask. Click a column to sort.</div>
+    <div class="panel ins-list" id="ins-people"></div>
     </div>
   </section>
   <section id="tab-ask" hidden>
@@ -637,6 +658,88 @@ function renderRecurring(d) {
     : [h('div', { class: 'empty' }, 'No recurring problems found.')]));
 }
 
+const PRIORITIES = ['Blocker', 'Critical', 'Highest', 'High', 'Medium', 'Low', 'Lowest', 'None'];
+const TEST_LABEL = { unit: 'unit test', package: 'package test only', e2e: 'browser test', none: 'no test' };
+const testChip = (t) => t ? h('span', { class: `chip ${t === 'none' ? 'failed' : t === 'package' ? 'analyzing' : 'done'}` }, TEST_LABEL[t]) : h('span', { class: 't-sub' }, 'shared code');
+const table = (head, rows, opts = {}) => h('table', {}, h('thead', {}, h('tr', {}, head)), h('tbody', {}, rows));
+
+function renderRisk(d) {
+  const files = d.riskFiles ?? [];
+  $('#ins-risk').replaceChildren(...(files.length ? [table(
+    ['File', 'Component', 'Why', 'Bugs fixed here', 'Test'].map((x) => h('th', {}, x)),
+    files.map((f) => h('tr', {},
+      h('td', { title: f.path }, h('code', {}, f.path.split('/').pop())),
+      h('td', {}, f.component ?? '–'),
+      h('td', {}, f.why.join(' · ')),
+      h('td', {}, f.bugs.flatMap((k) => [jiraLink(k), ' '])),
+      h('td', {}, testChip(f.test)))))]
+    : [h('div', { class: 'empty' }, 'No risk files.')]));
+}
+
+function renderStats(d) {
+  const s = d.stats;
+  if (!s) return;
+  const prios = PRIORITIES.filter((p) => s.byPriority[p]);
+  const types = Object.keys(s.byTypePriority).sort();
+  const open = (p) => s.openByPriority[p] ?? 0;
+  const byType = table(
+    [h('th', {}, 'Type'), ...prios.map((p) => h('th', { class: 'num' }, p)), h('th', { class: 'num' }, 'Total')],
+    [...types.map((t) => h('tr', {}, h('td', {}, t), ...prios.map((p) => h('td', { class: 'num' }, s.byTypePriority[t][p] ?? '')),
+      h('td', { class: 'num' }, h('b', {}, s.byType[t])))),
+     h('tr', {}, h('td', { class: 't-sub' }, 'still open'), ...prios.map((p) => h('td', { class: 'num' }, open(p) ? h('span', { class: `chip ${HIGH.has(p) ? 'prio-high' : ''}` }, open(p)) : '')), h('td'))]);
+  const compTypes = [...new Set(Object.values(s.byComponent).flatMap((x) => Object.keys(x)))].sort();
+  const byComp = table(
+    [h('th', {}, 'Component'), ...compTypes.map((t) => h('th', { class: 'num' }, t))],
+    Object.entries(s.byComponent).sort((a, b) => (b[1].Bug ?? 0) - (a[1].Bug ?? 0)).map(([c, v]) => h('tr', {},
+      h('td', { class: 'hn clickable', onclick: () => showInsightTickets({ component: c }) }, c), ...compTypes.map((t) => h('td', { class: 'num' }, v[t] ?? '')))));
+  const months = Object.entries(s.byMonth);
+  const max = Math.max(1, ...months.map(([, v]) => v.tickets));
+  const bars = h('div', { class: 'bars' }, months.map(([m, v]) => h('div', { class: 'bar', title: `${monthLabel(m)}: ${v.tickets} ticket(s), ${v.bugs} bug(s)` },
+    h('span', {}, v.tickets || ''),
+    h('i', { style: `height:${Math.round((v.tickets / max) * 60)}px` }, h('b', { style: `height:${v.tickets ? Math.round((v.bugs / v.tickets) * 100) : 0}%` })),
+    h('span', {}, monthLabel(m).split(' ')[0]))));
+  const envs = Object.entries(s.byEnvironment).sort((a, b) => b[1] - a[1]);
+  $('#ins-stats').replaceChildren(h('div', { class: 'ins-grid' },
+    h('div', {}, h('div', { class: 't-sub' }, 'By type and priority'), byType,
+      envs.length ? h('div', { style: 'margin-top:10px' }, h('span', { class: 't-sub' }, 'Environment: '), envs.map(([e, n]) => h('span', { class: 'chip', style: 'margin-right:4px' }, `${e} ${n}`))) : null),
+    h('div', {}, h('div', { class: 't-sub' }, 'By component'), byComp),
+    h('div', {}, h('div', { class: 't-sub' }, 'Opened per month (red: bugs)'), bars,
+      h('div', { class: 'hint', style: 'margin-top:6px' }, s.dateBasis === 'jira' ? 'Month = Jira created date.'
+        : 'Month = first commit of the ticket: the Jira created dates are all on one day (history seeded in one go).'))));
+}
+
+function renderKnowledge(d) {
+  const comps = d.components.filter((c) => c.team?.length);
+  $('#ins-knowledge').replaceChildren(...(comps.length ? [table(
+    ['Component', 'Bus factor', 'Who knows it (share of commits)'].map((x) => h('th', {}, x)),
+    comps.map((c) => h('tr', {},
+      h('td', {}, c.name),
+      h('td', {}, h('span', { class: `chip ${c.busFactor <= 1 ? 'failed' : c.busFactor === 2 ? 'analyzing' : 'done'}` }, String(c.busFactor))),
+      h('td', {}, c.team.map((p) => h('span', { class: 'chip', style: `margin:0 4px 4px 0;${p.share >= 25 ? 'font-weight:700' : 'opacity:.75'}` }, `${p.name} ${p.share}%`)),
+        c.agentCommits ? h('span', { class: 't-sub' }, ` · agent ${c.agentCommits}`) : null))))]
+    : [h('div', { class: 'empty' }, 'No commits yet.')]));
+}
+
+let peopleSort = { key: 'commits', dir: -1 };
+function renderPeople(d) {
+  const cols = [['name', 'Person'], ['commits', 'Commits'], ['bugFixes', 'Bugs fixed'], ['stories', 'Stories / tasks'], ['areas', 'Main areas'], ['last', 'Last commit']];
+  const val = (p, k) => (k === 'areas' ? p.components.length : p[k]);
+  const list = [...(d.people ?? [])].sort((a, b) => {
+    const [x, y] = [val(a, peopleSort.key), val(b, peopleSort.key)];
+    return (typeof x === 'string' ? String(x).localeCompare(String(y)) : (x ?? 0) - (y ?? 0)) * peopleSort.dir;
+  });
+  $('#ins-people').replaceChildren(table(
+    cols.map(([k, label]) => h('th', { class: `sortable ${['commits', 'bugFixes', 'stories'].includes(k) ? 'num' : ''}`, onclick: () => {
+      peopleSort = { key: k, dir: peopleSort.key === k ? -peopleSort.dir : (k === 'name' ? 1 : -1) };
+      renderPeople(insightsData);
+    } }, label, peopleSort.key === k ? (peopleSort.dir > 0 ? ' ▲' : ' ▼') : '')),
+    list.map((p) => h('tr', {},
+      h('td', {}, h('b', {}, p.name)),
+      h('td', { class: 'num' }, p.commits), h('td', { class: 'num' }, p.bugFixes), h('td', { class: 'num' }, p.stories),
+      h('td', {}, p.components.slice(0, 3).map((c) => `${c.name} (${c.commits})`).join(', ')),
+      h('td', {}, p.last ? String(p.last).slice(0, 10) : '–')))));
+}
+
 function renderInsights(d) {
   insightsData = d;
   $('#ins-tickets').hidden = true;
@@ -649,6 +752,8 @@ function renderInsights(d) {
     kpi('High-priority bugs', d.totals.priorityBugs ?? 0, `High or Highest · ${d.totals.openPriorityBugs ?? 0} still open`),
     kpi('Top hotspot', top ? top.name : '–', top ? `${top.bugs} bugs · ${top.priorityBugs ?? 0} high · ${top.openBugs} open` : 'no bugs yet'),
     kpi('Recurring', d.recurring.length, `${cross} linked to another project · ${d.components.reduce((n, c) => n + c.repeatFiles.length, 0)} files fixed 2+ times`),
+    kpi('Tests', d.testCoverage ? `${d.testCoverage.backend.tested}/${d.testCoverage.backend.total}` : '–',
+      d.testCoverage ? `services/controllers with a unit test · screens in browser tests ${d.testCoverage.screens.tested}/${d.testCoverage.screens.total}` : ''),
     kpi('Commits', d.totals.commits, `${d.totals.agentCommits ?? 0} by the agent · ${d.totals.tickets} tickets in Jira`));
 
   const max = Math.max(1, ...comps.flatMap((c) => d.months.map((m) => d.cells[c.name]?.[m]?.bugs ?? 0)));
@@ -690,6 +795,10 @@ function renderInsights(d) {
       h('div', { class: 't-sub' }, `Main authors (context): ${c.authors.map((a) => a.name).join(', ') || '–'}${c.agentCommits ? ` · agent: ${c.agentCommits} commit(s)` : ''}`));
   }) : [h('div', { class: 'empty' }, 'No bugs found yet.')]));
   renderRecurring(d);
+  renderRisk(d);
+  renderStats(d);
+  renderKnowledge(d);
+  renderPeople(d);
 }
 
 $('#ins-refresh').addEventListener('click', () => loadInsights(true));

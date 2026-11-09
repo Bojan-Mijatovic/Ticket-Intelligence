@@ -106,7 +106,11 @@ export function savedAnalyses(stateDir) {
  * Pure aggregation, so it can be tested without git or Jira.
  * @param {{ commits: object[], tickets: object[], analyses: Map<string, {result, at}>, rules: object[], project: string, now: Date, months: number, churnDays: number }} input
  */
-export function aggregate({ commits, tickets, analyses, rules, project, now = new Date(), months = 10, churnDays = 90, aliases = {} }) {
+/**
+ * @param {{ lineCounts?: Record<string, number>, testFiles?: string[], coveredPages?: Set<string> }} [p.code]  facts about
+ *   the code on main (buildInsights): lines per file, test files, page components opened by a browser test
+ */
+export function aggregate({ commits, tickets, analyses, rules, project, now = new Date(), months = 10, churnDays = 90, aliases = {}, code = {} }) {
   const keyRe = new RegExp(`\\b${project}-\\d+\\b`, 'g');
   const byKey = new Map(tickets.map((t) => [t.key, { ...t, links: t.links ?? [], commits: [], components: new Set(), date: null, source: null }]));
   const comp = new Map(); // name → stats
@@ -190,6 +194,13 @@ export function aggregate({ commits, tickets, analyses, rules, project, now = ne
       churnLines: s.churn,
       // People only: the agent's commits are counted apart (agentCommits).
       authors: [...s.authors.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, commits]) => ({ name, commits })),
+      // Knowledge map: everyone who worked here, with their share of the human commits.
+      team: (() => {
+        const all = [...s.authors.entries()].sort((a, b) => b[1] - a[1]).map(([name, commits]) => ({ name, commits }));
+        const total = all.reduce((n, a) => n + a.commits, 0) || 1;
+        return all.map((a) => ({ ...a, share: Math.round((a.commits / total) * 100) }));
+      })(),
+      busFactor: busFactor([...s.authors.entries()].sort((a, b) => b[1] - a[1]).map(([name, commits]) => ({ name, commits }))),
       // Files changed by more than one bug fix: the same place keeps breaking.
       repeatFiles: [...s.bugFiles.entries()].map(([path, keys]) => ({ path, keys: [...new Set(keys)] })).filter((f) => f.keys.length > 1).sort((a, b) => b.keys.length - a.keys.length),
       bugKeys: s.bugKeys,
@@ -217,12 +228,177 @@ export function aggregate({ commits, tickets, analyses, rules, project, now = ne
     components,
     cells,
     recurring,
+    stats: ticketStats([...byKey.values()], monthList),
+    people: peopleStats({ commits, byKey, personOf, rules }),
+    riskFiles: riskFiles({ commits, byKey, lineCounts: code.lineCounts, testFiles: code.testFiles, coveredPages: code.coveredPages, rules }),
+    testCoverage: (() => {
+      // Backend classes with a unit test, screens (page components of the routes) opened by a browser test.
+      const backend = Object.keys(code.lineCounts ?? {}).filter((p) => /^backend\/src\/main\/java\/.+(Service|Controller)\.java$/.test(p));
+      return {
+        backend: {
+          tested: backend.filter((p) => testOf(p, code) === 'unit').length,
+          viaPackage: backend.filter((p) => testOf(p, code) === 'package').length,
+          total: backend.length,
+          untested: backend.filter((p) => testOf(p, code) === 'none'),
+        },
+        screens: { tested: code.coveredPages?.size ?? 0, total: code.pageCount ?? 0 },
+      };
+    })(),
     hotspots: components.filter((c) => c.bugs > 0).slice(0, 3).map((c) => c.name),
     tickets: [...byKey.values()].map((t) => ({
       key: t.key, type: t.issueType, status: t.status, priority: t.priority ?? null, summary: t.summary, date: t.date, source: t.source,
       components: [...t.components], commits: t.commits.map((c) => c.hash.slice(0, 7)), links: t.links.map((l) => l.key),
     })),
   };
+}
+
+// ---------------------------------------------------------------- phase B: tickets, people, risk files
+
+const AGENT_LABEL = /^(ai-|no-ai$)/;
+const isOpen = (t) => !/done|closed|resolved/i.test(t.status ?? '');
+
+/**
+ * Where the opening date of a ticket comes from: Jira's `created`, unless most tickets share one created day
+ * (history seeded in one go, as in the demo): then the date of the ticket's first commit (or analysis).
+ */
+export function dateBasis(tickets) {
+  const days = new Map();
+  for (const t of tickets) days.set(String(t.created).slice(0, 10), (days.get(String(t.created).slice(0, 10)) ?? 0) + 1);
+  const top = Math.max(0, ...days.values());
+  return tickets.length >= 5 && top / tickets.length >= 0.5 ? 'git' : 'jira';
+}
+
+/** How many tickets are opened for what: by type, priority, component, environment (labels) and month. */
+export function ticketStats(tickets, monthList) {
+  const basis = dateBasis(tickets);
+  const inc = (obj, k, n = 1) => { obj[k] = (obj[k] ?? 0) + n; };
+  const out = { dateBasis: basis, byType: {}, byPriority: {}, byTypePriority: {}, openByPriority: {}, byComponent: {}, byEnvironment: {}, byMonth: {} };
+  for (const m of monthList) out.byMonth[m] = { tickets: 0, bugs: 0 };
+  for (const t of tickets) {
+    const type = t.issueType ?? 'Other';
+    const prio = t.priority ?? 'None';
+    inc(out.byType, type);
+    inc(out.byPriority, prio);
+    out.byTypePriority[type] ??= {};
+    inc(out.byTypePriority[type], prio);
+    if (isOpen(t)) inc(out.openByPriority, prio);
+    for (const c of t.components) {
+      out.byComponent[c] ??= {};
+      inc(out.byComponent[c], type);
+    }
+    for (const label of (t.labels ?? []).filter((l) => !AGENT_LABEL.test(l))) inc(out.byEnvironment, label);
+    const month = String(basis === 'jira' ? t.created : t.date).slice(0, 7);
+    if (out.byMonth[month]) {
+      out.byMonth[month].tickets++;
+      if (/bug/i.test(type)) out.byMonth[month].bugs++;
+    }
+  }
+  return out;
+}
+
+/** People and their areas: commits, bug fixes and stories (tickets they committed for), components, last activity. */
+export function peopleStats({ commits, byKey, personOf, rules }) {
+  const people = new Map();
+  const person = (name) => {
+    if (!people.has(name)) people.set(name, { name, commits: 0, bugFixes: new Set(), stories: new Set(), components: new Map(), first: null, last: null });
+    return people.get(name);
+  };
+  for (const c of commits) {
+    if (c.agent) continue;
+    const p = person(personOf(c));
+    p.commits++;
+    if (!p.first || c.date < p.first) p.first = c.date;
+    if (!p.last || c.date > p.last) p.last = c.date;
+    for (const n of new Set(c.files.map((f) => componentOf(f.path, rules)).filter(Boolean))) p.components.set(n, (p.components.get(n) ?? 0) + 1);
+  }
+  for (const t of byKey.values()) {
+    for (const c of t.commits) {
+      if (c.agent) continue;
+      (/bug/i.test(t.issueType ?? '') ? person(personOf(c)).bugFixes : person(personOf(c)).stories).add(t.key);
+    }
+  }
+  return [...people.values()]
+    .map((p) => ({
+      name: p.name, commits: p.commits, bugFixes: p.bugFixes.size, stories: p.stories.size, first: p.first, last: p.last,
+      components: [...p.components.entries()].sort((a, b) => b[1] - a[1]).map(([name, commits]) => ({ name, commits })),
+    }))
+    .sort((a, b) => b.commits - a.commits);
+}
+
+/**
+ * Bus factor of a component: how many people made at least `minShare` (default a quarter) of its human commits,
+ * i.e. know it well. 1 = one person holds the knowledge; 0 = nobody (no human commits).
+ */
+export function busFactor(authors, minShare = 0.25) {
+  const total = authors.reduce((n, a) => n + a.commits, 0);
+  return total ? authors.filter((a) => a.commits / total >= minShare).length : 0;
+}
+
+/**
+ * Page components that a browser test opens: routes of app.routes.ts (path → the component file it loads)
+ * matched against the paths the e2e tests go to ('/richieste/RL-2026-00058/risultati' matches 'richieste/:id/risultati').
+ */
+export function routeCoverage(routesText, gotoPaths) {
+  // path and loadComponent of the same route (a redirect route has a path and no component: it must not take the next one's).
+  const routes = [...String(routesText ?? '').matchAll(/path:\s*'([^']*)',\s*loadComponent:\s*\(\)\s*=>\s*import\('\.\/([^']+)'\)/g)]
+    .map(([, path, file]) => ({ re: new RegExp(`^/?${path.split('/').map((s) => (s.startsWith(':') ? '[^/]+' : s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))).join('/')}/?$`), file: `frontend/src/app/${file}.ts` }));
+  const covered = new Set();
+  for (const goto of gotoPaths) {
+    const path = goto.split('?')[0];
+    for (const r of routes) if (r.re.test(path)) covered.add(r.file);
+  }
+  return covered;
+}
+
+/**
+ * The test a source file has: 'unit' (a *Test class of the same name), 'package' (a test class in the same package:
+ * entities and repositories are usually tested through their service), 'e2e' (its screen is opened by a browser
+ * test), 'none', or null (not decidable: shared frontend code).
+ */
+export function testOf(path, { testFiles = [], coveredPages = new Set() }) {
+  if (path.startsWith('backend/src/main/java/')) {
+    const name = path.split('/').pop().replace(/\.java$/, '');
+    if (testFiles.some((f) => f.split('/').pop().startsWith(`${name}Test`) || f.split('/').pop().startsWith(`${name}IT`))) return 'unit';
+    const pkg = path.replace('backend/src/main/java/', 'backend/src/test/java/').replace(/[^/]+$/, '');
+    return testFiles.some((f) => f.startsWith(pkg) && /Test\.java$/.test(f) && !f.slice(pkg.length).includes('/')) ? 'package' : 'none';
+  }
+  const feature = path.match(/^frontend\/src\/app\/features\/([^/]+)\//)?.[1];
+  if (feature) return [...coveredPages].some((p) => p.startsWith(`frontend/src/app/features/${feature}/`)) ? 'e2e' : 'none';
+  return null;
+}
+
+/**
+ * Files where the next bug is most likely: fixed by several bugs, changed often, big, and without a test.
+ * Only application code (backend/src/main, frontend/src/app), as it is on main.
+ */
+export function riskFiles({ commits, byKey, lineCounts = {}, testFiles = [], coveredPages = new Set(), rules, limit = 12 }) {
+  const files = new Map();
+  const file = (path) => {
+    if (!files.has(path)) files.set(path, { path, changes: 0, bugs: new Set() });
+    return files.get(path);
+  };
+  const isApp = (p) => /^backend\/src\/main\/java\/.+\.java$|^frontend\/src\/app\/.+\.ts$/.test(p) && p in lineCounts;
+  for (const c of commits) for (const f of c.files) if (isApp(f.path)) file(f.path).changes++;
+  for (const t of byKey.values()) {
+    if (!/bug/i.test(t.issueType ?? '')) continue;
+    for (const c of t.commits) for (const f of c.files) if (isApp(f.path)) file(f.path).bugs.add(t.key);
+  }
+  return [...files.values()]
+    .map((f) => {
+      const lines = lineCounts[f.path] ?? 0;
+      const test = testOf(f.path, { testFiles, coveredPages });
+      const why = [];
+      if (f.bugs.size) why.push(`${f.bugs.size} bug fix${f.bugs.size > 1 ? 'es' : ''}`);
+      if (f.changes >= 3) why.push(`changed ${f.changes} times`);
+      if (test === 'none') why.push('no test');
+      if (test === 'package') why.push('no own test (only its package)');
+      if (lines >= 200) why.push(`${lines} lines`);
+      return { path: f.path, component: componentOf(f.path, rules), lines, changes: f.changes, bugs: [...f.bugs], test, why,
+        score: f.bugs.size * 3 + Math.min(f.changes, 10) + ({ none: 3, package: 1 }[test] ?? 0) + Math.round(lines / 150) };
+    })
+    .filter((f) => f.bugs.length || f.changes >= 3)
+    .sort((a, b) => b.score - a.score || b.bugs.length - a.bugs.length)
+    .slice(0, limit);
 }
 
 /**
@@ -273,6 +449,31 @@ function recurringBugs({ byKey, analyses, comp, project }) {
   return [...out.values()].sort((a, b) => weightOf(b.priority) - weightOf(a.priority) || a.key.localeCompare(b.key, undefined, { numeric: true }));
 }
 
+/**
+ * Facts about the code on origin/main for the risk files and the test coverage: lines per application file, the test
+ * files, and the page components a browser test opens. Every part is optional (a repository without a frontend or
+ * without tests gives empty facts, not an error).
+ */
+export function codeFacts(repoDir) {
+  const git = (args) => {
+    try {
+      return execFileSync('git', args, { cwd: repoDir, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch {
+      return ''; // no match, or no such path
+    }
+  };
+  const lineCounts = {};
+  for (const line of git(['grep', '-c', '^', 'origin/main', '--', 'backend/src/main/java', 'frontend/src/app']).split('\n')) {
+    const m = line.match(/^origin\/main:(.+):(\d+)$/);
+    if (m) lineCounts[m[1]] = Number(m[2]);
+  }
+  const testFiles = git(['ls-tree', '-r', '--name-only', 'origin/main', '--', 'backend/src/test', 'e2e/tests']).split('\n').filter(Boolean);
+  const routes = git(['show', 'origin/main:frontend/src/app/app.routes.ts']);
+  // Tests and their helpers (e2e/support) open the pages: goto('/agenda'), goto(`/richieste/${id}`) is cut at the ${.
+  const gotos = git(['grep', '-h', '-o', '-E', "goto\\(['`][^'`$]*", 'origin/main', '--', 'e2e']).split('\n').filter(Boolean).map((g) => g.replace(/^goto\(['`]/, ''));
+  return { lineCounts, testFiles, coveredPages: routeCoverage(routes, gotos), pageCount: new Set([...routes.matchAll(/import\('\.\/([^']+)'\)/g)].map((m) => m[1])).size };
+}
+
 /** Collects git, Jira and the saved analyses, and aggregates them. */
 export async function buildInsights({ repoDir, stateDir, cfg, jira, now = new Date() }) {
   const o = cfg.insights ?? {};
@@ -280,7 +481,7 @@ export async function buildInsights({ repoDir, stateDir, cfg, jira, now = new Da
   // The last field: co-authors on one line (a squash merge of the agent's PR has the agent as co-author).
   const log = execFileSync('git', ['log', 'origin/main', '--no-merges', '--numstat', '--format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%(trailers:key=Co-authored-by,valueonly,separator=%x3b)'], { cwd: repoDir, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   const tickets = await jira.searchAll(`project = ${cfg.project} ORDER BY key ASC`, o.maxTickets ?? 500);
-  return aggregate({ commits: parseGitLog(log), tickets, analyses: savedAnalyses(stateDir), rules: o.components ?? [], project: cfg.project, now, months: o.months ?? 10, churnDays: o.churnDays ?? 90, aliases: o.authorAliases ?? {} });
+  return aggregate({ commits: parseGitLog(log), tickets, analyses: savedAnalyses(stateDir), rules: o.components ?? [], project: cfg.project, now, months: o.months ?? 10, churnDays: o.churnDays ?? 90, aliases: o.authorAliases ?? {}, code: codeFacts(repoDir) });
 }
 
 // ---------------------------------------------------------------- recommendations (one headless run)
