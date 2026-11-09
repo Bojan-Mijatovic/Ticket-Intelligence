@@ -22,6 +22,7 @@ import { reviewPullRequest } from './lib/review.mjs';
 import { buildInsights, readRecommendations, writeRecommendations } from './lib/insights.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
 import { createSuggested, readCreated, suggestTickets } from './lib/suggestions.mjs';
+import { suiteInsights } from './lib/suite.mjs';
 import { askQuestion } from './lib/ask.mjs';
 import { attachMailUpdates } from './lib/mail-updates.mjs';
 import { loadProjects, peerCheckouts } from './lib/projects.mjs';
@@ -326,6 +327,22 @@ const server = createServer(async (req, res) => {
       const review = readReview(p, data);
       const suggestions = suggestTickets({ insights: data, review, rules: p.cfg.insights?.components ?? [], created: readCreated(p.stateDir), project: p.key });
       return json(res, 200, { ...data, project: p.key, recommendations: readRecommendations(p.stateDir, data), review, reviewing: reviewing === p.key, suggestions, createTicket: policy.actions.createTicket ?? 'draft' });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    }
+  }
+  // The whole suite: every project with a clone, from the same (cached) insights as the per-project pages.
+  if (req.method === 'GET' && path === '/api/insights/suite') {
+    try {
+      const refresh = queryOf(req).get('refresh') === '1';
+      const apps = [];
+      for (const p of all.projects.filter((x) => existsSync(x.repoDir))) {
+        const data = await insightsCached(p, refresh);
+        const review = readReview(p, data);
+        const suggestions = suggestTickets({ insights: data, review, rules: p.cfg.insights?.components ?? [], created: readCreated(p.stateDir), project: p.key });
+        apps.push({ project: p, data: { ...data, suggestions }, review });
+      }
+      return json(res, 200, suiteInsights(apps));
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     }

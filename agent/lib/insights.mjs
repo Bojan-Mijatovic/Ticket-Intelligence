@@ -231,19 +231,8 @@ export function aggregate({ commits, tickets, analyses, rules, project, now = ne
     stats: ticketStats([...byKey.values()], monthList),
     people: peopleStats({ commits, byKey, personOf, rules }),
     riskFiles: riskFiles({ commits, byKey, lineCounts: code.lineCounts, testFiles: code.testFiles, coveredPages: code.coveredPages, rules }),
-    testCoverage: (() => {
-      // Backend classes with a unit test, screens (page components of the routes) opened by a browser test.
-      const backend = Object.keys(code.lineCounts ?? {}).filter((p) => /^backend\/src\/main\/java\/.+(Service|Controller)\.java$/.test(p));
-      return {
-        backend: {
-          tested: backend.filter((p) => testOf(p, code) === 'unit').length,
-          viaPackage: backend.filter((p) => testOf(p, code) === 'package').length,
-          total: backend.length,
-          untested: backend.filter((p) => testOf(p, code) === 'none'),
-        },
-        screens: { tested: code.coveredPages?.size ?? 0, total: code.pageCount ?? 0 },
-      };
-    })(),
+    // Backend classes with a unit test, screens (page components of the routes) opened by a browser test.
+    testCoverage: coverageOf(code),
     hotspots: components.filter((c) => c.bugs > 0).slice(0, 3).map((c) => c.name),
     tickets: [...byKey.values()].map((t) => ({
       key: t.key, type: t.issueType, status: t.status, priority: t.priority ?? null, summary: t.summary, date: t.date, source: t.source,
@@ -454,7 +443,7 @@ function recurringBugs({ byKey, analyses, comp, project }) {
  * files, and the page components a browser test opens. Every part is optional (a repository without a frontend or
  * without tests gives empty facts, not an error).
  */
-export function codeFacts(repoDir) {
+export function codeFacts(repoDir, ref = 'origin/main') {
   const git = (args) => {
     try {
       return execFileSync('git', args, { cwd: repoDir, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
@@ -463,15 +452,132 @@ export function codeFacts(repoDir) {
     }
   };
   const lineCounts = {};
-  for (const line of git(['grep', '-c', '^', 'origin/main', '--', 'backend/src/main/java', 'frontend/src/app']).split('\n')) {
-    const m = line.match(/^origin\/main:(.+):(\d+)$/);
+  for (const line of git(['grep', '-c', '^', ref, '--', 'backend/src/main/java', 'frontend/src/app']).split('\n')) {
+    if (!line.startsWith(`${ref}:`)) continue;
+    const m = line.slice(ref.length + 1).match(/^(.+):(\d+)$/);
     if (m) lineCounts[m[1]] = Number(m[2]);
   }
-  const testFiles = git(['ls-tree', '-r', '--name-only', 'origin/main', '--', 'backend/src/test', 'e2e/tests']).split('\n').filter(Boolean);
-  const routes = git(['show', 'origin/main:frontend/src/app/app.routes.ts']);
+  const testFiles = git(['ls-tree', '-r', '--name-only', ref, '--', 'backend/src/test', 'e2e/tests']).split('\n').filter(Boolean);
+  const routes = git(['show', `${ref}:frontend/src/app/app.routes.ts`]);
   // Tests and their helpers (e2e/support) open the pages: goto('/agenda'), goto(`/richieste/${id}`) is cut at the ${.
-  const gotos = git(['grep', '-h', '-o', '-E', "goto\\(['`][^'`$]*", 'origin/main', '--', 'e2e']).split('\n').filter(Boolean).map((g) => g.replace(/^goto\(['`]/, ''));
+  const gotos = git(['grep', '-h', '-o', '-E', "goto\\(['`][^'`$]*", ref, '--', 'e2e']).split('\n').filter(Boolean).map((g) => g.replace(/^goto\(['`]/, ''));
   return { lineCounts, testFiles, coveredPages: routeCoverage(routes, gotos), pageCount: new Set([...routes.matchAll(/import\('\.\/([^']+)'\)/g)].map((m) => m[1])).size };
+}
+
+/** Services and controllers with a unit test (and via their package only), and screens opened by a browser test. */
+export function coverageOf(code) {
+  const backend = Object.keys(code.lineCounts ?? {}).filter((p) => /^backend\/src\/main\/java\/.+(Service|Controller)\.java$/.test(p));
+  return {
+    backend: {
+      tested: backend.filter((p) => testOf(p, code) === 'unit').length,
+      viaPackage: backend.filter((p) => testOf(p, code) === 'package').length,
+      total: backend.length,
+      untested: backend.filter((p) => testOf(p, code) === 'none'),
+    },
+    screens: { tested: code.coveredPages?.size ?? 0, total: code.pageCount ?? 0 },
+  };
+}
+
+// ---------------------------------------------------------------- phase F: trend from history, daily snapshots
+
+const pct = (a, b) => (b ? Math.round((a / b) * 100) : null);
+
+/**
+ * Month by month, from git: commits, tickets and bugs (by the month of their first commit), and the state of the code
+ * at the end of the month (application lines and files, services/controllers with a unit test, screens opened by a
+ * browser test). The code facts of a month are cached by the commit they were read at (insights/trend.json).
+ */
+export function historyTrend({ repoDir, stateDir, commits, insights }) {
+  const cacheFile = join(stateDir, 'insights', 'trend.json');
+  const cache = readJson(cacheFile, {});
+  const byDate = [...commits].sort((a, b) => a.date.localeCompare(b.date));
+  const out = [];
+  for (const month of insights.months) {
+    const [y, m] = month.split('-').map(Number);
+    const end = new Date(Date.UTC(y, m, 1)).toISOString();
+    const last = byDate.filter((c) => Date.parse(c.date) < Date.parse(end)).at(-1) ?? null;
+    const inMonth = commits.filter((c) => monthOf(c.date) === month); // the commit's own calendar day, as everywhere here
+    const opened = insights.stats?.byMonth?.[month] ?? { tickets: 0, bugs: 0 };
+    let code = null;
+    if (last) {
+      if (!cache[last.hash]) {
+        const facts = codeFacts(repoDir, last.hash);
+        const cov = coverageOf(facts);
+        cache[last.hash] = {
+          lines: Object.values(facts.lineCounts).reduce((n, x) => n + x, 0),
+          files: Object.keys(facts.lineCounts).length,
+          unitTested: cov.backend.tested, unitTotal: cov.backend.total,
+          screensTested: cov.screens.tested, screensTotal: cov.screens.total,
+        };
+      }
+      code = { ...cache[last.hash], at: last.hash.slice(0, 7) };
+    }
+    out.push({
+      month,
+      commits: inMonth.length,
+      agentCommits: inMonth.filter((c) => c.agent).length,
+      tickets: opened.tickets,
+      bugs: opened.bugs,
+      code,
+      unitTestShare: code ? pct(code.unitTested, code.unitTotal) : null,
+      screenShare: code ? pct(code.screensTested, code.screensTotal) : null,
+    });
+  }
+  try {
+    mkdirSync(join(stateDir, 'insights'), { recursive: true });
+    writeFileSync(cacheFile, JSON.stringify(cache));
+  } catch {
+    /* no cache */
+  }
+  return out;
+}
+
+/** The numbers of one day's snapshot (what git cannot give back later: open bugs, recurring, checks, the review). */
+export function snapshotOf(insights, review = null, date = new Date()) {
+  const scores = review?.evaluation?.scores ?? [];
+  return {
+    date: date.toISOString().slice(0, 10),
+    bugs: insights.totals.bugs,
+    openBugs: insights.totals.openBugs,
+    priorityBugs: insights.totals.priorityBugs,
+    openPriorityBugs: insights.totals.openPriorityBugs,
+    tickets: insights.totals.tickets,
+    commits: insights.totals.commits,
+    recurring: insights.recurring.length,
+    toCheck: insights.shared?.toCheck ?? 0,
+    busFactorOne: insights.components.filter((c) => c.busFactor === 1 && c.tickets).length,
+    medianDaysInCode: insights.origins?.medianDaysInCode ?? null,
+    unitTested: insights.testCoverage.backend.tested,
+    unitTotal: insights.testCoverage.backend.total,
+    screensTested: insights.testCoverage.screens.tested,
+    screensTotal: insights.testCoverage.screens.total,
+    reviewScore: scores.length ? Math.round((scores.reduce((n, s) => n + s.score, 0) / scores.length) * 10) / 10 : null,
+  };
+}
+
+/** Keeps one snapshot per day (the last one of the day wins) in insights/snapshots.json; returns them, oldest first. */
+export function recordSnapshot(stateDir, snapshot, keepDays = 400) {
+  const file = join(stateDir, 'insights', 'snapshots.json');
+  const all = readJson(file, []).filter((s) => s.date !== snapshot.date);
+  all.push(snapshot);
+  all.sort((a, b) => a.date.localeCompare(b.date));
+  const kept = all.slice(-keepDays);
+  try {
+    mkdirSync(join(stateDir, 'insights'), { recursive: true });
+    writeFileSync(file, JSON.stringify(kept, null, 1));
+  } catch {
+    /* read-only state: the snapshot is only returned */
+  }
+  return kept;
+}
+
+/** The change of each number between the first and the last snapshot (null when there is only one). */
+export function snapshotDelta(snapshots) {
+  if (snapshots.length < 2) return null;
+  const [first, last] = [snapshots[0], snapshots.at(-1)];
+  const out = { from: first.date, to: last.date };
+  for (const k of Object.keys(last)) if (k !== 'date' && typeof last[k] === 'number' && typeof first[k] === 'number') out[k] = last[k] - first[k];
+  return out;
 }
 
 // ---------------------------------------------------------------- phase C: where bugs come from, code shared with other projects
@@ -836,6 +942,10 @@ export async function buildInsights({ repoDir, stateDir, cfg, jira, now = new Da
   data.origins.showNames = o.showBugOrigin === true;
   const bugKeys = new Set(data.tickets.filter((t) => /bug/i.test(t.type ?? '') && !isOpen(t)).map((t) => t.key));
   data.shared = await sharedCode({ repoDir, stateDir, project: cfg.project, peers, bugKeys, jira });
+  data.trend = historyTrend({ repoDir, stateDir, commits, insights: data });
+  // Today's snapshot (with the scores of the cached AI review, if any): the trend of what git cannot give back later.
+  data.snapshots = recordSnapshot(stateDir, snapshotOf(data, readJson(join(stateDir, 'insights', 'review.json'), null), now));
+  data.snapshotDelta = snapshotDelta(data.snapshots);
   return data;
 }
 

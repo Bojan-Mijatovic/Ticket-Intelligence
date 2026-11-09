@@ -141,8 +141,8 @@
   .answer .q { font-weight: 700; }
   .answer .a { white-space: pre-wrap; }
   .answer ul { margin: 0; padding-left: 18px; }
-  #ins-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  @media (max-width: 1100px) { #ins-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  #ins-kpis, #suite-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  @media (max-width: 1100px) { #ins-kpis, #suite-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .ins-list { padding: 12px 16px; margin-bottom: 20px; overflow-x: auto; }
   .ins-list table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .ins-list th, .ins-list td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -162,6 +162,22 @@
   .pick-first { padding: 14px 16px; margin-bottom: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .pick-first[hidden], .ins-list[hidden] { display: none; }
   .proj { font-size: 11px; font-weight: 700; letter-spacing: .02em; padding: 1px 6px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); }
+  .charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
+  .chart .ct { font-size: 13px; font-weight: 600; }
+  .chart .cs { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .chart svg text { fill: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .chart svg .grid { stroke: var(--border); stroke-width: 1; }
+  .chart svg .mark { fill: var(--accent); }
+  .chart svg .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart svg .dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+  .chart svg .hit { fill: transparent; cursor: default; }
+  .chart svg .hit:hover { fill: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .chart svg .end { fill: var(--text); font-weight: 600; }
+  .spark { display: inline-block; vertical-align: middle; }
+  .spark rect { fill: var(--accent); }
+  .chart-tip { position: fixed; z-index: 50; pointer-events: none; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow); padding: 6px 8px; font-size: 12px; max-width: 260px; }
+  .delta-up { color: var(--bad); } .delta-down { color: var(--ok); } .delta-good-up { color: var(--ok); } .delta-good-down { color: var(--bad); }
   .review-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin-bottom: 16px; }
   .review-grid .panel { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; overflow-wrap: anywhere; }
   .review-grid .title { font-weight: 700; font-size: 14px; }
@@ -196,6 +212,26 @@
 <main>
   <section id="tab-insights" hidden>
     <div class="pick-first panel" id="ins-pick" hidden></div>
+    <div id="ins-suite" hidden>
+      <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0">Insights · the whole suite</h2><span class="spacer"></span>
+        <span class="meta" id="suite-state"></span><button class="small" id="suite-refresh">Refresh all</button></div>
+      <div class="hint" style="margin:4px 0 10px">Every app side by side, how they call each other, and what crosses from one app to another. Pick a project above for its own page.</div>
+      <div class="kpis" id="suite-kpis"></div>
+      <h2>Apps</h2>
+      <div class="panel ins-list" id="suite-apps"><div class="empty">Loading…</div></div>
+      <h2>Bugs per month, all apps</h2>
+      <div class="panel ins-list" id="suite-trend"></div>
+      <h2>How the apps call each other</h2>
+      <div class="panel ins-list" id="suite-integrations"></div>
+      <h2>Bugs linked across apps</h2>
+      <div class="panel ins-list" id="suite-links"></div>
+      <h2>Causes found in another app</h2>
+      <div class="hint" style="margin:-4px 0 8px">From the agent's analyses: a ticket of one app whose cause is in a linked app (and where the fix belongs).</div>
+      <div class="panel ins-list" id="suite-causes"></div>
+      <h2>Code shared across the suite</h2>
+      <div class="hint" style="margin:-4px 0 8px">Copies of one file in several apps. A bug fixed in one copy should be checked in the others; copies that keep getting the same fixes belong in a shared library.</div>
+      <div class="panel ins-list" id="suite-shared"></div>
+    </div>
     <div id="ins-body">
     <h2 id="ins-title" style="margin-top:0">Insights</h2>
     <div class="kpis" id="ins-kpis"></div>
@@ -227,6 +263,9 @@
     <div class="panel ins-list" id="ins-shared"></div>
     <h2>Tickets: what they are opened for</h2>
     <div class="panel ins-list" id="ins-stats"></div>
+    <h2>Trend</h2>
+    <div class="hint" style="margin:-4px 0 8px">Month by month from git: bugs and commits of the month, and the code at the end of the month. Below: what changed since the first daily snapshot of this page.</div>
+    <div class="panel ins-list" id="ins-trend"></div>
     <h2>Knowledge map</h2>
     <div class="hint" style="margin:-4px 0 8px">Who knows each component (share of its commits, the agent's not counted). Bus factor = people with at least a quarter of the commits; 1 means one person holds the knowledge.</div>
     <div class="panel ins-list" id="ins-knowledge"></div>
@@ -631,8 +670,10 @@ let insightsFor = null; // the project whose insights are shown (a late answer f
 async function loadInsights(refresh = false) {
   const p = focus();
   $('#ins-body').hidden = !p;
-  if (!p) { if (status) projectPicker($('#ins-pick'), 'The hotspot map'); return; }
   $('#ins-pick').hidden = true;
+  // "All projects": the whole suite on one page.
+  if (!p) { if (status) loadSuite(refresh); return; }
+  $('#ins-suite').hidden = true;
   insightsFor = p.key;
   $('#ins-title').textContent = `Insights · ${projLabel(p)}`;
   $('#ins-heat').replaceChildren(h('div', { class: 'empty' }, `Reading the ${p.name} git history, Jira and the saved analyses…`));
@@ -790,6 +831,172 @@ function suggestionEditor(s) {
     h('label', {}, analyze, ' Let the agent analyze it like a new ticket (without this it gets the no-ai label)'),
     h('div', { style: 'display:flex;gap:10px;align-items:center' }, go, state));
 }
+
+// ---------------------------------------------------------------- charts (phase F): one series each, accent hue
+const SVGNS = 'http://www.w3.org/2000/svg';
+function sv(tag, attrs = {}, ...kids) {
+  const el = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) if (v != null) el.setAttribute(k, v);
+  for (const kid of kids.flat(Infinity)) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  return el;
+}
+let tipEl = null; // one tooltip for every chart, made on first use
+function showTip(e, text) {
+  if (!tipEl) { tipEl = h('div', { class: 'chart-tip' }); document.body.append(tipEl); }
+  const tip = tipEl;
+  tip.hidden = false; tip.textContent = text;
+  const x = Math.min(e.clientX + 12, window.innerWidth - tip.offsetWidth - 8);
+  tip.style.left = `${x}px`; tip.style.top = `${e.clientY + 14}px`;
+}
+const hideTip = () => { if (tipEl) tipEl.hidden = true; };
+const niceMax = (v) => { if (v <= 5) return Math.max(1, Math.ceil(v)); const p = 10 ** Math.floor(Math.log10(v)); const m = v / p; return (m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; };
+const compact = (v) => (v >= 10000 ? `${Math.round(v / 1000)}K` : v >= 1000 ? `${(v / 1000).toFixed(1).replace(/\.0$/, '')}K` : String(v));
+const shortMonth = (m) => MONTHS[Number(m.slice(5, 7)) - 1];
+
+/**
+ * A small single-series chart: columns ('bar') or a line ('line') over months, with a hairline grid, the last value
+ * labeled, and a tooltip on every month. points: [{ month, value (null = no data), tip }].
+ */
+function miniChart({ title, sub, points, kind = 'bar', max = null, unit = '' }) {
+  const W = 300, H = 120, L = 30, R = 30, T = 10, B = 20;
+  const vals = points.map((p) => p.value).filter((v) => v != null);
+  const top = max ?? niceMax(Math.max(1, ...vals));
+  const band = (W - L - R) / points.length;
+  const y = (v) => T + (1 - v / top) * (H - T - B);
+  const xc = (i) => L + band * i + band / 2;
+  const grid = [0, top / 2, top].map((v) => [sv('line', { class: 'grid', x1: L, x2: W - R, y1: y(v), y2: y(v) }), sv('text', { x: L - 6, y: y(v) + 3, 'text-anchor': 'end' }, compact(Math.round(v)) + (v === top ? unit : ''))]);
+  const labels = points.map((p, i) => (i === 0 || i === points.length - 1 || i === Math.floor(points.length / 2) ? sv('text', { x: xc(i), y: H - 6, 'text-anchor': 'middle' }, shortMonth(p.month)) : null));
+  let marks = [];
+  if (kind === 'bar') {
+    const w = Math.min(24, band * 0.6);
+    marks = points.map((p, i) => {
+      if (!p.value) return null;
+      const x = xc(i) - w / 2, yt = y(p.value), base = y(0), r = Math.min(4, base - yt, w / 2);
+      return sv('path', { class: 'mark', d: `M${x},${base} V${yt + r} Q${x},${yt} ${x + r},${yt} H${x + w - r} Q${x + w},${yt} ${x + w},${yt + r} V${base} Z` });
+    });
+  } else {
+    const pts = points.map((p, i) => (p.value == null ? null : [xc(i), y(p.value)])).filter(Boolean);
+    if (pts.length) marks = [sv('polyline', { class: 'line', points: pts.map((p) => p.join(',')).join(' ') }), sv('circle', { class: 'dot', cx: pts.at(-1)[0], cy: pts.at(-1)[1], r: 4 })];
+  }
+  const lastI = points.map((p) => p.value != null).lastIndexOf(true);
+  const end = lastI >= 0 ? sv('text', { class: 'end', x: kind === 'bar' ? xc(lastI) : xc(lastI) + 7, y: kind === 'bar' ? y(points[lastI].value) - 4 : y(points[lastI].value) + 3, 'text-anchor': kind === 'bar' ? 'middle' : 'start' }, `${compact(points[lastI].value)}${unit}`) : null;
+  const hits = points.map((p, i) => {
+    const r = sv('rect', { class: 'hit', x: L + band * i, y: T, width: band, height: H - T - B });
+    r.addEventListener('pointermove', (e) => showTip(e, p.tip ?? `${monthLabel(p.month)}: ${p.value ?? 'no data'}${p.value != null ? unit : ''}`));
+    r.addEventListener('pointerleave', hideTip);
+    return r;
+  });
+  const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${title}: ${points.map((p) => `${monthLabel(p.month)} ${p.value ?? 'no data'}`).join(', ')}` }, grid, hits, marks, end, labels);
+  return h('div', { class: 'chart' }, h('div', { class: 'ct' }, title), sub ? h('div', { class: 'cs' }, sub) : null, svg);
+}
+
+/** A tiny column sparkline (bugs per month) for a table row. */
+function sparkline(points, w = 90, ht = 22) {
+  const max = Math.max(1, ...points.map((p) => p.value));
+  const band = w / points.length, bw = Math.max(2, band - 2);
+  return sv('svg', { class: 'spark', width: w, height: ht, viewBox: `0 0 ${w} ${ht}`, role: 'img', 'aria-label': points.map((p) => `${monthLabel(p.month)} ${p.value}`).join(', ') },
+    points.map((p, i) => (p.value ? sv('rect', { x: i * band, y: ht - (p.value / max) * ht, width: bw, height: (p.value / max) * ht, rx: 1 }, sv('title', {}, `${monthLabel(p.month)}: ${p.value}`)) : null)));
+}
+
+/** A signed change, colored by whether that direction is good (up is bad for bugs, good for tests). */
+function delta(v, upIsGood = false, unit = '') {
+  if (v == null || v === 0) return h('span', { class: 't-sub' }, '±0');
+  const good = upIsGood ? v > 0 : v < 0;
+  return h('span', { class: good ? 'delta-down' : 'delta-up', title: good ? 'better' : 'worse' }, `${v > 0 ? '▲ +' : '▼ −'}${Math.abs(v)}${unit}`);
+}
+
+function renderTrend(d) {
+  const t = d.trend ?? [];
+  if (!t.length) { $('#ins-trend').replaceChildren(h('div', { class: 'empty' }, 'No history yet.')); return; }
+  const pt = (f, tipOf) => t.map((m) => ({ month: m.month, value: f(m), tip: tipOf(m) }));
+  const charts = h('div', { class: 'charts' },
+    miniChart({ title: 'Bugs', sub: 'per month, by the month of the fix', points: pt((m) => m.bugs, (m) => `${monthLabel(m.month)}: ${m.bugs} bug(s), ${m.tickets} ticket(s)`) }),
+    miniChart({ title: 'Commits', sub: 'per month (the agent\'s included)', points: pt((m) => m.commits, (m) => `${monthLabel(m.month)}: ${m.commits} commit(s)${m.agentCommits ? `, ${m.agentCommits} by the agent` : ''}`) }),
+    miniChart({ title: 'Application code', sub: 'lines at the end of the month', kind: 'line', points: pt((m) => m.code?.lines ?? null, (m) => m.code ? `${monthLabel(m.month)}: ${m.code.lines} lines in ${m.code.files} files (${m.code.at})` : `${monthLabel(m.month)}: no code yet`) }),
+    miniChart({ title: 'Unit tests', sub: 'services/controllers with their own test, %', kind: 'line', max: 100, unit: '%', points: pt((m) => m.unitTestShare, (m) => m.code ? `${monthLabel(m.month)}: ${m.code.unitTested} of ${m.code.unitTotal} (${m.unitTestShare}%)` : `${monthLabel(m.month)}: no code yet`) }),
+    miniChart({ title: 'Browser tests', sub: 'screens opened by a test, %', kind: 'line', max: 100, unit: '%', points: pt((m) => m.screenShare, (m) => m.code ? `${monthLabel(m.month)}: ${m.code.screensTested} of ${m.code.screensTotal} screens (${m.screenShare}%)` : `${monthLabel(m.month)}: no code yet`) }));
+  const tableView = h('details', { style: 'margin-top:12px' }, h('summary', { class: 't-sub' }, 'Show as a table'),
+    table(['Month', 'Bugs', 'Tickets', 'Commits', 'Lines', 'Unit tests', 'Screens'].map((x) => h('th', { class: x === 'Month' ? '' : 'num' }, x)),
+      t.map((m) => h('tr', {}, h('td', {}, monthLabel(m.month)), h('td', { class: 'num' }, m.bugs), h('td', { class: 'num' }, m.tickets), h('td', { class: 'num' }, m.commits),
+        h('td', { class: 'num' }, m.code?.lines ?? '–'), h('td', { class: 'num' }, m.code ? `${m.code.unitTested}/${m.code.unitTotal}` : '–'), h('td', { class: 'num' }, m.code ? `${m.code.screensTested}/${m.code.screensTotal}` : '–')))));
+  const snaps = d.snapshots ?? [];
+  const dl = d.snapshotDelta;
+  const since = dl ? h('div', { class: 'stages', style: 'margin-top:12px' },
+    h('span', { class: 't-sub' }, `Since ${dl.from} (${snaps.length} daily snapshots): `),
+    h('span', { class: 'chip' }, 'open bugs ', delta(dl.openBugs)), h('span', { class: 'chip' }, 'high-priority open ', delta(dl.openPriorityBugs)),
+    h('span', { class: 'chip' }, 'recurring ', delta(dl.recurring)), h('span', { class: 'chip' }, 'unit-tested ', delta(dl.unitTested, true)),
+    h('span', { class: 'chip' }, 'screens tested ', delta(dl.screensTested, true)), h('span', { class: 'chip' }, 'copies to check ', delta(dl.toCheck)),
+    dl.reviewScore != null ? h('span', { class: 'chip' }, 'AI review score ', delta(dl.reviewScore, true)) : null)
+    : h('div', { class: 'hint', style: 'margin-top:12px' }, `Daily snapshots started ${snaps[0]?.date ?? 'today'}: open bugs, recurring problems, copies to check and the AI review score are kept once a day from now on, and their change shows here from the second day.`);
+  $('#ins-trend').replaceChildren(charts, since, tableView);
+}
+
+// ---------------------------------------------------------------- the whole suite (phase F)
+let suiteLoading = false;
+async function loadSuite(refresh = false) {
+  $('#ins-suite').hidden = false;
+  if (suiteLoading) return;
+  suiteLoading = true;
+  $('#suite-state').textContent = refresh ? 'reading every app again…' : 'reading every app…';
+  try {
+    const res = await fetch(`/api/insights/suite${refresh ? '?refresh=1' : ''}`);
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+    if (!focus()) renderSuite(d);
+    $('#suite-state').textContent = `as of ${new Date(d.generatedAt).toLocaleTimeString()}`;
+  } catch (e) { $('#suite-apps').replaceChildren(h('pre', { class: 'err' }, `Suite insights failed: ${e.message}`)); $('#suite-state').textContent = ''; }
+  finally { suiteLoading = false; }
+}
+
+function renderSuite(d) {
+  const app = (key) => h('span', { class: 'proj' }, d.names[key] ?? key);
+  const kpi = (label, value, sub) => h('div', { class: 'kpi' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), h('div', { class: 'sub' }, sub));
+  const t = d.totals;
+  $('#suite-kpis').replaceChildren(
+    kpi('Apps', t.apps, Object.values(d.names).join(', ')),
+    kpi('Bugs', t.bugs, `${t.priorityBugs} High or Highest`),
+    kpi('Still open', t.openBugs, 'bugs in all apps'),
+    kpi('Linked across apps', t.crossLinks, 'bug pairs with a Jira link'),
+    kpi('Causes in another app', t.causes, "found by the agent's analyses"),
+    kpi('Copies to check', t.toCheck, 'a fix of one copy missing in another'));
+  const head = ['App', 'Bugs', 'Open', 'Recurring', 'Unit tests', 'Screens', 'Days in code', 'Bus factor 1', 'To check', 'AI review', 'Suggested', 'Bugs per month'];
+  $('#suite-apps').replaceChildren(table(head.map((x) => h('th', { class: ['App', 'Bus factor 1', 'AI review', 'Bugs per month'].includes(x) ? '' : 'num' }, x)),
+    d.apps.map((a) => h('tr', {},
+      h('td', { class: 'hn clickable', title: `Open the ${a.name} page`, onclick: () => selectProject(a.key) }, h('b', {}, a.name), ' ', h('span', { class: 't-sub' }, a.key), a.topHotspot ? h('div', { class: 't-sub' }, `hotspot: ${a.topHotspot}`) : null),
+      h('td', { class: 'num' }, a.bugs, ' ', a.priorityBugs ? h('span', { class: 'chip prio-high' }, `${a.priorityBugs} High+`) : null),
+      h('td', { class: 'num' }, a.openBugs),
+      h('td', { class: 'num' }, a.recurring),
+      h('td', { class: 'num' }, `${a.unit.tested}/${a.unit.total}`),
+      h('td', { class: 'num' }, `${a.screens.tested}/${a.screens.total}`),
+      h('td', { class: 'num', title: 'median days from the change that brought a bug in to its fix' }, a.medianDaysInCode ?? '–'),
+      h('td', {}, a.busFactorOne.length ? a.busFactorOne.map((c) => h('span', { class: 'chip failed', style: 'margin:0 4px 4px 0' }, c)) : h('span', { class: 't-sub' }, '–')),
+      h('td', { class: 'num' }, a.toCheck || '–'),
+      h('td', {}, a.review ? [`${a.review.score ?? '–'}/5`, h('div', { class: 't-sub' }, `${ago(a.review.at)}${a.review.stale ? ' · data changed' : ''}`)] : h('span', { class: 't-sub' }, 'not run')),
+      h('td', { class: 'num' }, a.suggestions),
+      h('td', {}, sparkline(a.bugsPerMonth.map((m) => ({ month: m.month, value: m.bugs }))))))));
+  $('#suite-trend').replaceChildren(h('div', { class: 'charts' },
+    miniChart({ title: 'Bugs, all apps', sub: 'per month, by the month of the fix', points: d.bugsPerMonth.map((m) => ({ month: m.month, value: m.bugs })) })));
+  $('#suite-integrations').replaceChildren(...(d.integrations.length ? [table(['From', 'Calls', 'What it uses', 'Bugs linked across', 'Causes found there'].map((x) => h('th', { class: x.startsWith('Bugs') || x.startsWith('Causes') ? 'num' : '' }, x)),
+    d.integrations.map((i) => h('tr', {}, h('td', {}, app(i.from)), h('td', {}, '→ ', app(i.to)), h('td', { class: 't-sub' }, i.uses || '–'),
+      h('td', { class: 'num' }, i.linkedBugs || '–'), h('td', { class: 'num' }, i.causes || '–'))))]
+    : [h('div', { class: 'empty' }, 'No links between the apps are configured (agent.config.json "linked").')]));
+  $('#suite-links').replaceChildren(...(d.crossLinks.length ? [table(['Bug', 'App', 'Linked to', 'Component', 'Summary'].map((x) => h('th', {}, x)),
+    d.crossLinks.map((l) => h('tr', {}, h('td', {}, jiraLink(l.key), ' ', prioChip(l.priority)), h('td', {}, app(l.project)), h('td', {}, jiraLink(l.of), ' ', app(l.ofProject)),
+      h('td', {}, l.component ?? '–'), h('td', { class: 't-sub' }, l.summary ?? ''))))]
+    : [h('div', { class: 'empty' }, 'No bug is linked to a ticket of another app.')]));
+  $('#suite-causes').replaceChildren(...(d.causes.length ? [table(['Ticket', 'Cause in', 'Fix belongs in', 'Evidence', 'Why'].map((x) => h('th', {}, x)),
+    d.causes.map((c) => h('tr', {}, h('td', {}, jiraLink(c.key), ' ', app(c.project)), h('td', {}, app(c.in)), h('td', {}, app(c.fixIn)), h('td', { class: 't-sub' }, cite(c.evidence)), h('td', {}, c.why))))]
+    : [h('div', { class: 'empty' }, 'No saved analysis has found a cause in another app yet (they appear here after the agent analyzes such a ticket).')]));
+  $('#suite-shared').replaceChildren(...(d.shared.length ? [table(['File', 'Copies', 'Alike', 'Bugs fixed in a copy', 'To check'].map((x) => h('th', {}, x)),
+    d.shared.map((g) => h('tr', {},
+      h('td', {}, h('code', {}, g.name)),
+      h('td', {}, g.copies.map((c) => h('span', { title: c.path, style: 'margin-right:4px' }, app(c.project)))),
+      h('td', {}, g.allIdentical ? h('span', { class: 'chip done' }, 'identical') : h('span', { class: 't-sub' }, 'changed in some apps')),
+      h('td', {}, g.bugs.length ? g.bugs.flatMap((k) => [jiraLink(k), ' ']) : h('span', { class: 't-sub' }, '–')),
+      h('td', {}, g.checks.length ? g.checks.map((c) => h('div', {}, h('span', { class: 'chip analyzing' }, `${c.key}: check the ${d.names[c.project] ?? c.project} copy`))) : h('span', { class: 't-sub' }, '–')))))]
+    : [h('div', { class: 'empty' }, 'No code is shared between the apps.')]));
+}
+$('#suite-refresh').addEventListener('click', () => loadSuite(true));
 
 const projectName = (key) => projectInfo(projOf(key))?.name ?? projOf(key);
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -984,6 +1191,7 @@ function renderInsights(d) {
   renderShared(d);
   renderRisk(d);
   renderStats(d);
+  renderTrend(d);
   renderKnowledge(d);
   renderPeople(d);
 }
