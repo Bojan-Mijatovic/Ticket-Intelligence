@@ -204,6 +204,12 @@
     <div class="panel ins-list" id="ins-risk"></div>
     <h2>Recurring problems</h2>
     <div class="panel ins-list" id="ins-recurring"></div>
+    <h2>Where bugs come from</h2>
+    <div class="hint" style="margin:-4px 0 8px">For each fixed bug: <code>git blame</code> of the lines its fix changed, just before the fix. The change that wrote them brought the bug in. A fix that only added lines is traced by the lines around the addition.</div>
+    <div class="panel ins-list" id="ins-origins"></div>
+    <h2>Code shared with other projects</h2>
+    <div class="hint" style="margin:-4px 0 8px">Files copied between the apps of the suite (compared by content; imports and package names left out). A bug fixed in one copy whose new lines are missing in the other: check that copy. Copies that keep getting the same fixes are candidates for a shared library.</div>
+    <div class="panel ins-list" id="ins-shared"></div>
     <h2>Tickets: what they are opened for</h2>
     <div class="panel ins-list" id="ins-stats"></div>
     <h2>Knowledge map</h2>
@@ -647,7 +653,6 @@ function showInsightTickets({ component, month = null }) {
 }
 
 function renderRecurring(d) {
-  const projectName = (key) => projectInfo(projOf(key))?.name ?? projOf(key);
   $('#ins-recurring').replaceChildren(...(d.recurring.length ? [h('table', {},
     h('thead', {}, h('tr', {}, ['Bug', 'Repeats / linked to', 'Component', 'How we know'].map((x) => h('th', {}, x)))),
     h('tbody', {}, d.recurring.map((r) => h('tr', {},
@@ -656,6 +661,56 @@ function renderRecurring(d) {
       h('td', {}, r.component ?? '–'),
       h('td', { class: 't-sub' }, VIA[r.via] ?? r.via)))))]
     : [h('div', { class: 'empty' }, 'No recurring problems found.')]));
+}
+
+const projectName = (key) => projectInfo(projOf(key))?.name ?? projOf(key);
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+function renderOrigins(d) {
+  const o = d.origins;
+  if (!o) return;
+  const change = (x) => x.ticket ? [jiraLink(x.ticket), x.type ? h('span', { class: 't-sub' }, ` ${x.type}`) : null] : h('code', { title: x.subject ?? x.summary }, x.hash);
+  const summary = h('div', { class: 'stages', style: 'margin-bottom:10px' },
+    h('span', { class: 'chip' }, `${o.bugs.length} of ${o.bugs.length + o.untraced.length} fixed bugs traced`),
+    o.medianDaysInCode !== null ? h('span', { class: 'chip' }, `median ${o.medianDaysInCode} days in the code before the fix`) : null,
+    h('span', { class: `chip ${o.fromFixes.length ? 'failed' : ''}`, title: o.fromFixes.join(', ') }, `${plural(o.fromFixes.length, 'bug', 'bugs')} brought in by another bug's fix`),
+    o.fromAgent.length ? h('span', { class: 'chip analyzing', title: o.fromAgent.join(', ') }, `${plural(o.fromAgent.length, 'bug', 'bugs')} from the agent's changes`) : null);
+  const top = o.byChange.filter((g) => g.bugs.length > 1);
+  const byChange = top.length ? h('div', { style: 'margin-bottom:12px' }, h('div', { class: 't-sub' }, 'Changes that brought in more than one bug:'),
+    top.map((g) => h('div', { style: 'margin:4px 0' }, h('b', {}, g.bugs.length), ' · ', change(g), ' ', h('span', {}, g.summary ?? ''), ' → ', g.bugs.flatMap((k) => [jiraLink(k), ' '])))) : null;
+  const head = ['Bug', 'Brought in by', 'Change', 'Days in the code', 'How we know'];
+  if (o.showNames) head.splice(3, 0, 'Author');
+  const rows = [...o.bugs].sort((a, b) => b.daysInCode - a.daysInCode).map((b) => h('tr', {},
+    h('td', {}, jiraLink(b.key), ' ', prioChip(b.priority)),
+    h('td', {}, change(b.origin), b.origin.agent ? h('span', { class: 'chip analyzing', style: 'margin-left:4px' }, 'agent') : null),
+    h('td', { class: 't-sub', title: b.origin.subject }, h('code', {}, b.origin.hash), ' ', (b.origin.summary ?? b.origin.subject).slice(0, 70)),
+    o.showNames ? h('td', {}, b.origin.author ?? '–') : null,
+    h('td', { class: 'num' }, b.daysInCode),
+    h('td', { class: 't-sub', title: `${b.lines} line(s)` }, b.method === 'changed' ? 'changed lines' : 'lines around the addition')));
+  $('#ins-origins').replaceChildren(...(o.bugs.length ? [summary, byChange, table(head.map((x) => h('th', { class: x === 'Days in the code' ? 'num' : '' }, x)), rows),
+    o.untraced.length ? h('div', { class: 'hint', style: 'margin-top:6px' }, `Not traced (the fix only added new files, or no commit): ${o.untraced.join(', ')}`) : null].filter(Boolean)
+    : [h('div', { class: 'empty' }, 'No fixed bugs with commits yet.')]));
+}
+
+function renderShared(d) {
+  const s = d.shared;
+  if (!s) return;
+  const keys = (list) => list.length ? list.flatMap((k) => [jiraLink(k), ' ']) : h('span', { class: 't-sub' }, '–');
+  const rows = s.pairs.map((p) => h('tr', {},
+    h('td', { title: p.path }, h('code', {}, p.path.split('/').pop())),
+    h('td', { title: p.peerPath }, h('span', { class: 'proj' }, p.peerName ?? projectName(p.peer)), ' ', h('code', {}, p.peerPath.split('/').pop())),
+    h('td', {}, p.identical ? h('span', { class: 'chip done' }, 'identical') : `${p.similarity}% alike`),
+    h('td', {}, keys(p.bugsHere)),
+    h('td', {}, keys(p.bugsThere)),
+    h('td', {}, [...p.checkHere.map((k) => h('div', {}, h('span', { class: 'chip analyzing' }, `${k}: its fix is not here`))),
+      ...p.checkThere.map((k) => h('div', {}, h('span', { class: 'chip analyzing' }, `${k}: its fix is not in ${p.peerName ?? p.peer}`)))])));
+  $('#ins-shared').replaceChildren(...(s.pairs.length ? [
+    h('div', { class: 'stages', style: 'margin-bottom:10px' },
+      h('span', { class: 'chip' }, `${plural(s.files, 'file', 'files')} shared with ${s.peers.map(projectName).join(', ')}`),
+      h('span', { class: 'chip' }, `${plural(s.identical, 'identical copy', 'identical copies')}`),
+      h('span', { class: `chip ${s.toCheck ? 'analyzing' : ''}` }, `${s.toCheck} to check`)),
+    table(['File here', 'Copy in', 'Alike', 'Bugs fixed here', 'Bugs fixed there', 'Check'].map((x) => h('th', {}, x)), rows)]
+    : [h('div', { class: 'empty' }, s.peers.length ? 'No code shared with the other projects.' : 'No other project to compare with.')]));
 }
 
 const PRIORITIES = ['Blocker', 'Critical', 'Highest', 'High', 'Medium', 'Low', 'Lowest', 'None'];
@@ -795,6 +850,8 @@ function renderInsights(d) {
       h('div', { class: 't-sub' }, `Main authors (context): ${c.authors.map((a) => a.name).join(', ') || '–'}${c.agentCommits ? ` · agent: ${c.agentCommits} commit(s)` : ''}`));
   }) : [h('div', { class: 'empty' }, 'No bugs found yet.')]));
   renderRecurring(d);
+  renderOrigins(d);
+  renderShared(d);
   renderRisk(d);
   renderStats(d);
   renderKnowledge(d);

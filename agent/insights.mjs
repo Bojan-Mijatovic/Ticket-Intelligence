@@ -13,8 +13,10 @@ import { buildInsights, readRecommendations, writeRecommendations } from './lib/
 import { cliProject, loadProjects } from './lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const { cfg, stateDir, repoDir, name, key } = cliProject(loadProjects(HERE)); // --project <KEY>, default the first
-const data = await buildInsights({ repoDir, stateDir, cfg, jira: createJira() });
+const all = loadProjects(HERE);
+const { cfg, stateDir, repoDir, name, key } = cliProject(all); // --project <KEY>, default the first
+const peers = all.projects.filter((x) => x.key !== key).map((x) => ({ key: x.key, name: x.name, repoDir: x.repoDir }));
+const data = await buildInsights({ repoDir, stateDir, cfg, jira: createJira(), peers });
 if (!process.argv.includes('--json')) console.log(`${name} (${key})`);
 
 if (process.argv.includes('--json')) {
@@ -37,6 +39,18 @@ for (const name of data.hotspots) {
 }
 if (data.recurring.length) console.log(`\nRecurring: ${data.recurring.map((r) => `${r.key} → ${r.of}`).join(', ')}`);
 if (data.totals.unplaced.length) console.log(`Not placed (no commit, no analysis): ${data.totals.unplaced.join(', ')}`);
+
+const o = data.origins;
+if (o.bugs.length) {
+  console.log(`\nWhere bugs come from (${o.bugs.length} traced, median ${o.medianDaysInCode} days in the code${o.fromFixes.length ? `, from another bug's fix: ${o.fromFixes.join(', ')}` : ''})`);
+  for (const g of o.byChange.filter((x) => x.bugs.length > 1)) console.log(`- ${g.ticket ?? g.hash} (${g.type ?? 'no ticket'}) brought in ${g.bugs.join(', ')}`);
+}
+const toCheck = data.shared.pairs.filter((p) => p.checkHere.length || p.checkThere.length);
+if (data.shared.pairs.length) console.log(`\nShared with ${data.shared.peers.join(', ')}: ${data.shared.files} files, ${data.shared.identical} identical copies`);
+for (const p of toCheck) {
+  for (const k of p.checkHere) console.log(`- check ${p.path}: ${k} fixed the copy in ${p.peer}, its lines are not here`);
+  for (const k of p.checkThere) console.log(`- check ${p.peer} ${p.peerPath}: ${k} fixed it here, its lines are not there`);
+}
 
 const rec = process.argv.includes('--recommend') ? await writeRecommendations({ insights: data, stateDir, cfg }) : readRecommendations(stateDir, data);
 if (rec?.recommendations?.length) {

@@ -474,14 +474,369 @@ export function codeFacts(repoDir) {
   return { lineCounts, testFiles, coveredPages: routeCoverage(routes, gotos), pageCount: new Set([...routes.matchAll(/import\('\.\/([^']+)'\)/g)].map((m) => m[1])).size };
 }
 
-/** Collects git, Jira and the saved analyses, and aggregates them. */
-export async function buildInsights({ repoDir, stateDir, cfg, jira, now = new Date() }) {
+// ---------------------------------------------------------------- phase C: where bugs come from, code shared with other projects
+
+const APP_CODE = ['backend/src/main/java', 'frontend/src/app'];
+const TRIVIAL = /^[\s{}()[\];,]*$/; // blank lines and lone braces say nothing about who wrote the logic
+
+const gitIn = (repoDir) => (args, opts = {}) => {
+  try {
+    return execFileSync('git', args, { cwd: repoDir, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['pipe', 'pipe', 'ignore'], ...opts });
+  } catch {
+    return '';
+  }
+};
+const readJson = (file, fallback) => {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return fallback;
+  }
+};
+
+/** Old-file line ranges a commit changed, per file, from `git show -U0` (a new file has none: nothing was there before). */
+export function parseHunks(diff) {
+  const out = new Map();
+  let path = null;
+  let header = false;
+  for (const line of String(diff).split('\n')) {
+    if (line.startsWith('diff --git ')) {
+      header = true;
+      path = null;
+      continue;
+    }
+    if (header && line.startsWith('--- ')) {
+      path = line === '--- /dev/null' ? null : line.slice(4).replace(/^a\//, '');
+      continue;
+    }
+    const m = path && line.match(/^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@/);
+    if (m) {
+      header = false;
+      if (!out.has(path)) out.set(path, []);
+      out.get(path).push({ start: Number(m[1]), count: m[2] === undefined ? 1 : Number(m[2]) });
+    }
+  }
+  return out;
+}
+
+/** `git blame -l -s --root` output → line number → { hash, text }. */
+export function parseBlame(text) {
+  const out = new Map();
+  for (const line of String(text).split('\n')) {
+    const m = line.match(/^\^?([0-9a-f]{40})\s+(?:\S+\s+)*?(\d+)\)\s?(.*)$/);
+    if (m) out.set(Number(m[2]), { hash: m[1], text: m[3] });
+  }
+  return out;
+}
+
+/**
+ * Counts, per commit, the lines a fix changed (`changed`) and, for a fix that only added lines, the lines around the
+ * addition (`neighbour`: the missing check belongs to the code it was added to). Trivial lines and the bug's own fix
+ * commits (`exclude`) are not counted.
+ */
+export function tallyBlame(hunks, blame, exclude, into = { changed: {}, neighbour: {} }) {
+  for (const h of hunks) {
+    const [kind, from, to] = h.count > 0 ? ['changed', h.start, h.start + h.count - 1] : ['neighbour', Math.max(1, h.start), h.start + 1];
+    for (let n = from; n <= to; n++) {
+      const b = blame.get(n);
+      if (!b || TRIVIAL.test(b.text) || exclude.has(b.hash)) continue;
+      into[kind][b.hash] = (into[kind][b.hash] ?? 0) + 1;
+    }
+  }
+  return into;
+}
+
+/** The commit that wrote most of the lines the fix changed; the neighbouring lines only when no changed line counts. */
+export function pickOrigin(tally) {
+  for (const method of ['changed', 'neighbour']) {
+    const top = Object.entries(tally[method] ?? {}).sort((a, b) => b[1] - a[1])[0];
+    if (top) return { hash: top[0], lines: top[1], method };
+  }
+  return null;
+}
+
+/** Days between two ISO dates (whole days, never negative). */
+const daysBetween = (from, to) => Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / DAY));
+const median = (xs) => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : Math.round((s[s.length / 2 - 1] + s[s.length / 2]) / 2)) : null;
+};
+
+/**
+ * Where each fixed bug came from: `git blame` of the lines its fix changed, in the code just before the fix. The
+ * commit that wrote most of them is the origin; its ticket says which change brought the bug in. Blame of a fix never
+ * changes, so the tallies are cached per bug and fix commits (insights/origins.json).
+ * The author of the origin is only kept with insights.showBugOrigin: true.
+ */
+export function bugOrigins({ repoDir, stateDir, insights, commits, project, aliases = {}, showNames = false }) {
+  const git = gitIn(repoDir);
+  const keyRe = new RegExp(`\\b${project}-\\d+\\b`);
+  const byShort = new Map(commits.map((c) => [c.hash.slice(0, 7), c]));
+  const byFull = new Map(commits.map((c) => [c.hash, c]));
+  const ticketOf = new Map(insights.tickets.map((t) => [t.key, t]));
+  const people = personNames(commits, aliases);
+  const cacheFile = join(stateDir, 'insights', 'origins.json');
+  const cache = readJson(cacheFile, {});
+  const out = [];
+  const untraced = [];
+  for (const t of insights.tickets) {
+    if (!/bug/i.test(t.type ?? '') || !t.commits.length || isOpen(t)) continue;
+    const fixes = t.commits.map((h) => byShort.get(h)).filter(Boolean).sort((a, b) => a.date.localeCompare(b.date));
+    const sig = fixes.map((c) => c.hash).join(',');
+    if (cache[t.key]?.sig !== sig) {
+      const exclude = new Set(fixes.map((c) => c.hash));
+      const tally = { changed: {}, neighbour: {} };
+      for (const c of fixes) {
+        const hunks = parseHunks(git(['show', '-U0', '--format=', '--no-color', '--no-renames', c.hash, '--', ...APP_CODE]));
+        for (const [path, hs] of hunks) tallyBlame(hs, parseBlame(git(['blame', '-l', '-s', '-w', '--root', `${c.hash}^`, '--', path])), exclude, tally);
+      }
+      cache[t.key] = { sig, tally };
+    }
+    const pick = pickOrigin(cache[t.key].tally);
+    const fix = fixes[0];
+    if (!pick || !fix) {
+      untraced.push(t.key);
+      continue;
+    }
+    const oc = byFull.get(pick.hash) ?? (() => {
+      const [date, author, subject] = git(['show', '-s', '--format=%aI%x1f%an%x1f%s', pick.hash]).trim().split('\x1f');
+      return date ? { hash: pick.hash, date, author, subject, agent: AGENT_RE.test(author) } : null;
+    })();
+    if (!oc) {
+      untraced.push(t.key);
+      continue;
+    }
+    const originKey = oc.subject.match(keyRe)?.[0] ?? null;
+    const ot = originKey ? ticketOf.get(originKey) : null;
+    out.push({
+      key: t.key,
+      priority: t.priority,
+      component: t.components[0] ?? null,
+      fix: fix.hash.slice(0, 7),
+      fixDate: fix.date,
+      origin: {
+        hash: oc.hash.slice(0, 7),
+        date: oc.date,
+        subject: oc.subject,
+        ticket: originKey,
+        type: ot?.type ?? null,
+        summary: ot?.summary ?? null,
+        agent: Boolean(oc.agent),
+        ...(showNames && !oc.agent ? { author: people.get(personKey(aliases[oc.author] ?? oc.author)) ?? oc.author } : {}),
+      },
+      // From the change that brought the bug in to its fix (git dates, the reliable ones in the demo).
+      daysInCode: daysBetween(oc.date, fix.date),
+      method: pick.method,
+      lines: pick.lines,
+    });
+  }
+  try {
+    mkdirSync(join(stateDir, 'insights'), { recursive: true });
+    writeFileSync(cacheFile, JSON.stringify(cache));
+  } catch {
+    /* no cache: computed again next time */
+  }
+  return { bugs: out, untraced, ...originSummary(out) };
+}
+
+/** Which changes brought in the most bugs, how many bugs came from another bug's fix, how long bugs stay in the code. */
+export function originSummary(origins) {
+  const groups = new Map();
+  for (const o of origins) {
+    const id = o.origin.ticket ?? `commit ${o.origin.hash}`;
+    if (!groups.has(id)) groups.set(id, { ticket: o.origin.ticket, hash: o.origin.hash, type: o.origin.type, summary: o.origin.summary ?? o.origin.subject, bugs: [] });
+    groups.get(id).bugs.push(o.key);
+  }
+  return {
+    medianDaysInCode: median(origins.map((o) => o.daysInCode)),
+    fromFixes: origins.filter((o) => /bug/i.test(o.origin.type ?? '')).map((o) => o.key),
+    fromAgent: origins.filter((o) => o.origin.agent).map((o) => o.key),
+    // Changes without a ticket (e.g. the first skeleton) after the tickets.
+    byChange: [...groups.values()].sort((a, b) => b.bugs.length - a.bugs.length || Number(!a.ticket) - Number(!b.ticket) || String(a.ticket).localeCompare(String(b.ticket), undefined, { numeric: true })),
+  };
+}
+
+/** Lines that carry the code of a file: no blanks, lone braces, comments, imports or package lines (they differ per app). */
+export function significantLines(text) {
+  return String(text)
+    .split('\n')
+    .map((l) => l.trim().replace(/\s+/g, ' '))
+    .filter((l) => l && !TRIVIAL.test(l) && !/^(import|package) /.test(l) && !/^(\/\/|\/\*|\*)/.test(l));
+}
+
+/** Share of distinct lines two files have in common (0..1). */
+export function similarity(a, b) {
+  const A = new Set(a);
+  const B = new Set(b);
+  let both = 0;
+  for (const x of A) if (B.has(x)) both++;
+  return both / (A.size + B.size - both || 1);
+}
+
+/** For each file here, its most similar file of the same kind in the other project (at least `min` alike, `minLines` long). */
+export function matchSharedFiles(mine, theirs, { min = 0.6, minLines = 12 } = {}) {
+  const ext = (p) => p.match(/(\.component\.html|\.[a-z]+)$/)?.[1] ?? '';
+  const out = [];
+  for (const [path, lines] of mine) {
+    if (new Set(lines).size < minLines) continue;
+    let best = null;
+    for (const [peerPath, peerLines] of theirs) {
+      if (ext(peerPath) !== ext(path) || new Set(peerLines).size < minLines) continue;
+      const s = similarity(lines, peerLines);
+      if (s >= min && (!best || s > best.s)) best = { peerPath, s, identical: lines.join('\n') === peerLines.join('\n') };
+    }
+    if (best) out.push({ path, peerPath: best.peerPath, similarity: Math.round(best.s * 100), identical: best.identical, lines: lines.length });
+  }
+  return out;
+}
+
+/** Contents of files on origin/main in one `git cat-file --batch` call. */
+function readFiles(repoDir, paths) {
+  const out = new Map();
+  if (!paths.length) return out;
+  let buf;
+  try {
+    buf = execFileSync('git', ['cat-file', '--batch'], { cwd: repoDir, input: paths.map((p) => `origin/main:${p}`).join('\n') + '\n', maxBuffer: 256 * 1024 * 1024, stdio: ['pipe', 'pipe', 'ignore'] });
+  } catch {
+    return out;
+  }
+  let i = 0;
+  for (const path of paths) {
+    const end = buf.indexOf(10, i);
+    if (end < 0) break;
+    const header = buf.toString('utf8', i, end);
+    if (/ missing$/.test(header)) {
+      i = end + 1;
+      continue;
+    }
+    const size = Number(header.split(' ')[2]);
+    out.set(path, buf.toString('utf8', end + 1, end + 1 + size));
+    i = end + 1 + size + 1;
+  }
+  return out;
+}
+
+const appFiles = (repoDir) =>
+  gitIn(repoDir)(['ls-tree', '-r', '--name-only', 'origin/main', '--', ...APP_CODE]).split('\n').filter((p) => /\.(java|ts|html)$/.test(p) && !/\.spec\.ts$/.test(p));
+
+/** path → Map(ticket key → its commits that changed the path), for the tickets of `project` in a repository's history. */
+function pathTickets(repoDir, project) {
+  const keyRe = new RegExp(`\\b${project}-\\d+\\b`, 'g');
+  const out = new Map();
+  const log = gitIn(repoDir)(['log', 'origin/main', '--no-merges', '--name-only', '--format=%x1e%H%x1f%s', '--', ...APP_CODE]);
+  for (const block of log.split('\x1e').map((b) => b.trim()).filter(Boolean)) {
+    const [head, ...paths] = block.split('\n');
+    const [hash, subject] = head.split('\x1f');
+    for (const p of paths.filter(Boolean)) {
+      if (!out.has(p)) out.set(p, new Map());
+      for (const k of subject.match(keyRe) ?? []) out.get(p).set(k, [...(out.get(p).get(k) ?? []), hash]);
+    }
+  }
+  return out;
+}
+
+/** The significant lines a ticket's commits added to one file. */
+function addedLines(repoDir, hashes, path) {
+  const git = gitIn(repoDir);
+  const added = hashes.flatMap((h) => git(['show', '-U0', '--format=', '--no-color', h, '--', path]).split('\n').filter((l) => l.startsWith('+') && !l.startsWith('+++')).map((l) => l.slice(1)));
+  return significantLines(added.join('\n'));
+}
+
+/**
+ * Whether the other copy has a ticket's change: at least half of the lines the change added to this copy are in the
+ * other one. null when the change added nothing to compare (it only deleted lines).
+ */
+export function changeIn(added, otherLines) {
+  if (!added.length) return null;
+  const other = new Set(otherLines);
+  return added.filter((l) => other.has(l)).length / added.length >= 0.5;
+}
+
+/**
+ * Code this project shares with the other projects (copied, then maybe changed): candidates for a shared library, and
+ * places where a bug fixed in one copy may still be in the other (compared by content: the lines the fix added).
+ * `bugKeys`: this project's fixed bugs. The comparison is cached by the heads of the repositories (insights/shared.json).
+ */
+export async function sharedCode({ repoDir, stateDir, project, peers = [], bugKeys = new Set(), jira = null }) {
+  const head = (dir) => gitIn(dir)(['rev-parse', 'origin/main']).trim();
+  const live = peers.filter((p) => existsSync(p.repoDir) && head(p.repoDir));
+  const sig = ['v2', head(repoDir), ...live.map((p) => `${p.key}:${head(p.repoDir)}`)].join(',');
+  const cacheFile = join(stateDir, 'insights', 'shared.json');
+  let cached = readJson(cacheFile, null);
+  if (cached?.sig !== sig) {
+    const read = (dir) => {
+      const files = readFiles(dir, appFiles(dir));
+      return new Map([...files].map(([p, text]) => [p, significantLines(text)]));
+    };
+    const mine = read(repoDir);
+    const myTickets = pathTickets(repoDir, project);
+    const pairs = [];
+    for (const peer of live) {
+      const theirs = read(peer.repoDir);
+      const theirTickets = pathTickets(peer.repoDir, peer.key);
+      for (const m of matchSharedFiles(mine, theirs)) {
+        // Every ticket that changed one copy, and whether the other copy has that change (same lines).
+        const here = [...(myTickets.get(m.path) ?? new Map())].map(([key, hashes]) => ({ key, inOther: m.identical || changeIn(addedLines(repoDir, hashes, m.path), theirs.get(m.peerPath)) }));
+        const there = [...(theirTickets.get(m.peerPath) ?? new Map())].map(([key, hashes]) => ({ key, inOther: m.identical || changeIn(addedLines(peer.repoDir, hashes, m.peerPath), mine.get(m.path)) }));
+        pairs.push({ ...m, peer: peer.key, peerName: peer.name, here, there });
+      }
+    }
+    cached = { sig, pairs };
+    try {
+      mkdirSync(join(stateDir, 'insights'), { recursive: true });
+      writeFileSync(cacheFile, JSON.stringify(cached));
+    } catch {
+      /* no cache */
+    }
+  }
+  // Which tickets of the other projects that changed a copy were bugs (one Jira search for all of them).
+  const peerKeys = [...new Set(cached.pairs.flatMap((p) => p.there.map((t) => t.key)))];
+  let peerBugKeys = new Set();
+  if (jira && peerKeys.length) {
+    try {
+      peerBugKeys = new Set((await jira.searchAll(`key in (${peerKeys.join(',')}) AND issuetype = Bug`, peerKeys.length)).map((t) => t.key));
+    } catch {
+      /* without Jira the other projects' bugs are not known */
+    }
+  }
+  const pairs = cached.pairs.map(({ here, there, ...p }) => {
+    const bugsHere = here.filter((t) => bugKeys.has(t.key));
+    const bugsThere = there.filter((t) => peerBugKeys.has(t.key));
+    return {
+      ...p,
+      bugsHere: bugsHere.map((t) => t.key),
+      bugsThere: bugsThere.map((t) => t.key),
+      // A bug fixed in one copy whose fix is not in the other: the other copy may still have the bug.
+      checkThere: bugsHere.filter((t) => t.inOther === false).map((t) => t.key),
+      checkHere: bugsThere.filter((t) => t.inOther === false).map((t) => t.key),
+    };
+  });
+  const open = (p) => p.checkHere.length + p.checkThere.length;
+  pairs.sort((a, b) => open(b) - open(a) || b.bugsHere.length + b.bugsThere.length - (a.bugsHere.length + a.bugsThere.length) || b.similarity * b.lines - a.similarity * a.lines);
+  return {
+    pairs,
+    files: new Set(pairs.map((p) => p.path)).size,
+    identical: pairs.filter((p) => p.identical).length,
+    toCheck: pairs.filter((p) => open(p)).length,
+    peers: live.map((p) => p.key),
+  };
+}
+
+/** Collects git, Jira and the saved analyses, and aggregates them. `peers`: the other projects, for the shared code. */
+export async function buildInsights({ repoDir, stateDir, cfg, jira, now = new Date(), peers = [] }) {
   const o = cfg.insights ?? {};
   execFileSync('git', ['fetch', '-q', 'origin', 'main'], { cwd: repoDir, stdio: 'ignore' });
   // The last field: co-authors on one line (a squash merge of the agent's PR has the agent as co-author).
   const log = execFileSync('git', ['log', 'origin/main', '--no-merges', '--numstat', '--format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%(trailers:key=Co-authored-by,valueonly,separator=%x3b)'], { cwd: repoDir, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const commits = parseGitLog(log);
   const tickets = await jira.searchAll(`project = ${cfg.project} ORDER BY key ASC`, o.maxTickets ?? 500);
-  return aggregate({ commits: parseGitLog(log), tickets, analyses: savedAnalyses(stateDir), rules: o.components ?? [], project: cfg.project, now, months: o.months ?? 10, churnDays: o.churnDays ?? 90, aliases: o.authorAliases ?? {}, code: codeFacts(repoDir) });
+  const aliases = o.authorAliases ?? {};
+  const data = aggregate({ commits, tickets, analyses: savedAnalyses(stateDir), rules: o.components ?? [], project: cfg.project, now, months: o.months ?? 10, churnDays: o.churnDays ?? 90, aliases, code: codeFacts(repoDir) });
+  data.origins = bugOrigins({ repoDir, stateDir, insights: data, commits, project: cfg.project, aliases, showNames: o.showBugOrigin === true });
+  data.origins.showNames = o.showBugOrigin === true;
+  const bugKeys = new Set(data.tickets.filter((t) => /bug/i.test(t.type ?? '') && !isOpen(t)).map((t) => t.key));
+  data.shared = await sharedCode({ repoDir, stateDir, project: cfg.project, peers, bugKeys, jira });
+  return data;
 }
 
 // ---------------------------------------------------------------- recommendations (one headless run)

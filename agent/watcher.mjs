@@ -231,7 +231,8 @@ let asking = false;
 async function insightsCached(p, refresh = false) {
   const hit = insightsCache.get(p.key);
   if (!refresh && hit && Date.now() - hit.at < 120_000) return hit.data;
-  const data = await buildInsights({ repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira });
+  const peers = all.projects.filter((x) => x.key !== p.key).map((x) => ({ key: x.key, name: x.name, repoDir: x.repoDir }));
+  const data = await buildInsights({ repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira, peers });
   insightsCache.set(p.key, { at: Date.now(), data });
   return data;
 }

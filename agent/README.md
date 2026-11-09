@@ -112,6 +112,7 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 | `reviewTimeoutMinutes` | the AI review is stopped after this long (default 8) |
 | `askTimeoutSeconds`, `askMaxTurns` | limits of one Ask question (defaults 120 s, 16 turns) |
 | `insights.months`, `insights.churnDays`, `insights.components` | hotspot map: months shown, churn window, path rules per component |
+| `insights.authorAliases`, `insights.showBugOrigin` | Insights: other spellings of a person's name → their name; show the author of the change that brought a bug in (default off) |
 | `labels` | the agent's label names |
 | `mail.on` | which events send an update email (see [Update emails](#update-emails)) |
 | `claude.command`, `claude.maxTurns`, `claude.model` | how the headless agent is started |
@@ -233,6 +234,22 @@ Components are configured in `agent.config.json` → `insights.components` (firs
 **✦ Write recommendations (AI)** (or `node agent/insights.mjs --recommend`) runs one headless call, without any tools, on the facts of the top hotspots. A recommendation that does not cite a known ticket or commit is dropped. The result is cached in `state/insights/recommendations.json` and marked "data changed since" when the facts change.
 
 The map shows components, not people: authors appear only as context.
+
+The tab also shows, per project (all plain code, no AI run):
+
+| Section | What it is built from |
+|---|---|
+| KPIs | bugs and High/Highest bugs (Jira priority weights the hotspot score: Highest 4, High 3, Medium 2, Low 1), recurring problems, unit-tested services/controllers and screens opened by browser tests, commits (the agent's apart) |
+| Drill-down | click a component or a heatmap cell: its tickets with type, priority, status and commits |
+| Risk files | application files on `origin/main` scored by bug fixes, changes, size and their test (own unit test, a test in the package, a browser test that opens the screen, none) |
+| Recurring problems | a later bug that repeats an earlier one: the agent's analysis says so, a Jira link (also to another project of the suite), or both fixes changed the same file |
+| Where bugs come from | `git blame` of the lines each fix changed, in the code just before the fix (for a fix that only added lines: the lines around the addition). The commit that wrote most of them brought the bug in; its ticket is the change to look at. Shows the changes that brought in more than one bug, bugs brought in by another bug's fix, and the days each bug stayed in the code. Cached per fix in `insights/origins.json` |
+| Code shared with other projects | files of this app that are copies (60%+ of the significant lines alike; imports and package names left out) of files in the other projects, the bugs fixed in each copy, and **check** when the lines a bug fix added to one copy are missing in the other. Cached by the repositories' heads in `insights/shared.json` |
+| Tickets | type × priority, still open by priority, per component, per environment label, opened per month (from git when the Jira dates were seeded in one go) |
+| Knowledge map | each component's people and their share of the commits; bus factor = people with at least 25% (the agent is not a person) |
+| People | commits, bugs fixed, stories, main areas and last commit per person, sortable. One name per person whatever the spelling; `insights.authorAliases` maps the rest |
+
+Who wrote the change that brought a bug in is not shown by default: the table names the change (ticket and commit), not the person. Set `insights.showBugOrigin: true` to add the author column.
 
 ## Ask the knowledge base
 
