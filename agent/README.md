@@ -283,18 +283,19 @@ One question at a time (`409` otherwise); `askTimeoutSeconds` (default 120) and 
 
 ## Guided tour
 
-**▶ Tour** in the dashboard header presents the whole tool by itself, in English, in about ten minutes. A cursor moves and clicks, the page scrolls and puts a spotlight on each part, explainer slides open over the page, and a voice explains it all while captions show the text. The caption bar names the chapter:
+**▶ Tour** in the dashboard header presents the whole tool by itself, in English, in about fifteen to eighteen minutes, depending on the voice and the speed (captions only at 1×: 18 minutes). A cursor moves and clicks, the page scrolls and puts a spotlight on each part, explainer slides open over the page, and a voice explains it all while captions show the text. The caption bar names the chapter:
 
 | Chapter | What it shows |
 |---|---|
 | The problem | a slide: what an engineer has to do by hand for every ticket, who suffers, the goal |
 | Behind the scenes | an animated flow: collect (plain code) → analyze (Claude, read-only) → prove and fix (test, fix, re-checks, draft PR, AI review) → learn (knowledge base, Insights, Ask) |
-| The AI | a slide: which models do what (Sonnet for the analysis, Opus for the fix, review and Ask), code versus model, guardrails, why it is not trained, cost |
-| The dashboard | the live light, the four apps, the counters |
-| Case 1 | a frontend bug end to end: steps, cause, files, owner, Teams message, drafts, failing browser test, fix, draft PR, AI review |
-| Case 2 | a backend bug whose cause is in another app: the linked app's change it cites, where the fix belongs, a JUnit test, the PR |
-| Case 3 | a duplicate: the agent flags it and makes no second fix |
-| Insights | the suite page, one app's numbers, a heatmap cell clicked open, hotspots, the AI review, suggested tickets, risk files, bug origins, the knowledge map |
+| The AI | a slide: which models do what (Sonnet for the analysis, Opus for the fix, review and Ask), code versus model, guardrails, why it is not trained, cost, patient data |
+| At work | a slide: the skills in GitHub Copilot (same `SKILL.md`; not tried inside Copilot yet), git and SVN detection, documentation on SVN (commit, branch or patch; asks first), what is git only (the automatic fix, pull requests, Insights) |
+| The dashboard | the live light and the four apps |
+| Case 1 | a frontend bug end to end, with what happens behind each step: the worktree and the warmed dev server, the facts script, Claude's reading, the validated result, cause, owner, Teams message, drafts, the Playwright test the watcher sees fail, the fix and the watcher's own checks, push, draft PR and Jira attachments, the read-only AI review |
+| Case 2 | a backend bug whose cause is in another app: read-only copies of the linked apps, the change it cites, where the fix belongs, the JUnit test (and why the tests were green before), the fix, the review |
+| Case 3 | a duplicate: the agent finds the same open report and makes no second fix |
+| Insights | every part of the page with its numbers: the suite, how the apps call each other, code copied between apps; one app's KPIs and test coverage, the heatmap (a cell clicked open), hotspots, the AI review, suggested tickets, risk files, recurring problems, where bugs come from, shared code, ticket stats, the trend, the knowledge map, people |
 | Ask | a question typed and answered with checked sources, and one that is "not in the knowledge base" |
 | How it was built | a slide: the ideas, how it is tested and scored, results, what comes next |
 

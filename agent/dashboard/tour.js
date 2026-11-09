@@ -215,16 +215,22 @@
   }
   /** Speaks a step sentence by sentence (long utterances get cut off in Chrome); captions-only: waits a reading time. */
   async function say(text, my) {
-    if (muted()) {
-      const words = text.split(/\s+/).length;
-      return until(() => false, (words / 2.6) * 1000 / rate + 900, my);
+    // data-speaking on the caption bar: when the tour talks (lets a test measure the silences between steps).
+    if (bar) bar.dataset.speaking = '1';
+    try {
+      if (muted()) {
+        const words = text.split(/\s+/).length;
+        return await until(() => false, (words / 2.6) * 1000 / rate + 900, my);
+      }
+      const parts = speakable(text).match(/[^.!?]+[.!?]+["')]*|[^.!?]+$/g) ?? [text];
+      for (const p of parts) {
+        if (my !== token) return false;
+        if (p.trim()) await speakOne(p.trim());
+      }
+      return my === token;
+    } finally {
+      if (bar) bar.dataset.speaking = '0';
     }
-    const parts = speakable(text).match(/[^.!?]+[.!?]+["')]*|[^.!?]+$/g) ?? [text];
-    for (const p of parts) {
-      if (my !== token) return false;
-      if (p.trim()) await speakOne(p.trim());
-    }
-    return my === token;
   }
 
   // ------------------------------------------------------------------ replays of recorded runs
@@ -238,13 +244,15 @@
       if (my !== token) return false;
       const e = rp.events[rp.i];
       const prev = rp.events[rp.i - 1];
-      if (prev) await sleep(Math.min(1300, Math.max(110, (Date.parse(e.at) - Date.parse(prev.at)) * 0.05)));
+      // A tenth of the real pace, so the steps stream while the voice explains them.
+      if (prev) await sleep(Math.min(2200, Math.max(150, (Date.parse(e.at) - Date.parse(prev.at)) * 0.1)));
       if (my !== token) return false;
       apply({ ...e, at: new Date(Date.parse(e.at) + rp.shift).toISOString() });
       if (e.type === 'picked') tickets.get(key).expanded = true; // keep the steps visible when it is done
       rp.i++;
       render();
-      if (e.type === type) return true;
+      // `type` is an event type, or the start of a progress step's text (e.g. 'ticket.mjs').
+      if (e.type === type || (type && e.type === 'progress' && String(e.text ?? e.step ?? '').startsWith(type))) return true;
     }
     return true;
   }
@@ -338,7 +346,16 @@
         <div class="ts-card" data-r="2"><h3>Guardrails</h3><p>The analysis cannot edit files; Ask and the reviewer can only read. No MCP servers, no publishing tools.</p><p>Every cited ticket, commit and file is checked by code.</p></div>
         <div class="ts-card" data-r="2"><h3>Not trained, improved</h3><p>No fine-tuning: the model is the same for everyone. It improves through what it reads: instructions, project conventions, commit messages, the knowledge base, tests.</p><p>Each change is scored on tickets with a known answer.</p></div>
         <div class="ts-card" data-r="3"><h3>Cost</h3><p><span class="ts-big">$0.15–0.60</span> per ticket analysis</p><p><span class="ts-big">$0.10–0.40</span> per Ask question, 15–30 s</p></div>
-        <div class="ts-card" data-r="3"><h3>At work too</h3><p>The same <code>/analyze-ticket</code> skill runs on demand in Claude Code or GitHub Copilot, in git and SVN projects.</p></div>
+        <div class="ts-card" data-r="3"><h3>Patient data</h3><p>Tickets may contain personal and health data. Nothing goes to an AI service outside the approved tools; redaction comes before company tickets.</p></div>
+      </div>`,
+    work: () => `
+      <div class="kick">At work</div>
+      <h1>GitHub Copilot, git and SVN</h1>
+      <p class="lead">The same skills on demand in the editor; the autonomous agent runs on Claude Code.</p>
+      <div class="ts-grid">
+        <div class="ts-card" data-r="1"><h3>GitHub Copilot</h3><p>The two skills, <code>/analyze-ticket</code> and <code>/document-ticket</code>, use the same <code>SKILL.md</code> format: VS Code agent mode and the Copilot CLI read them (<code>node install.mjs</code>).</p><p>Copilot runs the same Node scripts in the terminal, with the model picked there, Claude included.</p><p><b>Status:</b> not tried inside Copilot yet; the test plan is ready.</p></div>
+        <div class="ts-card" data-r="2"><h3>git and SVN</h3><p>Detected automatically. git: <code>git log</code>, <code>git show</code>. SVN: <code>svn log --search</code>, <code>svn diff -c</code>, logins mapped to names.</p><p>Tested on an SVN copy of MediAgenda: the same components, people and related tickets as on git.</p></div>
+        <div class="ts-card" data-r="3"><h3>Documentation on SVN</h3><p><code>/document-ticket</code> can commit, make a branch (<code>svn copy</code>) or write a patch file. An SVN commit goes straight to the server, so it always asks first. Patch mode is tested.</p><p><b>Git only for now:</b> the automatic fix, pull requests and Insights.</p></div>
       </div>`,
     built: () => `
       <div class="kick">How it was built</div>
@@ -373,6 +390,8 @@
 
   // ------------------------------------------------------------------ the script
   let asks = []; // recorded Ask answers for the tour
+  let suite = null; // the suite insights, fetched at the start (it also warms the server's cache)
+  let preIns = null; // the first case's project insights, fetched at the start for the same reason
   /** The steps, built from what the dashboard has now: real tickets (live or recorded runs), a real project, real numbers. */
   function buildSteps() {
     const T = (k) => tickets.get(k);
@@ -404,34 +423,64 @@
     const [askFound, askMissing] = [asks.find((a) => a.found), asks.find((a) => !a.found)];
     const cents = (usd) => `${Math.round((usd ?? 0) * 100)} cents`;
 
-    /** The steps of one ticket case; `intro` is what the first step says about it. */
+    // Facts of a run, from its recorded events (the voice may describe a step before the replay has shown it).
+    const evText = (k, type, re = null) => evs(k).filter((e) => e.type === type).map((e) => String(e.text ?? '')).find((t) => !re || re.test(t)) ?? '';
+    const reviewOf = (k) => (T(k)?.review?.stage === 'done' ? T(k).review : firstOf(k, 'reviewed')?.review ?? null);
+    const findings = (k) => Number(evText(k, 'reviewed').match(/(\d+) finding/)?.[1] ?? reviewOf(k)?.findings?.length ?? 0);
+    const attachments = (k) => Number(evText(k, 'commented', /attachments/).match(/(\d+) attachments/)?.[1] ?? 0);
+    const warmSecs = (k) => Number(evText(k, 'warmed').match(/ready in (\d+) s/)?.[1] ?? 0);
+    const stepText = (e) => String(e?.text ?? e?.step ?? '');
+    const linkedApps = (k) => {
+      const e = evs(k).find((x) => x.type === 'progress' && /^linked projects:/.test(stepText(x)));
+      return e ? stepText(e).replace(/^linked projects:\s*/, '').replace(/\s*\([A-Z]+\)/g, '').split(/,\s*/).filter(Boolean) : [];
+    };
+    const readFile = (k, re) => evs(k).some((e) => e.type === 'progress' && re.test(stepText(e)));
+    /** "e2e 11 passed / 0 failed · build ok · backend not changed" in words. */
+    const checksText = (k) => {
+      const words = evText(k, 'verified').split(' · ').map((p) => p.trim()
+        .replace(/^e2e (\d+) passed \/ 0 failed$/, 'all $1 browser tests pass')
+        .replace(/^e2e not needed$/, '')
+        .replace(/^build ok$/, 'the Angular build is fine')
+        .replace(/^build skipped$/, '')
+        .replace(/^backend not changed$/, 'the backend did not change')
+        .replace(/^backend (\d+) tests ok$/, 'all $1 backend tests pass')).filter(Boolean);
+      return words.length ? list(words) : 'every test and the build pass';
+    };
+    /** ", and post(s) the reproduction … to Jira" — `verb`: 'post' after "does it", 'posts' after "it pushes". */
+    const posted = (k, verb = 'posts') => (attachments(k) ? ` and ${verb} the reproduction and the fix to Jira, with ${plural(attachments(k), 'attachment')}: screenshots and the recorded calls` : '');
+
+    /** Case 1: one ticket end to end, from Jira to a reviewed pull request. */
     const caseOne = (k) => [
       { ch: 'Case 1', when: () => k && rps.has(k), go: async (my) => { await toTickets(k, my); await playTo(k, 'picked', my); }, target: () => ticketEl(k)?.querySelector('.t-head'),
         say: () => `Case one: someone opens a ticket in Jira for ${appWithRole(k).replace(/,$/, '')}: ${titleOf(k)}.${recorded(k)}` },
+      { ch: 'Case 1', when: () => k && rps.has(k), play: playUntil(k, 'ticket.mjs'), target: () => ticketEl(k)?.querySelector('.steps') ?? ticketEl(k),
+        say: () => `Nobody starts it. Within seconds the watcher picks it up and labels it in Jira, so nobody starts the same work twice. It gives the agent its own copy of the code: a git worktree, on a branch named ${k}.${did(k, 'warmed') ? ' And in parallel it starts a development server of the app, so a test can run later without waiting.' : ''}` },
       { ch: 'Case 1', when: () => k && rps.has(k), play: playUntil(k, 'analyzed'), target: () => ticketEl(k)?.querySelector('.steps') ?? ticketEl(k),
-        say: "Nobody starts it. The agent picks the ticket up, reads it, searches for related tickets, then searches the code and its history. Every step shows up here, live." },
+        say: "Now the analysis runs, headless. First the analyze-ticket skill runs a plain script that collects the facts: the ticket with its comments and changelog, related tickets from three Jira searches, the commits that mention them, the code that matches the ticket's words, and who worked where. Claude reads that bundle, then opens the suspect files itself and searches the code, as you see in the steps." },
       { ch: 'Case 1', when: () => k && !rps.has(k), go: async (my) => { await toTickets(k, my); T(k).expanded = true; render(); }, target: () => ticketEl(k)?.querySelector('.t-head'),
         say: () => `Case one, a real ticket: ${k}. ${firstSentence(titleOf(k), 160)}` },
       { ch: 'Case 1', when: () => k && !rps.has(k) && T(k)?.steps?.length, target: () => ticketEl(k)?.querySelector('.steps'),
-        say: () => `These are the ${T(k).steps.length} steps the agent took, with the second each one happened: it read the ticket, searched for related tickets, then searched the code and its history.${T(k).totalMs ? ` The whole run took ${duration(Math.round(T(k).totalMs / 1000))}.` : ''}` },
+        say: () => `These are the ${T(k).steps.length} steps the agent took, with the second each one happened. First a plain script collected the facts: the ticket, related tickets, commits, code and people. Then Claude read them, and opened the suspect files itself.${T(k).totalMs ? ` The whole run took ${duration(Math.round(T(k).totalMs / 1000))}.` : ''}` },
       { ch: 'Case 1', when: () => R(k), target: () => rowOf(k, 'Likely cause'),
-        say: () => `${did(k, 'picked') && did(k, 'analyzed') ? `In ${duration(secs(k, 'picked', 'analyzed'))}, it` : 'It'} explains the likely cause, with its confidence, and points to the exact files and lines. Here, with ${R(k).confidence} confidence: ${firstSentence(noParens(R(k).likelyCause))}` },
+        say: () => `${did(k, 'picked') && did(k, 'analyzed') ? `After ${duration(secs(k, 'picked', 'analyzed'))}, the result is in: a structured answer the watcher validates before anything is posted. It` : 'It'} explains the likely cause, with its confidence, and points to the exact files and lines. Here, with ${R(k).confidence} confidence: ${firstSentence(noParens(R(k).likelyCause))}` },
       { ch: 'Case 1', when: () => R(k)?.owner?.name, target: () => rowOf(k, 'Owner'),
-        say: () => `It says who should handle it: ${R(k).owner.name}. ${firstSentence(noParens(R(k).owner.why), 180)} All of this is already posted as a comment in Jira.` },
+        say: () => `It says who should handle it: ${R(k).owner.name}. ${firstSentence(noParens(R(k).owner.why), 180)} Below are the next steps, and all of this is already posted as an internal comment in Jira.` },
       { ch: 'Case 1', when: () => did(k, 'notified'), go: (my) => moveTo($('#teams'), my, { x: 0.5, y: 0.3 }), target: () => $('#teams')?.closest('aside'),
-        say: () => `At the same moment, ${R(k)?.owner?.name ?? 'the owner'} gets a handoff message in Microsoft Teams, simulated here. What the agent may do alone is a policy: anything for the customer, like a reply to the reporter, waits below as a draft until a person approves it.` },
+        say: () => `At the same moment, ${R(k)?.owner?.name ?? 'the owner'} gets a handoff message in Microsoft Teams, simulated here, with the context and a link. What the agent may do alone is a policy: anything for the customer, like a reply to the reporter or an assignment, waits below as a draft until a person approves it.` },
       { ch: 'Case 1', when: () => did(k, 'reproduced'), play: playUntil(k, 'reproduced'), go: (my) => (rps.has(k) ? moveTo(ticketEl(k), my, { x: 0.3, y: 0.8 }) : true), target: () => boxOf(k, '🛠') ?? ticketEl(k),
-        say: () => `Then it goes further. It writes a ${side(k) === 'backend' ? 'backend test' : 'browser test'} from the steps in the ticket and runs it against the real app. The watcher checks that the test fails on the current code: the bug is reproduced, with proof.` },
+        say: () => (side(k) === 'backend'
+          ? 'Then it goes further. In the same worktree it reads the service and its tests, writes a backend test from the ticket, and runs it with Maven. The watcher runs it again on its own: the test must fail on the current code. Here it does: the bug is reproduced, with proof.'
+          : `Then it goes further.${warmSecs(k) ? ` The development server is ready by now: it took ${warmSecs(k)} seconds to start, while the analysis ran.` : ''} The agent reads the test harness: the mocked backend, the page helpers, and an earlier test as an example. It writes a Playwright browser test from the steps in the ticket, and runs it against the real app. The watcher runs it again on its own: the test must fail on the current code. Here it does: the bug is reproduced, with proof.`) },
       { ch: 'Case 1', when: () => did(k, 'fix-proposed'), play: playUntil(k, 'fix-proposed'), target: () => boxOf(k, '🛠') ?? ticketEl(k),
-        say: "Now it fixes the code. Then the watcher, not the agent, runs every check again on its own: the tests, the build, the backend. Only with real evidence does it open a draft pull request.",
+        say: () => `With the bug proven, the agent changes the code, the smallest change, and runs the tests itself. Then the watcher checks independently, without trusting the agent: ${checksText(k)}. Only then does it push the branch, open a draft pull request on GitHub,${posted(k, 'post') || ' and post it to Jira'}.`,
         after: (my) => moveTo(ticketEl(k)?.querySelector('.pr-link'), my) },
       { ch: 'Case 1', when: () => T(k)?.fix?.before && T(k)?.fix?.after, target: () => ticketEl(k)?.querySelector('.shots'),
         say: "The screenshots before and after the fix are the evidence: the bug in the real app, and the same screen fixed." },
-      { ch: 'Case 1', when: () => did(k, 'reviewed'), go: playUntil(k, 'reviewed'), target: () => boxOf(k, '🧐'),
-        say: () => `A second AI then reviews the pull request, like a colleague would. It rated the risk ${T(k)?.review?.risk ?? 'low'}, and checked that the test really covers the bug. Merging is always a human decision.` },
-      { ch: 'Case 1', when: () => did(k, 'documented'), go: playUntil(k, 'documented'), target: () => boxOf(k, '📚'),
-        say: "And when the ticket is closed in Jira, the agent writes what was learned into the project's knowledge base: the cause, the fix and how to check it." },
-      { ch: 'Case 1', when: () => rps.has(k) && did(k, 'fix-proposed'), go: playUntil(k, ''), target: () => ticketEl(k)?.querySelector('.t-head'),
+      { ch: 'Case 1', when: () => did(k, 'reviewed'), play: playUntil(k, 'reviewed'), target: () => boxOf(k, '🧐') ?? boxOf(k, '🛠') ?? ticketEl(k),
+        say: () => `Right after, a second agent reviews the pull request, like a colleague would. It runs in its own read-only copy, without a shell: it reads the changed code and searches for every place that uses it. Its review goes to GitHub: risk ${reviewOf(k)?.risk ?? 'low'}, ${plural(findings(k), 'finding')}, and it checks that the test really covers the bug. Merging stays a human decision.` },
+      { ch: 'Case 1', when: () => did(k, 'documented'), play: playUntil(k, 'documented'), target: () => boxOf(k, '📚') ?? ticketEl(k),
+        say: "And when the ticket is closed in Jira, the agent writes what was learned into the project's knowledge base, as another pull request: the cause, the fix and how to check it." },
+      { ch: 'Case 1', when: () => rps.has(k) && did(k, 'fix-proposed'), play: playUntil(k, ''), target: () => ticketEl(k)?.querySelector('.t-head'),
         say: () => `So: from a ticket in Jira to a tested${did(k, 'reviewed') ? ', reviewed' : ''} pull request in ${duration(secs(k, 'picked', did(k, 'reviewed') ? 'reviewed' : 'fix-proposed'))}, and nobody had to start it.` },
     ];
 
@@ -439,39 +488,49 @@
     // From the recorded event too: the voice may describe it before the replay has applied it to the card.
     const crossEv = (k) => firstOf(k, 'cross-project');
     const crossApp = (k) => cross(k)?.projects?.[0] ?? crossEv(k)?.projects?.[0];
+    const crossName = (k) => projectInfo(crossApp(k)?.key)?.name ?? crossApp(k)?.key;
+
+    /** Case 2: a bug whose cause is a change in another app. */
     const caseTwo = (k) => [
       { ch: 'Case 2', when: () => k, go: async (my) => { if (k1 && T(k1)) { T(k1).expanded = false; render(); } await toTickets(k, my); await playTo(k, 'picked', my); }, target: () => ticketEl(k)?.querySelector('.t-head'),
         say: () => `Case two is harder. ${appWithRole(k)} gets a ticket: ${titleOf(k)}. This time, the trouble started in another application.${recorded(k)}` },
       { ch: 'Case 2', when: () => k, play: playUntil(k, 'analyzed'), target: () => ticketEl(k)?.querySelector('.steps') ?? ticketEl(k),
-        say: () => `The agent searches ${appName(k)}, and also the code and history of the apps it calls, in read-only copies. The four apps call each other's APIs, so a change in one can break another.` },
+        say: () => `${side(k) === 'backend' || /backend/.test(evText(k, 'workspace')) ? 'It is a backend ticket, so no development server is needed. ' : ''}${appName(k)} calls ${linkedApps(k).length ? list(linkedApps(k)) : 'other apps of the suite'}, so the run also gets a read-only copy of each of them, and their Jira projects are searched for related tickets too. The agent reads ${appName(k)}'s code, then the history of the apps it calls.` },
       { ch: 'Case 2', when: () => k && crossApp(k), target: () => rowOf(k, 'Other projects') ?? rowOf(k, 'Likely cause'),
         say: () => {
           const o = crossApp(k);
           const ev = String(o.evidence ?? '').match(/\b[A-Z][A-Z0-9_]+-\d+\b/)?.[0];
           const fixIn = cross(k)?.fixIn ?? crossEv(k)?.fixIn;
-          return `And it finds where it started: ${firstSentence(noParens(o.why))}${ev ? ` It cites the change, ${ev}, with its commit.` : ''}${fixIn ? ` And it says where the fix belongs: in ${projectInfo(fixIn)?.name ?? fixIn}.` : ''}`;
+          return `And it finds where it started: ${firstSentence(noParens(o.why))}${ev ? ` It cites the change, ${ev}, with its commit.` : ''}${fixIn ? ` It says where the fix belongs: in ${projectInfo(fixIn)?.name ?? fixIn}.` : ''}${R(k)?.owner?.name ? ` The owner is ${R(k).owner.name}.` : ''}`;
         } },
-      { ch: 'Case 2', when: () => did(k, 'fix-proposed'), play: playUntil(k, 'fix-proposed'), target: () => boxOf(k, '🛠') ?? ticketEl(k),
+      { ch: 'Case 2', when: () => did(k, 'reproduced'), play: playUntil(k, 'reproduced'), target: () => boxOf(k, '🛠') ?? ticketEl(k),
         say: () => (side(k) === 'backend'
-          ? 'Because it is a backend bug, the proof is a J Unit test, not a browser test. It fails on the current code. Then the agent fixes the code, every backend test passes again, and a draft pull request is opened.'
-          : 'Again, a test proves the bug first. Then the agent fixes the code, every test passes again, and a draft pull request is opened.') },
-      { ch: 'Case 2', when: () => did(k, 'reviewed'), go: playUntil(k, 'reviewed'), target: () => boxOf(k, '🧐'),
-        say: () => `The second AI reviewed it as well: risk ${T(k)?.review?.risk ?? 'low'}. From the ticket to the pull request: ${duration(secs(k, 'picked', 'fix-proposed'))}.` },
+          ? `To prove it, the agent reads the service, its tests${readFile(k, /Fake\w+Client/) ? ', and the fake client the tests use instead of the other app. That fake still sends the old data, which is why every test was green while production was wrong' : ''}. It writes a J Unit regression test with the real data, and Maven runs it. The watcher runs it again: it fails, as it should.`
+          : 'Again, a browser test proves the bug first; the watcher checks that it fails.') },
+      { ch: 'Case 2', when: () => did(k, 'fix-proposed'), play: playUntil(k, 'fix-proposed'), target: () => boxOf(k, '🛠') ?? ticketEl(k),
+        say: () => `Then it fixes ${appName(k)}. The watcher runs the checks again on its own: ${checksText(k)}. It pushes the branch, opens the draft pull request${posted(k) || ''}.` },
+      { ch: 'Case 2', when: () => did(k, 'reviewed'), play: playUntil(k, 'reviewed'), target: () => boxOf(k, '🧐') ?? boxOf(k, '🛠') ?? ticketEl(k),
+        say: () => `The reviewer reads the fix, the tests and the code around them: risk ${reviewOf(k)?.risk ?? 'low'}, ${plural(findings(k), 'finding')}. From the ticket to the pull request: ${duration(secs(k, 'picked', 'fix-proposed'))}, across two applications.` },
     ];
 
+    /** Case 3: a duplicate, where the right answer is no second fix. */
     const caseThree = (k) => [
       { ch: 'Case 3', when: () => k, go: async (my) => { if (k2 && T(k2)) { T(k2).expanded = false; render(); } await toTickets(k, my); await playTo(k, 'picked', my); }, target: () => ticketEl(k)?.querySelector('.t-head'),
         say: () => `Case three is about knowing when not to act. ${appWithRole(k)} gets a ticket: ${titleOf(k)}.${recorded(k)}` },
-      { ch: 'Case 3', when: () => k, play: playUntil(k, ''), target: () => ticketEl(k)?.querySelector('.steps') ?? ticketEl(k),
-        say: () => `It analyzes it the same way${crossApp(k) ? `, and traces the cause to ${projectInfo(crossApp(k).key)?.name ?? crossApp(k).key}: ${firstSentence(noParens(crossApp(k).why))}` : '.'}` },
-      { ch: 'Case 3', when: () => k && R(k)?.duplicateOf, target: () => rowOf(k, 'Duplicate?') ?? ticketEl(k),
-        say: () => `But it also notices that the same problem is already reported, as ${R(k).duplicateOf.key}, which already has a fix on the way. So it flags a possible duplicate and makes no second fix. Sometimes doing nothing is the right answer, and the card says why.` },
+      { ch: 'Case 3', when: () => k, play: playUntil(k, 'analyzed'), target: () => ticketEl(k)?.querySelector('.steps') ?? ticketEl(k),
+        say: () => `Same flow: ${linkedApps(k).length ? `read-only copies of ${list(linkedApps(k))}, ` : ''}the facts first, then Claude. It also looks at ${appName(k)}'s own history and branches.${crossApp(k) ? ` It traces the cause to ${crossName(k)}: ${firstSentence(noParens(crossApp(k).why))}` : ''}` },
+      { ch: 'Case 3', when: () => k && (R(k)?.duplicateOf || did(k, 'duplicate')), play: playUntil(k, ''), target: () => rowOf(k, 'Duplicate?') ?? ticketEl(k),
+        say: () => {
+          const dup = R(k)?.duplicateOf ?? { key: evText(k, 'duplicate').match(/[A-Z]+-\d+/)?.[0], why: '' };
+          const more = sentences(noParens(dup.why), 2, 260).split(/(?<=[.!?])\s+/)[1] ?? '';
+          return `But it also notices that the same problem is already reported, as ${dup.key}. ${more} So it flags a possible duplicate and makes no second fix; the card says why. Sometimes doing nothing is the right answer.`;
+        } },
     ];
 
     return [
       // Opening and the explainers
       { ch: 'Welcome', target: () => $('.brand'),
-        say: "Hi. This is Ticket Intelligence: an AI agent that reads every new Jira ticket, finds the code behind it, proves the bug with a test, proposes a fix, and gets it to the right person. In about ten minutes I'll show you the problem it solves, how it works behind the scenes, three real cases, and what it knows about the whole application. Nothing I do here costs money or changes anything." },
+        say: "Hi. This is Ticket Intelligence: an AI agent that reads every new Jira ticket, finds the code behind it, proves the bug with a test, proposes a fix, and gets it to the right person. In about fifteen minutes I'll show you the problem it solves, how it works behind the scenes, three real cases, and what it knows about the whole application. Nothing I do here costs money or changes anything." },
       { ch: 'The problem', slide: 'problem', reveal: 1,
         say: "First, the problem. Customers of hospital scheduling systems open a ticket, then ask: what is the status, can it be sped up? To answer, an engineer has to read the ticket and its history, find earlier tickets like it, find the code and what changed there, and work out who knows it." },
       { ch: 'The problem', slide: 'problem', reveal: 3,
@@ -487,7 +546,11 @@
       { ch: 'The AI', slide: 'ai', reveal: 2,
         say: "Which AI? Claude, by Anthropic, through Claude Code: Claude Sonnet for the analysis, which is fast and cheaper, and Claude Opus for the fix, the review and Ask. Plain code collects and checks the facts; the model does what needs judgement. Every run gets only the tools it needs, and every source it cites is checked by code." },
       { ch: 'The AI', slide: 'ai', reveal: 3,
-        say: "The model is not trained on our data: it improves through what it reads, like instructions, project conventions and tests, and every change is scored. An analysis costs about fifteen to sixty cents, a question ten to forty. And the same skill runs on demand in Claude Code or GitHub Copilot." },
+        say: "The model is not trained on our data: it improves through what it reads, like instructions, project conventions and tests, and every change is scored. An analysis costs about fifteen to sixty cents, a question ten to forty. And since tickets can contain patient data, nothing goes to an AI service outside the approved tools." },
+      { ch: 'At work', slide: 'work', reveal: 1,
+        say: "And at work? The same two skills run on demand in the editor, in GitHub Copilot: VS Code agent mode and the Copilot CLI read the same skill files, run the same scripts in the terminal, and can use Claude too. That still has to be tried inside Copilot at work; the test plan is ready. The autonomous agent itself runs on Claude Code." },
+      { ch: 'At work', slide: 'work', reveal: 3,
+        say: "Projects can be in git or in SVN: the tool detects which, and on an SVN copy of the demo app the analysis finds the same components, people and related tickets as on git. On SVN, documentation can be a commit, a branch or a patch file, and it always asks first, because an SVN commit goes straight to the server. The automatic fix, the pull requests and Insights are git only for now." },
 
       // The dashboard
       { ch: 'The dashboard', target: () => $('#state'), go: async (my) => { await toTickets(k1, my); await moveTo($('#state'), my); },
@@ -499,15 +562,35 @@
       ...caseTwo(k2),
       ...caseThree(k3),
 
-      // Insights
+      // Insights: every part of the page, with its real numbers
       { ch: 'Insights', when: () => ready.length > 1,
-        go: async (my) => { await openTab('insights', my); await pickProject('all', my); await until(() => hasContent('suite-apps') && !$('#suite-apps').textContent.includes('Loading'), 20000, my); },
+        go: async (my) => { await openTab('insights', my); await pickProject('all', my); },
+        play: (my) => until(() => hasContent('suite-apps') && !$('#suite-apps').textContent.includes('Loading'), 25000, my),
         target: () => sectionOf('ins-suite'),
-        say: "The second tab is Insights. It looks at the whole history, not one ticket. First the whole suite: every app side by side, how they call each other, and bugs whose cause sits in another app, like case two." },
-      { ch: 'Insights', when: () => proj, go: async (my) => { await toInsights(my); await until(() => d() && !$('#ins-body').hidden, 25000, my); }, target: () => sectionOf('ins-kpis'),
-        say: () => `Now one application: ${proj.name}. It combines Jira, git and the agent's analyses.${d() ? ` ${plural(d().totals.bugs, 'bug')} so far, ${d().totals.openBugs} still open, across ${plural(d().totals.commits, 'commit')}.` : ''}` },
+        say: () => `The second tab is Insights. It looks at the whole history, not one ticket. Everything here is plain code over git, Jira and the agent's saved analyses, cached, so it costs nothing; only two buttons use the AI. With all projects selected, it shows the whole suite${suite?.totals ? `: ${suite.totals.apps} apps side by side, ${plural(suite.totals.bugs, 'bug')} in total, ${suite.totals.priorityBugs} of them high priority` : ''}.` },
+      { ch: 'Insights', when: () => suite?.integrations?.length && hasContent('suite-integrations'), target: () => sectionOf('suite-integrations'),
+        say: () => {
+          const name = (key) => projectInfo(key)?.name ?? key;
+          const byFrom = {};
+          for (const i of suite.integrations) (byFrom[i.from] ??= []).push(name(i.to));
+          const calls = Object.entries(byFrom).map(([from, tos]) => `${name(from)} calls ${list(tos)}`);
+          const crossed = suite.integrations.filter((i) => i.linkedBugs).map((i) => `from ${name(i.from)} to ${name(i.to)}`);
+          return `How the apps call each other comes from the configuration: ${calls.join('; ')}. For each link it counts the bugs that crossed it${crossed.length ? `: here, on the links ${list(crossed)}` : ''}. Below are the bugs linked across apps in Jira, and the causes the agent found in another app, like case two.`;
+        } },
+      { ch: 'Insights', when: () => hasContent('suite-shared'), target: () => sectionOf('suite-shared'),
+        say: () => `And code copied between apps: ${suite?.shared?.length ? `${plural(suite.shared.length, 'file')} exist` : 'files exist'} in more than one app. When a bug is fixed in one copy and the same lines are missing in another, it says: check this copy.${suite?.totals?.toCheck ? ` Right now ${plural(suite.totals.toCheck, 'fix is', 'fixes are')} missing somewhere.` : ''} Copies that keep getting the same fixes belong in a shared library.` },
+      { ch: 'Insights', when: () => proj,
+        go: async (my) => { await toInsights(my); },
+        play: (my) => until(() => d() && !$('#ins-body').hidden, 25000, my),
+        target: () => sectionOf('ins-kpis') ?? sectionOf('ins-body'),
+        say: () => {
+          const x = d() ?? preIns;
+          const cov = x?.testCoverage?.backend;
+          const last = x?.trend?.at?.(-1)?.code;
+          return `Now one application: ${proj.name}.${x ? ` ${plural(x.totals.bugs, 'bug')} so far, ${x.totals.priorityBugs} of them high priority, ${x.totals.openBugs} still open, and ${plural(x.recurring?.length ?? 0, 'recurring problem')}.` : ''}${cov ? ` Only ${cov.tested} of ${cov.total} backend services and controllers have a unit test of their own${last ? `, while ${last.screensTested} of ${last.screensTotal} screens are opened by browser tests` : ''}.` : ''}`;
+        } },
       { ch: 'Insights', when: () => proj, target: () => $('#ins-heat')?.closest('.panel'),
-        say: "This map shows bugs per component and month. The darker the cell, the more bugs." },
+        say: "This map shows bugs per component and month. A bug's month and component come from git: the commit that fixed it, and the folders it changed. The darker the cell, the more bugs." },
       { ch: 'Insights', when: () => document.querySelector('#ins-heat .hc.clickable'),
         go: async (my) => {
           const cells = [...document.querySelectorAll('#ins-heat .hc.clickable')];
@@ -517,13 +600,46 @@
           await clickOn(top, my);
         },
         target: () => sectionOf('ins-tickets'),
-        say: "One click on a cell lists the tickets behind the number, with links to Jira and the commits that fixed them." },
+        say: "One click on a cell lists the tickets behind the number, with type, priority, status, and the commits that fixed them." },
       { ch: 'Insights', when: () => d()?.hotspots?.length, target: () => sectionOf('ins-hotspots'),
-        say: () => { const c = d().components.find((x) => x.name === d().hotspots[0]); return `The top hotspot is ${d().hotspots[0]}${c ? `, with ${plural(c.bugs, 'bug')}` : ''}. For each hotspot you see the files fixed more than once, and the AI can write a recommendation, citing tickets and commits.`; } },
-      { ch: 'Insights', when: () => proj, target: () => sectionOf('ins-suggestions'), go: (my) => moveTo($('#ins-review'), my),
-        say: "On request, the AI also reviews the whole app, and suggests tickets to open next, with the person who knows that code best. Every item cites its source, and nothing is created on its own: someone checks it and confirms. Below, risk files show where the next bug is most likely, and each fixed bug is traced to the change that brought it in." },
+        say: () => { const c = d().components.find((x) => x.name === d().hotspots[0]); return `The hotspots rank the components by bugs, weighted by priority, and by how much the code changes. The top one is ${d().hotspots[0]}${c ? `, with ${plural(c.bugs, 'bug')}` : ''}. Each card shows the files fixed more than once, and the AI can write a recommendation that must cite tickets and commits.`; } },
+      { ch: 'Insights', when: () => d()?.review?.evaluation && hasContent('ins-review-body'), go: (my) => moveTo($('#ins-review'), my), target: () => sectionOf('ins-review-body'),
+        say: () => {
+          const r = d().review;
+          const s = r.evaluation.scores?.[0];
+          // A review written before the data changed may contradict the numbers on the page: then it is not quoted.
+          return `The AI review of the app runs only on this button, for a few minutes. It reads these facts and the code, read-only, and scores five areas from one to five.${s && !r.stale ? ` ${s.area}: ${s.score} of 5. ${firstSentence(noParens(s.why), 160)}` : ''}${r.stale ? ' When the data has changed since, as here, the page says so, and the review can be run again.' : ''} It also lists ${plural(r.findings?.length ?? 0, 'finding')} in the code, ${plural(r.refactors?.length ?? 0, 'refactor')} and ${plural(r.growth?.length ?? 0, 'way')} to grow, each with its source.${r.dropped ? ` Items without a source are dropped: here, ${r.dropped}.` : ''}`;
+        } },
+      { ch: 'Insights', when: () => d()?.suggestions?.length && hasContent('ins-suggestions'), target: () => sectionOf('ins-suggestions'),
+        say: () => {
+          const s = d().suggestions;
+          const top = s.find((x) => x.person?.name) ?? s[0];
+          return `From the review and the facts come ${plural(s.length, 'suggested ticket')}, in the project's style, each with a Jira description and the person who knows that code best. For example: ${plainTitle(top.summary)}${top.person?.name ? `, for ${top.person.name}` : ''}. Nothing is created on its own: Create in Jira opens it for editing, and a person confirms.`;
+        } },
+      { ch: 'Insights', when: () => d()?.riskFiles?.length && hasContent('ins-risk'), target: () => sectionOf('ins-risk'),
+        say: () => { const f = d().riskFiles[0]; return `Risk files show where the next bug is most likely. The riskiest here is ${f.path.split('/').pop()}: ${list(f.why)}. Each file is scored by bug fixes, changes, size, and whether it has a test.`; } },
+      { ch: 'Insights', when: () => d()?.recurring?.length && hasContent('ins-recurring'), target: () => sectionOf('ins-recurring'),
+        say: () => { const r = d().recurring[0]; return `Recurring problems: ${plural(d().recurring.length, 'bug')} that repeat an earlier one. For example, ${r.key} repeats ${r.of}, ${r.via === 'file' ? 'found because both fixes changed the same file' : r.via === 'link' ? 'linked in Jira' : "found by the agent's analysis"}.`; } },
+      { ch: 'Insights', when: () => d()?.origins?.bugs?.length && hasContent('ins-origins'), target: () => sectionOf('ins-origins'),
+        say: () => {
+          const o = d().origins;
+          const b = o.byChange?.[0];
+          return `Where bugs come from: for each fixed bug, git blame of the lines its fix changed shows the change that wrote them.${o.medianDaysInCode ? ` A bug stayed in the code ${o.medianDaysInCode} days, at the median.` : ''}${b ? ` ${b.ticket}, ${plainTitle(b.summary).replace(/:.*/, '')}, brought in ${plural(b.bugs.length, 'bug')}.` : ''} It names the change, not the person.`;
+        } },
+      { ch: 'Insights', when: () => d()?.shared?.pairs?.length && hasContent('ins-shared'), target: () => sectionOf('ins-shared'),
+        say: () => `Code shared with the other apps: ${plural(d().shared.pairs.length, 'file')} here ${d().shared.pairs.length === 1 ? 'is a copy' : 'are copies'} of files in other projects, compared by content.${d().shared.toCheck ? ` For ${plural(d().shared.toCheck, 'copy', 'copies')}, a fix made elsewhere is missing here: check.` : ''}` },
+      { ch: 'Insights', when: () => d()?.stats && hasContent('ins-stats'), target: () => sectionOf('ins-stats'),
+        say: () => {
+          const t = d().stats.byType ?? {};
+          const many = (w) => (/[^aeiou]y$/.test(w) ? `${w.slice(0, -1)}ies` : `${w}s`);
+          return `What tickets are opened for: ${list(Object.entries(t).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v} ${v === 1 ? k.toLowerCase() : many(k.toLowerCase())}`))}, by priority, component, environment and month.`;
+        } },
+      { ch: 'Insights', when: () => d()?.trend?.length && hasContent('ins-trend'), target: () => sectionOf('ins-trend'),
+        say: () => { const last = d().trend.at(-1); return `The trend, month by month from git: bugs, commits, and the test coverage of the code at the end of each month${last ? `; now ${last.unitTestShare} percent of the services have a unit test, and ${last.screenShare} percent of the screens a browser test` : ''}. A daily snapshot keeps what git cannot give back later.`; } },
       { ch: 'Insights', when: () => hasContent('ins-knowledge'), target: () => sectionOf('ins-knowledge'),
-        say: () => { const one = (d()?.components ?? []).filter((c) => c.team?.length && c.busFactor <= 1).length; return `The knowledge map shows who knows each component.${one ? ` ${one === 1 ? 'One component is' : `${one} components are`} known by one person only. That is a risk, so the suggestions pick a second person to learn it.` : ' Here every component is known by at least two people, so nobody is a single point of failure.'}`; } },
+        say: () => { const one = (d()?.components ?? []).filter((c) => c.team?.length && c.busFactor <= 1).length; return `The knowledge map shows who knows each component, by share of commits.${one ? ` ${one === 1 ? 'One component is' : `${one} components are`} known by one person only. That is a risk, so the suggestions pick a second person to learn it.` : ' Here every component is known by at least two people, so nobody is a single point of failure.'}`; } },
+      { ch: 'Insights', when: () => d()?.people?.length && hasContent('ins-people'), target: () => sectionOf('ins-people'),
+        say: () => `And people: ${plural(d().people.length, 'person', 'people')} with their commits, bugs fixed and main areas, to know whom to ask. Not to rank anyone: the page shows components, and people only as context.` },
 
       // Ask
       { ch: 'Ask', when: () => proj, go: async (my) => { await openTab('ask', my); await until(() => !$('#ask-form').hidden, 5000, my); }, target: () => $('#ask-form'),
@@ -533,7 +649,7 @@
       { ch: 'Ask', when: () => proj && askFound, target: () => answerEl(0),
         say: () => `The answer: ${sentences(noParens(askFound.answer), 2, 260)} Every source is listed, and each one was checked by code: ${plural(askFound.sources?.length ?? 0, 'ticket or commit', 'tickets and commits')}. It took ${Math.round((askFound.meta?.durationMs ?? 0) / 1000)} seconds and ${cents(askFound.meta?.costUsd)}.` },
       { ch: 'Ask', when: () => proj && askMissing, play: (my) => replayAsk(askMissing, proj.key, my), target: () => $('#ask-form'),
-        say: "And when the answer is not in the data, it says so." },
+        say: "And when the answer is not in the data, it says so. Here someone asks about something the application does not do. Watch the steps: it searches the tickets, the commits, the code and the knowledge base before it answers." },
       { ch: 'Ask', when: () => proj && askMissing, target: () => answerEl(0),
         say: () => `Asked "${askMissing.question}", it answers: ${sentences(noParens(askMissing.answer), 2, 220)} It shows what does exist, and whom to ask. No guessing.` },
       { ch: 'Ask', when: () => proj && !askFound,
@@ -678,11 +794,11 @@
       let text = '';
       try { text = typeof st.say === 'function' ? st.say() : st.say; } catch { continue; }
       textEl.textContent = text;
-      await sleep(450);
+      await sleep(200);
       if (!(await say(text, my))) return;
       if (playing) { if (!(await playing)) return; if (!st.slide) bringIntoView(tgt()); }
       try { await st.after?.(my); } catch { /* optional */ }
-      if (!(await until(() => false, 600, my))) return;
+      if (!(await until(() => false, 300, my))) return;
     }
     if (my === token) stop();
   }
@@ -729,6 +845,9 @@
     for (const run of replay?.runs ?? []) if (run?.events?.length && !tickets.has(run.key)) rps.set(run.key, { ...run, i: 0, shift: null });
     const askProject = projOf([...rps.keys()][0] ?? '') || focus()?.key || projects().find((p) => p.ready)?.key;
     asks = askProject ? (await getJson(`/api/tour/asks?project=${encodeURIComponent(askProject)}`))?.answers ?? [] : [];
+    // Not awaited: the first suite read takes several seconds; by the time the tour reaches Insights it is cached.
+    getJson('/api/insights/suite').then((x) => { if (running) suite = x; });
+    if (askProject) getJson(`/api/insights?project=${encodeURIComponent(askProject)}`).then((x) => { if (running) preIns = x; });
     if (!running) return;
     steps = buildSteps();
     play(0, 1);
@@ -745,6 +864,8 @@
     target = null;
     removeReplays();
     asks = [];
+    suite = null;
+    preIns = null;
     if (saved) {
       for (const t of tickets.values()) if (saved.expanded.has(t.key)) t.expanded = saved.expanded.get(t.key);
       if (selected !== saved.project) selectProject(saved.project);
