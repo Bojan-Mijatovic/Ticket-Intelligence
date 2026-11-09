@@ -109,7 +109,7 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 | `analysisTimeoutMinutes` | a run is stopped after this long |
 | `dashboardPort` | dashboard port |
 | `dashboardAllowRemote` | default off: the dashboard and its API answer only requests from this machine (they start paid agent runs) |
-| `tourReplay` | the ticket whose recorded run the guided tour replays when nothing was analyzed since the last reset (see [Guided tour](#guided-tour)) |
+| `tourReplay` | the tickets whose recorded runs the guided tour replays as its cases when nothing was analyzed since the last reset (see [Guided tour](#guided-tour)) |
 | `reviewTimeoutMinutes` | the AI review is stopped after this long (default 8) |
 | `askTimeoutSeconds`, `askMaxTurns` | limits of one Ask question (defaults 120 s, 16 turns) |
 | `insights.months`, `insights.churnDays`, `insights.components` | hotspot map: months shown, churn window, path rules per component |
@@ -283,16 +283,31 @@ One question at a time (`409` otherwise); `askTimeoutSeconds` (default 120) and 
 
 ## Guided tour
 
-**▶ Tour** in the dashboard header presents the whole tool by itself, in English, in about six minutes. A cursor moves and clicks the tabs, a heatmap cell and the Ask box; the page scrolls and puts a spotlight on each part, while a voice explains it and captions show the text. It covers Tickets, Insights and Ask, with real data: a real ticket, its owner and cause, the project's hotspot, and its numbers. Parts with no data are skipped.
+**▶ Tour** in the dashboard header presents the whole tool by itself, in English, in about ten minutes. A cursor moves and clicks, the page scrolls and puts a spotlight on each part, explainer slides open over the page, and a voice explains it all while captions show the text. The caption bar names the chapter:
 
-- **The agent at work.** When a ticket has been analyzed since the last reset, the tour shows that one. Otherwise it **replays a recorded run** from the event logs, archived ones included (`/api/tour/replay`): the ticket arrives, the steps stream in, then the analysis, the Teams message, the failing test, the fix, the pull request and the review appear one after the other, sped up, with the real timings. The card says **REPLAY** and the date. The replay lives only in that browser page and is gone when the tour ends. `tourReplay` in `agent.config.json` names the ticket to replay (`DEM-36`); without it, or when that ticket was never recorded, the fullest run is chosen.
-- **Read-only.** It never starts an agent run, an Ask question, an app review or a recommendation. In Ask it only types an example question and does not send it.
+| Chapter | What it shows |
+|---|---|
+| The problem | a slide: what an engineer has to do by hand for every ticket, who suffers, the goal |
+| Behind the scenes | an animated flow: collect (plain code) → analyze (Claude, read-only) → prove and fix (test, fix, re-checks, draft PR, AI review) → learn (knowledge base, Insights, Ask) |
+| The AI | a slide: which models do what (Sonnet for the analysis, Opus for the fix, review and Ask), code versus model, guardrails, why it is not trained, cost |
+| The dashboard | the live light, the four apps, the counters |
+| Case 1 | a frontend bug end to end: steps, cause, files, owner, Teams message, drafts, failing browser test, fix, draft PR, AI review |
+| Case 2 | a backend bug whose cause is in another app: the linked app's change it cites, where the fix belongs, a JUnit test, the PR |
+| Case 3 | a duplicate: the agent flags it and makes no second fix |
+| Insights | the suite page, one app's numbers, a heatmap cell clicked open, hotspots, the AI review, suggested tickets, risk files, bug origins, the knowledge map |
+| Ask | a question typed and answered with checked sources, and one that is "not in the knowledge base" |
+| How it was built | a slide: the ideas, how it is tested and scored, results, what comes next |
+
+Numbers and names come from the data on the page (tickets, owners, causes, hotspots, counts); a part with no data is skipped.
+
+- **Replays.** When a ticket has been analyzed since the last reset, Case 1 is that ticket. Otherwise the cases are **recorded runs** from the event logs, archived ones included (`/api/tour/replay`): the ticket arrives, the steps stream in, then the analysis, the Teams message, the failing test, the fix, the pull request and the review appear one after the other, sped up, with the real timings. Ask replays **recorded answers** (`/api/tour/asks`): the example question that was asked before, and the newest "not found" one, with the steps rebuilt from the saved run. Every replay says **REPLAY** and its date, lives only in that browser page and is gone when the tour ends. `tourReplay` in `agent.config.json` lists the tickets (`DEM-36`, `FAR-19`, `BIL-20`); tickets never recorded are left out, and with none the fullest run is chosen.
+- **Read-only.** It never starts an agent run, an Ask question, an app review or a recommendation. Its Ask button press is only shown; nothing is sent.
 - **Voice.** The browser's own speech synthesis: free, no key, nothing leaves the machine. The tour picks a natural English voice when there is one (Edge on Windows has *Aria*, *Jenny* and *Guy Natural*); the voice and speed can be changed in the caption bar, or switched to *captions only*.
 - **Controls.** Back / Pause / Next, or ← space →; Esc ends it. Afterwards the dashboard returns to the tab and project it showed before.
 - **For a presentation** open `http://localhost:7070/?tour`: a *Start the guided tour* button covers the page, because browsers let a page speak only after a click.
 - **After changing the code** restart the watcher (`node agent/watcher.mjs --replace`) and reload the page: a watcher started earlier does not serve `tour.js`, and the button then does nothing.
 
-The script and the player are in `dashboard/tour.js`; the choice of the recorded run in `lib/tour.mjs`.
+The script, the slides and the player are in `dashboard/tour.js`; the choice of the recorded runs and answers in `lib/tour.mjs`.
 
 ## Done → documentation
 

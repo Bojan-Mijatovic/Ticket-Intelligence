@@ -64,7 +64,7 @@ function extractJson(text) {
   return JSON.parse(candidate);
 }
 
-function describeTool(name, input = {}) {
+export function describeTool(name, input = {}) {
   if (name === 'Bash' || name === 'PowerShell') {
     const cmd = String(input.command ?? '');
     const sub = cmd.match(/ticket\.mjs"?\s+(\w+)/)?.[1];

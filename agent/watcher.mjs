@@ -24,7 +24,7 @@ import { readReview, writeReview } from './lib/app-review.mjs';
 import { createSuggested, readCreated, suggestTickets } from './lib/suggestions.mjs';
 import { suiteInsights } from './lib/suite.mjs';
 import { askQuestion } from './lib/ask.mjs';
-import { recordedRun } from './lib/tour.mjs';
+import { recordedAsks, recordedRuns } from './lib/tour.mjs';
 import { attachMailUpdates } from './lib/mail-updates.mjs';
 import { loadProjects, peerCheckouts } from './lib/projects.mjs';
 
@@ -286,16 +286,26 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache' });
     return res.end(readFileSync(join(HERE, 'dashboard', 'tour.js')));
   }
-  // The recorded run the tour replays when no ticket was analyzed since the last reset (read-only).
+  // The recorded runs the tour replays when no ticket was analyzed since the last reset (read-only).
   if (path === '/api/tour/replay') {
-    const run = recordedRun(rootState, cfg.tourReplay ?? null);
-    if (!run) return json(res, 404, { ok: false, error: 'no recorded run' });
-    const p = all.ofTicket(run.key);
-    const shot = (name) => Boolean(p && existsSync(join(p.stateDir, 'work', run.key, 'evidence', `${name}.png`)));
-    run.events = run.events.map((e) =>
-      e.type === 'reproduced' ? { ...e, evidence: e.evidence && shot('before') } : e.type === 'verified' ? { ...e, evidence: e.evidence && shot('after') } : e,
-    );
-    return json(res, 200, run);
+    const runs = recordedRuns(rootState, cfg.tourReplay ?? []).map((run) => {
+      const p = all.ofTicket(run.key);
+      const shot = (name) => Boolean(p && existsSync(join(p.stateDir, 'work', run.key, 'evidence', `${name}.png`)));
+      const events = run.events.map((e) =>
+        e.type === 'reproduced' ? { ...e, evidence: e.evidence && shot('before') } : e.type === 'verified' ? { ...e, evidence: e.evidence && shot('after') } : e,
+      );
+      return { ...run, events };
+    });
+    return json(res, 200, { runs });
+  }
+  // Recorded Ask answers of a project, for the tour to replay instead of asking (and paying) again (read-only).
+  if (path === '/api/tour/asks') {
+    try {
+      const p = readyProject({ project: queryOf(req).get('project') });
+      return json(res, 200, { project: p.key, answers: recordedAsks(p.stateDir, p.askExamples ?? []) });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    }
   }
   if (path === '/api/events') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
