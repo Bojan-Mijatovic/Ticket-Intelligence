@@ -37,6 +37,25 @@ Training is therefore a loop: run the agent on known tickets → score → impro
 
 The bugs are realistic on purpose: each was introduced by a later change and has a trace in Jira. In CUP_DEMO-2620, for example, the reviewer asks whether cancelled bookings are still ignored.
 
+The other apps of the suite ([SUITE.md](SUITE.md)) add scenarios in their own projects; `new-ticket.mjs` creates them there. Two of them have their cause in a linked app, and `score-run.mjs` also checks that the agent names that app (`otherProjects`) and puts the fix in the right project (`fixInProject`):
+
+| Scenario | Ticket | Root cause (answer key) | Introduced by | Owner | Agent fixes? |
+|---|---|---|---|---|---|
+| `lab-decimal` | [FE] MediLab: "1,35" is saved as 1 | `parseFloat()` stops at the comma (`result-entry.component.ts`) | CUP_LAB-120 | Francesca Lombardi | yes: browser test |
+| `far-renal` | [BE] MediFarma: no renal warning for metformin (eGFR 269 instead of 28) | `RenalCheckService` divides by 88.4 and ignores the unit | **MediLab** CUP_LAB-118 (creatinine in mg/dL) | Valentina Rinaldi | yes: JUnit test with the MediLab fake sending mg/dL |
+| `bil-cancelled` | [BE] MediBill: a cancelled visit is charged | `ChargeImportService` ignores the booking status | **MediAgenda** CUP_DEMO-2533 (cancellation) | Davide Greco | yes: JUnit test with a cancelled booking |
+
+First runs (2026-11-07):
+
+| Ticket | Scenario | Score | Time · cost | Note |
+|---|---|---|---|---|
+| FAR-19 | far-renal | 8/8 | 288 s · $0.16 | found LAB-18 in MediLab; fix converts by the reported unit; AI review: low risk |
+| LAB-21 | lab-decimal | 7/7 | 719 s · $0.16 | `parseDecimal` next to `formatDecimal`; 11 browser tests pass |
+| BIL-19 | bil-cancelled | 6/8 | 263 s · $0.21 | right cause, project and owner, but not DEM-17: it read MediAgenda's code, not its history |
+| BIL-20 | bil-cancelled | 6/8 | 102 s · $0.15 | after the lever below: DEM-17 found (commits of 2026-09-08/10). Duplicate of BIL-19, so no fix (correct); owner Matteo Vitale (last author of the file), Davide Greco as the alternative |
+
+Lever changed between BIL-19 and BIL-20: the analysis prompt for linked projects (`agent/lib/analyze.mjs`, `peersSection`) asks to search the linked app's history for the value involved (`git log -S`) and cite the ticket and commit that introduced it.
+
 ## The loop
 
 ```
