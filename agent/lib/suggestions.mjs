@@ -158,9 +158,12 @@ export function suggestTickets({ insights, review = null, rules = [], created = 
   }
 
   const existing = new Set(insights.tickets.map((t) => normal(t.summary)));
+  // A created ticket counts only while it is still in Jira (deleted there: the suggestion is open again).
+  const keys = new Set(insights.tickets.map((t) => t.key));
+  const createdOf = (s) => (created[s.id] && keys.has(created[s.id].key) ? created[s.id] : null);
   return out
-    .filter((s) => !existing.has(normal(s.summary)) || created[s.id])
-    .map((s) => ({ ...s, created: created[s.id] ?? null, project }))
+    .filter((s) => !existing.has(normal(s.summary)) || createdOf(s))
+    .map((s) => ({ ...s, created: createdOf(s), project }))
     .sort((a, b) => Number(Boolean(a.created)) - Number(Boolean(b.created)) || (ORDER[a.priority] ?? 9) - (ORDER[b.priority] ?? 9) || TYPES.indexOf(a.type) - TYPES.indexOf(b.type));
 }
 

@@ -80,4 +80,10 @@ test('creating a suggestion: the person is assigned only with a matching Jira ac
   assert.deepEqual(giorgio.calls[0].labels, ['ai-suggested']);
 
   await assert.rejects(createSuggested({ jira: giorgio, project: 'LAB', stateDir, suggestion: s, edits: { type: 'Epic' } }), /type must be one of/);
+
+  // Shown as created while LAB-31 is in Jira; open again once it was deleted there.
+  const created = JSON.parse(readFileSync(join(stateDir, 'insights', 'suggestions-created.json'), 'utf8'));
+  const withTicket = { ...INSIGHTS, tickets: [...INSIGHTS.tickets, { key: 'LAB-31', summary: s.summary }] };
+  assert.equal(suggestTickets({ insights: withTicket, review: REVIEW, rules: RULES, created, project: 'LAB' }).find((x) => x.id === s.id).created.key, 'LAB-31');
+  assert.equal(suggestTickets({ insights: INSIGHTS, review: REVIEW, rules: RULES, created, project: 'LAB' }).find((x) => x.id === s.id).created, null);
 });
