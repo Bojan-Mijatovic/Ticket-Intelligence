@@ -109,6 +109,7 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 | `analysisTimeoutMinutes` | a run is stopped after this long |
 | `dashboardPort` | dashboard port |
 | `dashboardAllowRemote` | default off: the dashboard and its API answer only requests from this machine (they start paid agent runs) |
+| `tourReplay` | the ticket whose recorded run the guided tour replays when nothing was analyzed since the last reset (see [Guided tour](#guided-tour)) |
 | `reviewTimeoutMinutes` | the AI review is stopped after this long (default 8) |
 | `askTimeoutSeconds`, `askMaxTurns` | limits of one Ask question (defaults 120 s, 16 turns) |
 | `insights.months`, `insights.churnDays`, `insights.components` | hotspot map: months shown, churn window, path rules per component |
@@ -282,14 +283,16 @@ One question at a time (`409` otherwise); `askTimeoutSeconds` (default 120) and 
 
 ## Guided tour
 
-**▶ Tour** in the dashboard header presents the whole tool by itself, in English, in about four minutes. The page switches tabs, scrolls, and puts a spotlight on each part, while a voice explains it and captions show the text. It covers Tickets, Insights and Ask. The tour is built from what the dashboard shows at that moment: a real ticket, its owner and cause, the project's hotspot, and its numbers. Parts with no data are skipped.
+**▶ Tour** in the dashboard header presents the whole tool by itself, in English, in about six minutes. A cursor moves and clicks the tabs, a heatmap cell and the Ask box; the page scrolls and puts a spotlight on each part, while a voice explains it and captions show the text. It covers Tickets, Insights and Ask, with real data: a real ticket, its owner and cause, the project's hotspot, and its numbers. Parts with no data are skipped.
 
+- **The agent at work.** When a ticket has been analyzed since the last reset, the tour shows that one. Otherwise it **replays a recorded run** from the event logs, archived ones included (`/api/tour/replay`): the ticket arrives, the steps stream in, then the analysis, the Teams message, the failing test, the fix, the pull request and the review appear one after the other, sped up, with the real timings. The card says **REPLAY** and the date. The replay lives only in that browser page and is gone when the tour ends. `tourReplay` in `agent.config.json` names the ticket to replay (`DEM-36`); without it, or when that ticket was never recorded, the fullest run is chosen.
 - **Read-only.** It never starts an agent run, an Ask question, an app review or a recommendation. In Ask it only types an example question and does not send it.
 - **Voice.** The browser's own speech synthesis: free, no key, nothing leaves the machine. The tour picks a natural English voice when there is one (Edge on Windows has *Aria*, *Jenny* and *Guy Natural*); the voice and speed can be changed in the caption bar, or switched to *captions only*.
 - **Controls.** Back / Pause / Next, or ← space →; Esc ends it. Afterwards the dashboard returns to the tab and project it showed before.
-- **For a presentation** open `http://localhost:7070/?tour`: a *Start the guided tour* button covers the page, because browsers let a page speak only after a click. Run one ticket first (see [docs/DEMO_SCENARIO.md](../docs/DEMO_SCENARIO.md)). Without an analyzed ticket the tour skips the ticket part, which is the main part.
+- **For a presentation** open `http://localhost:7070/?tour`: a *Start the guided tour* button covers the page, because browsers let a page speak only after a click.
+- **After changing the code** restart the watcher (`node agent/watcher.mjs --replace`) and reload the page: a watcher started earlier does not serve `tour.js`, and the button then does nothing.
 
-The script and the player are in `dashboard/tour.js`.
+The script and the player are in `dashboard/tour.js`; the choice of the recorded run in `lib/tour.mjs`.
 
 ## Done → documentation
 
