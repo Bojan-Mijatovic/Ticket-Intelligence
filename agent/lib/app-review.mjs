@@ -45,7 +45,12 @@ export function reviewFacts(insights, project) {
   };
 }
 
-export const fingerprintOf = (facts) => createHash('sha1').update(JSON.stringify(facts)).digest('hex').slice(0, 12);
+/**
+ * Fingerprint of the facts, to mark a review "data changed since". The recent churn is left out: it moves with the
+ * calendar (a commit leaves the 90-day window) while nothing changed in the code or in Jira.
+ */
+export const fingerprintOf = (facts) =>
+  createHash('sha1').update(JSON.stringify({ ...facts, components: facts.components.map(({ linesChangedRecently, ...c }) => c) })).digest('hex').slice(0, 12);
 
 /** Ticket keys, commit hashes and file names cited in a text. */
 export function citationsOf(text) {
@@ -118,13 +123,14 @@ Rules:
 - Every item must cite its evidence inline: a ticket key from the facts (e.g. ${k}-5), a commit hash (7 characters) or a file path that exists. Items without a citation are dropped.
 - Only claims you can support from the facts or the code. Do not invent tickets, numbers or files.
 - Do not name, rank or blame people. Plain language, short sentences.
+- Each finding, refactor and growth item also gets "ticket": a Jira summary for it of at most 70 characters, in the style of the project's tickets, without the [FE]/[BE] tag and without the component (both are added from the file), e.g. "decimal comma values are saved as whole numbers".
 
 Reply with ONLY one \`\`\`json block:
 {
   "evaluation": { "summary": "…", "scores": [{ "area": "${SCORE_AREAS[0]}", "score": 3, "why": "… (${k}-5)" }], "strengths": ["…"], "risks": ["…"] },
-  "findings": [{ "component": "…", "file": "backend/src/main/java/…", "problem": "…", "evidence": "…", "fix": "…", "prevent": "…", "priority": "high" }],
-  "refactors": [{ "title": "…", "files": ["…"], "why": "…", "steps": ["…"], "effort": "M", "payoff": "…" }],
-  "growth": [{ "title": "…", "why": "…", "buildsOn": ["${k}-7", "frontend/src/app/…"], "prerequisites": "…" }]
+  "findings": [{ "component": "…", "file": "backend/src/main/java/…", "problem": "…", "evidence": "…", "fix": "…", "prevent": "…", "priority": "high", "ticket": "…" }],
+  "refactors": [{ "title": "…", "files": ["…"], "why": "…", "steps": ["…"], "effort": "M", "payoff": "…", "ticket": "…" }],
+  "growth": [{ "title": "…", "why": "…", "buildsOn": ["${k}-7", "frontend/src/app/…"], "prerequisites": "…", "ticket": "…" }]
 }`;
 }
 

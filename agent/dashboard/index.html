@@ -211,6 +211,9 @@
       <span class="meta" id="ins-review-state"></span><button class="small" id="ins-review" title="One headless run reads the facts on this page and the code on main (read-only), and writes an evaluation, findings, refactors and ways to grow">✦ Review the app (AI)</button></div>
     <div class="hint" style="margin:-4px 0 8px">Runs only on the button (a few minutes; the cost is shown after the run). It reads the facts on this page and the code on main, read-only. Every item cites a ticket, a commit or a file; items without one are dropped.</div>
     <div id="ins-review-body"></div>
+    <h2 style="margin-top:20px">Suggested tickets</h2>
+    <div class="hint" style="margin:-4px 0 8px" id="ins-sugg-hint">From the AI review and the facts on this page, with the person who knows the code best. Nothing is created on its own: open one, check and edit it, then confirm.</div>
+    <div class="panel ins-list" id="ins-suggestions"></div>
     <h2 style="margin-top:20px">Risk files</h2>
     <div class="hint" style="margin:-4px 0 8px">Where the next bug is most likely: fixed by several bugs, changed often, big, and without a test of its own.</div>
     <div class="panel ins-list" id="ins-risk"></div>
@@ -284,7 +287,7 @@ function h(tag, attrs = {}, ...kids) {
     if (v == null || v === false) continue;
     if (k === 'class') el.className = v; else if (k.startsWith('on')) el.addEventListener(k.slice(2), v); else el.setAttribute(k, v);
   }
-  for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : String(kid));
+  for (const kid of kids.flat(Infinity)) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : String(kid));
   return el;
 }
 const initials = (name = '?') => name.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
@@ -730,6 +733,64 @@ function renderReview(d) {
     ...part('How the app can grow', growth, 'No proposal with a citation.'));
 }
 
+const SOURCE = {
+  'review-finding': 'AI review: finding', 'review-refactor': 'AI review: refactor', 'review-growth': 'AI review: growth',
+  'shared-check': 'copy in another app', 'risk-test': 'risk file without a test', 'bus-factor': 'knowledge map',
+};
+let openSuggestion = null; // the id of the suggestion whose editor is open
+
+function renderSuggestions(d) {
+  const list = d.suggestions ?? [];
+  const canCreate = d.createTicket !== 'off';
+  $('#ins-sugg-hint').textContent = canCreate
+    ? 'From the AI review and the facts on this page, with the person who knows the code best. Nothing is created on its own: open one, check and edit it, then confirm.'
+    : 'From the AI review and the facts on this page. Creating them in Jira is off (policy.json createTicket).';
+  if (!list.length) {
+    $('#ins-suggestions').replaceChildren(h('div', { class: 'empty' }, d.review ? 'No suggestions: nothing new to open.' : 'Run the AI review above for more suggestions; the facts give none now.'));
+    return;
+  }
+  const rows = list.map((s) => {
+    const row = h('tr', {},
+      h('td', {}, h('span', { class: `chip ${s.type === 'Bug' ? 'failed' : s.type === 'Story' ? 'done' : ''}` }, s.type), ' ', prioChip(s.priority)),
+      h('td', {}, h('div', {}, h('b', {}, s.summary)), h('div', { class: 't-sub' }, SOURCE[s.source] ?? s.source, s.stale ? ' · review older than the data' : '', s.files.length ? ' · ' : '', s.files.slice(0, 3).map((f) => h('code', { title: f, style: 'margin-right:4px' }, f.split('/').pop())))),
+      h('td', {}, s.person ? [h('div', {}, s.person.name), h('div', { class: 't-sub' }, s.person.why)] : h('span', { class: 't-sub' }, '–')),
+      h('td', {}, s.created ? [h('a', { href: s.created.url, target: '_blank' }, s.created.key), h('div', { class: 't-sub' }, `created ${ago(s.created.at)}${s.created.assignee ? ` · ${s.created.assignee}` : ''}`)]
+        : canCreate ? h('button', { class: 'small', onclick: () => { openSuggestion = openSuggestion === s.id ? null : s.id; renderSuggestions(insightsData); } }, openSuggestion === s.id ? 'Close' : 'Create in Jira…') : null));
+    return openSuggestion === s.id && !s.created ? [row, h('tr', {}, h('td', { colspan: 4 }, suggestionEditor(s)))] : [row];
+  }).flat();
+  $('#ins-suggestions').replaceChildren(table(['Type', 'Ticket', 'Suggested person', ''].map((x) => h('th', {}, x)), rows));
+}
+
+function suggestionEditor(s) {
+  const summary = h('input', { type: 'text', value: s.summary, maxlength: 250, style: 'width:100%' });
+  const type = h('select', {}, ['Bug', 'Task', 'Story'].map((t) => h('option', { value: t, ...(t === s.type ? { selected: '' } : {}) }, t)));
+  const priority = h('select', {}, ['Highest', 'High', 'Medium', 'Low', 'Lowest'].map((p) => h('option', { value: p, ...(p === s.priority ? { selected: '' } : {}) }, p)));
+  const description = h('textarea', { rows: 14, style: 'width:100%;font-family:var(--mono, monospace);font-size:12px' });
+  description.value = s.description;
+  const assign = h('input', { type: 'checkbox', checked: '' });
+  const analyze = h('input', { type: 'checkbox' });
+  const state = h('span', { class: 'meta' });
+  const go = h('button', { class: 'primary small', onclick: async () => {
+    if (!confirm(`Create this ${type.value} in Jira (${s.project})?\n\n${summary.value}`)) return;
+    go.disabled = true; state.textContent = 'Creating…';
+    try {
+      const r = await post('/api/insights/tickets', { project: s.project, id: s.id, assign: assign.checked, analyze: analyze.checked,
+        edits: { summary: summary.value, type: type.value, priority: priority.value, description: description.value } });
+      openSuggestion = null;
+      state.textContent = `Created ${r.key}`;
+      await loadInsights();
+    } catch (err) { state.textContent = ''; go.disabled = false; alert(`Not created: ${err.message}`); }
+  } }, 'Create in Jira');
+  return h('div', { style: 'display:flex;flex-direction:column;gap:8px;padding:8px 0' },
+    h('label', {}, h('div', { class: 't-sub' }, 'Summary'), summary),
+    h('div', { style: 'display:flex;gap:12px;align-items:center;flex-wrap:wrap' },
+      h('label', {}, h('span', { class: 't-sub' }, 'Type '), type), h('label', {}, h('span', { class: 't-sub' }, 'Priority '), priority),
+      s.person ? h('label', {}, assign, ` Assign to ${s.person.name} if they have a Jira account in ${s.project} (otherwise named in the description)`) : null),
+    h('label', {}, h('div', { class: 't-sub' }, 'Description (Jira wiki markup)'), description),
+    h('label', {}, analyze, ' Let the agent analyze it like a new ticket (without this it gets the no-ai label)'),
+    h('div', { style: 'display:flex;gap:10px;align-items:center' }, go, state));
+}
+
 const projectName = (key) => projectInfo(projOf(key))?.name ?? projOf(key);
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
@@ -917,6 +978,7 @@ function renderInsights(d) {
       h('div', { class: 't-sub' }, `Main authors (context): ${c.authors.map((a) => a.name).join(', ') || '–'}${c.agentCommits ? ` · agent: ${c.agentCommits} commit(s)` : ''}`));
   }) : [h('div', { class: 'empty' }, 'No bugs found yet.')]));
   renderReview(d);
+  renderSuggestions(d);
   renderRecurring(d);
   renderOrigins(d);
   renderShared(d);

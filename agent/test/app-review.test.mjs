@@ -67,6 +67,8 @@ test('review facts carry no people and the fingerprint follows the facts', () =>
   assert.ok(!JSON.stringify(facts).includes('Sara'));
   const again = reviewFacts({ ...insights, generatedAt: 'later' }, { key: 'X', name: 'App' });
   assert.equal(fingerprintOf(facts), fingerprintOf(again));
+  insights.components[0].churnLines = 1; // the 90-day window moved on: not a change of the data
+  assert.equal(fingerprintOf(reviewFacts(insights, { key: 'X', name: 'App' })), fingerprintOf(facts));
   insights.tickets[0].status = 'To Do';
   assert.notEqual(fingerprintOf(reviewFacts(insights, { key: 'X', name: 'App' })), fingerprintOf(facts));
 });

@@ -21,6 +21,7 @@ import { currentBranch, previewBranch } from './lib/preview.mjs';
 import { reviewPullRequest } from './lib/review.mjs';
 import { buildInsights, readRecommendations, writeRecommendations } from './lib/insights.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
+import { createSuggested, readCreated, suggestTickets } from './lib/suggestions.mjs';
 import { askQuestion } from './lib/ask.mjs';
 import { attachMailUpdates } from './lib/mail-updates.mjs';
 import { loadProjects, peerCheckouts } from './lib/projects.mjs';
@@ -322,7 +323,9 @@ const server = createServer(async (req, res) => {
     try {
       const p = readyProject({ project: queryOf(req).get('project') });
       const data = await insightsCached(p, queryOf(req).get('refresh') === '1');
-      return json(res, 200, { ...data, project: p.key, recommendations: readRecommendations(p.stateDir, data), review: readReview(p, data), reviewing: reviewing === p.key });
+      const review = readReview(p, data);
+      const suggestions = suggestTickets({ insights: data, review, rules: p.cfg.insights?.components ?? [], created: readCreated(p.stateDir), project: p.key });
+      return json(res, 200, { ...data, project: p.key, recommendations: readRecommendations(p.stateDir, data), review, reviewing: reviewing === p.key, suggestions, createTicket: policy.actions.createTicket ?? 'draft' });
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     }
@@ -365,6 +368,24 @@ const server = createServer(async (req, res) => {
     } finally {
       reviewing = null;
       broadcast({ type: 'review-progress', project: p.key, step: null });
+    }
+  }
+  // Create one suggested ticket in Jira, after a person checked and confirmed it on the dashboard (policy createTicket).
+  if (req.method === 'POST' && path === '/api/insights/tickets') {
+    try {
+      if ((policy.actions.createTicket ?? 'draft') === 'off') return json(res, 403, { ok: false, error: 'createTicket is "off" in policy.json' });
+      const body = await readBody(req);
+      const p = readyProject(body);
+      const data = await insightsCached(p);
+      const s = suggestTickets({ insights: data, review: readReview(p, data), rules: p.cfg.insights?.components ?? [], created: readCreated(p.stateDir), project: p.key }).find((x) => x.id === body.id);
+      if (!s) return json(res, 404, { ok: false, error: 'this suggestion is no longer there; refresh the Insights tab' });
+      if (s.created) return json(res, 409, { ok: false, error: `already created as ${s.created.key}` });
+      const created = await createSuggested({ jira, project: p.key, stateDir: p.stateDir, suggestion: s, edits: body.edits ?? {}, assign: body.assign !== false, analyze: body.analyze === true });
+      events.emit('insights', { project: p.key, text: `${created.key} created from an Insights suggestion: ${created.summary}${created.assignee ? ` (assigned to ${created.assignee})` : ''}` });
+      insightsCache.delete(p.key);
+      return json(res, 200, { ok: true, ...created });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
     }
   }
   // Ask the knowledge base of one project (FR-65): one question at a time; progress goes to the dashboard stream.

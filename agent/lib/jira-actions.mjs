@@ -113,6 +113,25 @@ export function createJira() {
       return { id: a.id, url: a.content, name: a.filename };
     },
 
+    /** Creates a ticket (wiki-markup description); without the priority field when the project's screen has none. */
+    async createIssue({ project, summary, description, type = 'Task', priority = null, labels = [], assigneeId = null }) {
+      const fields = { project: { key: project }, summary, description, issuetype: { name: type }, labels, ...(assigneeId ? { assignee: { id: assigneeId } } : {}) };
+      let res;
+      try {
+        res = await api('POST', '/rest/api/2/issue', { fields: priority ? { ...fields, priority: { name: priority } } : fields });
+      } catch (e) {
+        if (!priority || !/priority/i.test(e.message)) throw e;
+        res = await api('POST', '/rest/api/2/issue', { fields });
+      }
+      return { key: res.key, url: `${cfg.baseUrl}/browse/${res.key}` };
+    },
+
+    /** Jira users who can be assigned tickets of `project` and match `query` ({ accountId, name }). */
+    async assignableUsers(project, query) {
+      const list = await api('GET', `/rest/api/2/user/assignable/search?project=${encodeURIComponent(project)}&query=${encodeURIComponent(query)}&maxResults=10`);
+      return (list ?? []).map((u) => ({ accountId: u.accountId, name: u.displayName }));
+    },
+
     async comment(key, body) {
       const res = await api('POST', `/rest/api/2/issue/${key}/comment`, { body });
       return { id: res.id, url: `${cfg.baseUrl}/browse/${key}?focusedCommentId=${res.id}` };

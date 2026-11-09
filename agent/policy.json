@@ -12,8 +12,10 @@
     "mergeFix": "off",
     "reviewFix": "auto",
     "documentOnDone": "auto",
-    "emailUpdates": "auto"
+    "emailUpdates": "auto",
+    "createTicket": "draft"
   },
+  "_createTicketComment": "createTicket = tickets suggested on the Insights tab (from the AI review and the facts). 'draft' = shown with a Create in Jira button: a person checks and edits the ticket, then confirms; 'off' = shown only as suggestions. Never 'auto'.",
   "notifyMinConfidence": "medium",
   "commentHeader": "(robot) *AI analysis* — automated first analysis. Please verify before acting on it.",
   "maxCommentChars": 6000,

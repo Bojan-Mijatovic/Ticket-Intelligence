@@ -258,6 +258,13 @@ The tab also shows, per project (all plain code, no AI run):
 
 Every item must cite a ticket or commit of the facts, or a file that exists on main (a score may also rest on a component's numbers, e.g. its bus factor); the others are dropped (the count is shown), and files that do not exist are removed from an item. The result is cached in `insights/review.json` and marked "data changed since" when the facts change. Limits: `insights.reviewTimeoutMinutes` (12), `insights.reviewMaxTurns` (40).
 
+**Suggested tickets** lists what the team could open next, each with a summary in the project's style (`[BE] - Component: …`), a type and priority, a Jira description (what, why, how to fix and prevent it, the files and the sources) and a suggested person: whoever has the largest share of that component's commits (for a component only one person knows, the second person, to learn it). They come from:
+
+- the AI review: findings (Bug when high priority, otherwise Task), refactors (Task) and ways to grow (Story);
+- the facts, without AI: a bug fix of a copy in another app that is missing here, files where bugs were fixed that have no test (not the tiny ones), and components with bus factor 1.
+
+A suggestion whose summary matches an existing ticket is left out. Nothing is created on its own (`policy.json` → `createTicket`: `draft` shows **Create in Jira…**, `off` only lists them). The button opens the ticket for editing (summary, type, priority, description); after a confirmation the watcher creates it with the label `ai-suggested`, plus `no-ai` unless *Let the agent analyze it* is ticked. The suggested person is assigned only when a Jira user of the project has that name; otherwise the name stays in the description. Created suggestions are remembered in `insights/suggestions-created.json` and shown with their key.
+
 Who wrote the change that brought a bug in is not shown by default: the table names the change (ticket and commit), not the person. Set `insights.showBugOrigin: true` to add the author column.
 
 ## Ask the knowledge base
