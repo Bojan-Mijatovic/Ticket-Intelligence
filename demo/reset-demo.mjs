@@ -80,14 +80,19 @@ for (const app of APPS) {
 console.log('');
 
 // 3. Jira tickets created for the demo: those from new-ticket.mjs, plus tickets made by hand named with --also
-const tickets = existsSync(TRACK) ? JSON.parse(readFileSync(TRACK, 'utf8')) : [];
+const allTracked = existsSync(TRACK) ? JSON.parse(readFileSync(TRACK, 'utf8')) : [];
+// With --project, only that project's tickets; the others stay tracked for a later reset.
+const tickets = only ? allTracked.filter((k) => k.split('-')[0] === only) : allTracked;
 for (const key of tickets) {
   step(`delete Jira ticket ${key} (created by new-ticket.mjs)`, () => sh('node', [join(HERE, 'new-ticket.mjs'), '--delete', key], ROOT));
 }
 for (const key of also.filter((k) => !tickets.includes(k))) {
   step(`delete Jira ticket ${key} (named with --also)`, () => sh('node', [join(HERE, 'new-ticket.mjs'), '--delete', key], ROOT));
 }
-if (APPLY && tickets.length) writeFileSync(TRACK, '[]\n');
+if (APPLY && tickets.length) {
+  const left = (existsSync(TRACK) ? JSON.parse(readFileSync(TRACK, 'utf8')) : []).filter((k) => !tickets.includes(k));
+  writeFileSync(TRACK, `${JSON.stringify(left, null, 2)}\n`);
+}
 // Scenario of each deleted ticket (demo/score-run.mjs): forget the deleted ones.
 const RUNS = join(HERE, '.scenario-runs.json');
 if (APPLY && existsSync(RUNS)) {
