@@ -280,6 +280,17 @@ The dashboard's **Ask** tab (and `node agent/ask.mjs "question"`) answers questi
 
 One question at a time (`409` otherwise); `askTimeoutSeconds` (default 120) and `askMaxTurns` (default 16) in `agent.config.json`. Questions and answers are logged locally in `state/asks.jsonl` and `state/ask/`.
 
+## Guided tour
+
+**▶ Tour** in the dashboard header presents the whole tool by itself, in English, in about four minutes. The page switches tabs, scrolls, and puts a spotlight on each part, while a voice explains it and captions show the text. It covers Tickets, Insights and Ask. The tour is built from what the dashboard shows at that moment: a real ticket, its owner and cause, the project's hotspot, and its numbers. Parts with no data are skipped.
+
+- **Read-only.** It never starts an agent run, an Ask question, an app review or a recommendation. In Ask it only types an example question and does not send it.
+- **Voice.** The browser's own speech synthesis: free, no key, nothing leaves the machine. The tour picks a natural English voice when there is one (Edge on Windows has *Aria*, *Jenny* and *Guy Natural*); the voice and speed can be changed in the caption bar, or switched to *captions only*.
+- **Controls.** Back / Pause / Next, or ← space →; Esc ends it. Afterwards the dashboard returns to the tab and project it showed before.
+- **For a presentation** open `http://localhost:7070/?tour`: a *Start the guided tour* button covers the page, because browsers let a page speak only after a click. Run one ticket first (see [docs/DEMO_SCENARIO.md](../docs/DEMO_SCENARIO.md)). Without an analyzed ticket the tour skips the ticket part, which is the main part.
+
+The script and the player are in `dashboard/tour.js`.
+
 ## Done → documentation
 
 When a ticket the agent analyzed moves to **Done** (`documentOnDone: auto`), the watcher runs the `document-ticket` skill headless on branch `docs/<KEY>`. The agent may only write `docs/knowledge/*.md` (checked); the watcher commits, pushes, opens a draft pull request and comments in Jira. Labels: `ai-documenting` → `ai-documented` (or `ai-doc-failed`).
