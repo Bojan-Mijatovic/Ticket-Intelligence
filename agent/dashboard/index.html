@@ -141,6 +141,13 @@
   .answer .q { font-weight: 700; }
   .answer .a { white-space: pre-wrap; }
   .answer ul { margin: 0; padding-left: 18px; }
+  .ins-list { padding: 12px 16px; margin-bottom: 20px; overflow-x: auto; }
+  .ins-list table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .ins-list th, .ins-list td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .ins-list th { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .hn.clickable, .hc.clickable { cursor: pointer; }
+  .hn.clickable:hover { text-decoration: underline; }
+  .prio-high { background: var(--bad-soft); color: var(--bad); }
   .project-pick { display: inline-flex; align-items: center; gap: 6px; }
   .project-pick select { font: inherit; font-weight: 600; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: inherit; }
   .pick-first { padding: 14px 16px; margin-bottom: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -177,10 +184,13 @@
     <h2>Bugs per component and month</h2>
     <div class="panel" style="margin-bottom:20px"><div class="heat" id="ins-heat"><div class="empty">Loading…</div></div>
       <div class="hint" style="padding:0 16px 12px" id="ins-note"></div></div>
+    <div class="panel ins-list" id="ins-tickets" hidden></div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><h2 style="margin:0">Top hotspots</h2><span class="spacer"></span>
       <span class="meta" id="ins-rec-state"></span><button class="small" id="ins-recommend" title="One headless run writes a recommendation per hotspot, citing tickets and commits">✦ Write recommendations (AI)</button>
       <button class="small" id="ins-refresh">Refresh</button></div>
     <div class="hotspots" id="ins-hotspots"></div>
+    <h2 style="margin-top:20px">Recurring problems</h2>
+    <div class="panel ins-list" id="ins-recurring"></div>
     </div>
   </section>
   <section id="tab-ask" hidden>
@@ -591,29 +601,69 @@ async function loadInsights(refresh = false) {
   } catch (e) { if (insightsFor === p.key) $('#ins-heat').replaceChildren(h('pre', { class: 'err' }, `Insights failed: ${e.message}`)); }
 }
 
+let insightsData = null;
+const HIGH = new Set(['Blocker', 'Critical', 'Highest', 'High']);
+const prioChip = (p) => p ? h('span', { class: `chip ${HIGH.has(p) ? 'prio-high' : ''}` }, p) : null;
+const VIA = { link: 'Jira link', file: 'same file fixed', analysis: "agent's analysis" };
+
+/** The tickets of a component (and month) below the heatmap: what is behind a number. */
+function showInsightTickets({ component, month = null }) {
+  const d = insightsData;
+  const list = d.tickets.filter((t) => t.components.includes(component) && (!month || String(t.date).slice(0, 7) === month))
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const box = $('#ins-tickets');
+  box.hidden = false;
+  box.replaceChildren(
+    h('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:8px' },
+      h('b', {}, `${component}${month ? ` · ${monthLabel(month)}` : ''}: ${list.length} ticket(s)`), h('span', { class: 'spacer' }),
+      h('button', { class: 'small', onclick: () => { box.hidden = true; } }, 'Close')),
+    h('table', {},
+      h('thead', {}, h('tr', {}, ['Ticket', 'Type', 'Priority', 'Status', 'Summary', 'Commits'].map((x) => h('th', {}, x)))),
+      h('tbody', {}, list.map((t) => h('tr', {},
+        h('td', {}, jiraLink(t.key)), h('td', {}, t.type ?? ''), h('td', {}, prioChip(t.priority)), h('td', {}, t.status ?? ''),
+        h('td', {}, t.summary ?? ''), h('td', {}, t.commits.map((c) => h('code', { style: 'margin-right:4px' }, c))))))));
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function renderRecurring(d) {
+  const projectName = (key) => projectInfo(projOf(key))?.name ?? projOf(key);
+  $('#ins-recurring').replaceChildren(...(d.recurring.length ? [h('table', {},
+    h('thead', {}, h('tr', {}, ['Bug', 'Repeats / linked to', 'Component', 'How we know'].map((x) => h('th', {}, x)))),
+    h('tbody', {}, d.recurring.map((r) => h('tr', {},
+      h('td', {}, jiraLink(r.key), ' ', prioChip(r.priority)),
+      h('td', {}, jiraLink(r.of), r.crossProject ? [' ', h('span', { class: 'proj' }, projectName(r.of))] : null),
+      h('td', {}, r.component ?? '–'),
+      h('td', { class: 't-sub' }, VIA[r.via] ?? r.via)))))]
+    : [h('div', { class: 'empty' }, 'No recurring problems found.')]));
+}
+
 function renderInsights(d) {
+  insightsData = d;
+  $('#ins-tickets').hidden = true;
   const comps = d.components.filter((c) => c.tickets > 0);
   const top = d.components.find((c) => c.name === d.hotspots[0]);
   const kpi = (label, value, sub) => h('div', { class: 'kpi' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), h('div', { class: 'sub' }, sub));
+  const cross = d.recurring.filter((r) => r.crossProject).length;
   $('#ins-kpis').replaceChildren(
     kpi('Bugs', d.totals.bugs, `${d.totals.openBugs} still open`),
-    kpi('Top hotspot', top ? top.name : '–', top ? `${top.bugs} bugs · ${top.openBugs} open` : 'no bugs yet'),
-    kpi('Same file fixed twice', d.components.reduce((n, c) => n + c.repeatFiles.length, 0), 'files changed by 2+ bug fixes'),
-    kpi('Recurring', d.recurring.length, 'new bugs related to an earlier one'),
-    kpi('Commits', d.totals.commits, `${d.totals.tickets} tickets in Jira`));
+    kpi('High-priority bugs', d.totals.priorityBugs ?? 0, `High or Highest · ${d.totals.openPriorityBugs ?? 0} still open`),
+    kpi('Top hotspot', top ? top.name : '–', top ? `${top.bugs} bugs · ${top.priorityBugs ?? 0} high · ${top.openBugs} open` : 'no bugs yet'),
+    kpi('Recurring', d.recurring.length, `${cross} linked to another project · ${d.components.reduce((n, c) => n + c.repeatFiles.length, 0)} files fixed 2+ times`),
+    kpi('Commits', d.totals.commits, `${d.totals.agentCommits ?? 0} by the agent · ${d.totals.tickets} tickets in Jira`));
 
   const max = Math.max(1, ...comps.flatMap((c) => d.months.map((m) => d.cells[c.name]?.[m]?.bugs ?? 0)));
   const grid = $('#ins-heat');
   grid.style.gridTemplateColumns = `minmax(160px, max-content) repeat(${d.months.length}, minmax(44px, 1fr)) 64px`;
   const cells = [h('span'), ...d.months.map((m) => h('span', { class: 'hm' }, monthLabel(m))), h('span', { class: 'hm' }, 'bugs')];
   for (const c of comps) {
-    cells.push(h('span', { class: 'hn', title: c.authors.map((a) => `${a.name}: ${a.commits} commits`).join('\n') }, c.name));
+    cells.push(h('span', { class: 'hn clickable', title: `${c.authors.map((a) => `${a.name}: ${a.commits} commits`).join('\n')}\nClick: the tickets of this component`, onclick: () => showInsightTickets({ component: c.name }) }, c.name));
     for (const m of d.months) {
       const cell = d.cells[c.name]?.[m];
       const bugs = cell?.bugs ?? 0;
       const pct = Math.round(15 + (bugs / max) * 70);
       cells.push(h('span', {
-        class: `hc ${cell ? 'has' : ''}`,
+        class: `hc ${cell ? 'has clickable' : ''}`,
+        onclick: cell ? () => showInsightTickets({ component: c.name, month: m }) : null,
         style: bugs ? `background: color-mix(in srgb, var(--bad) ${pct}%, var(--surface))${pct > 50 ? '; color: #fff' : ''}` : '',
         title: cell ? `${c.name} · ${monthLabel(m)}: ${bugs} bug(s)${cell.keys.length ? ` (${cell.keys.join(', ')})` : ''}, ${cell.tickets} ticket(s)` : '',
       }, bugs ? String(bugs) : cell ? '·' : '', cell && cell.tickets > bugs ? h('span', { class: 't' }, `${cell.tickets} t`) : null));
@@ -632,13 +682,14 @@ function renderInsights(d) {
     return h('div', { class: 'panel hotspot' },
       h('div', { class: 'rank' }, `#${i + 1} hotspot`),
       h('div', { class: 'hname' }, name),
-      h('div', { class: 'stages' }, h('span', { class: 'chip failed' }, `${c.bugs} bugs`), c.openBugs ? h('span', { class: 'chip analyzing' }, `${c.openBugs} open`) : null,
+      h('div', { class: 'stages' }, h('span', { class: 'chip failed' }, `${c.bugs} bugs`), c.priorityBugs ? h('span', { class: 'chip prio-high' }, `${c.priorityBugs} High+`) : null, c.openBugs ? h('span', { class: 'chip analyzing' }, `${c.openBugs} open`) : null,
         h('span', { class: 'chip' }, `${c.churnLines} lines changed in ${d.churnDays} d`)),
       c.repeatFiles.length ? h('div', {}, h('div', { class: 't-sub' }, 'Fixed more than once:'), c.repeatFiles.slice(0, 3).map((f) => h('div', {}, h('code', {}, f.path.replace(/^.*\//, '')), ' ', f.keys.flatMap((k) => [jiraLink(k), ' '])))) : null,
       h('div', {}, h('div', { class: 't-sub' }, 'Bugs:'), h('div', { style: 'display:flex;flex-wrap:wrap;gap:6px' }, bugs.slice(-8).map((t) => h('span', { title: t.summary }, jiraLink(t.key))))),
       r ? h('div', { class: 'rec' }, '✦ ', r.text) : null,
-      h('div', { class: 't-sub' }, `Main authors (context): ${c.authors.map((a) => a.name).join(', ') || '–'}`));
+      h('div', { class: 't-sub' }, `Main authors (context): ${c.authors.map((a) => a.name).join(', ') || '–'}${c.agentCommits ? ` · agent: ${c.agentCommits} commit(s)` : ''}`));
   }) : [h('div', { class: 'empty' }, 'No bugs found yet.')]));
+  renderRecurring(d);
 }
 
 $('#ins-refresh').addEventListener('click', () => loadInsights(true));
