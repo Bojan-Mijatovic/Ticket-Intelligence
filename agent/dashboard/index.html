@@ -779,6 +779,19 @@ const SOURCE = {
   'shared-check': 'copy in another app', 'risk-test': 'risk file without a test', 'bus-factor': 'knowledge map',
 };
 let openSuggestion = null; // the id of the suggestion whose editor is open
+/** One key per name whatever the accents, case and separators (as the agent's personKey). */
+const nameKey = (n) => String(n ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[-_.]+/g, ' ').replace(/\s+/g, ' ').trim();
+const assignableByProject = new Map(); // project key → Promise of [{ accountId, name }]
+function assignableUsers(project) {
+  if (!assignableByProject.has(project)) {
+    assignableByProject.set(project, fetch(`/api/insights/assignable?project=${encodeURIComponent(project)}`).then(async (r) => {
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`);
+      return d.users;
+    }).catch((e) => { assignableByProject.delete(project); throw e; }));
+  }
+  return assignableByProject.get(project);
+}
 
 function renderSuggestions(d) {
   const list = d.suggestions ?? [];
@@ -796,6 +809,7 @@ function renderSuggestions(d) {
       h('td', {}, h('div', {}, h('b', {}, s.summary)), h('div', { class: 't-sub' }, SOURCE[s.source] ?? s.source, s.stale ? ' · review older than the data' : '', s.files.length ? ' · ' : '', s.files.slice(0, 3).map((f) => h('code', { title: f, style: 'margin-right:4px' }, f.split('/').pop())))),
       h('td', {}, s.person ? [h('div', {}, s.person.name), h('div', { class: 't-sub' }, s.person.why)] : h('span', { class: 't-sub' }, '–')),
       h('td', {}, s.created ? [h('a', { href: s.created.url, target: '_blank' }, s.created.key), h('div', { class: 't-sub' }, `created ${ago(s.created.at)}${s.created.assignee ? ` · ${s.created.assignee}` : ''}`)]
+        : s.openAs ? [h('span', { class: 't-sub' }, 'already open as '), jiraLink(s.openAs)]
         : canCreate ? h('button', { class: 'small', onclick: () => { openSuggestion = openSuggestion === s.id ? null : s.id; renderSuggestions(insightsData); } }, openSuggestion === s.id ? 'Close' : 'Create in Jira…') : null));
     return openSuggestion === s.id && !s.created ? [row, h('tr', {}, h('td', { colspan: 4 }, suggestionEditor(s)))] : [row];
   }).flat();
@@ -808,14 +822,23 @@ function suggestionEditor(s) {
   const priority = h('select', {}, ['Highest', 'High', 'Medium', 'Low', 'Lowest'].map((p) => h('option', { value: p, ...(p === s.priority ? { selected: '' } : {}) }, p)));
   const description = h('textarea', { rows: 14, style: 'width:100%;font-family:var(--mono, monospace);font-size:12px' });
   description.value = s.description;
-  const assign = h('input', { type: 'checkbox', checked: '' });
+  // Assignee: the people Jira lets you assign in this project; the suggested person is picked when they have an account.
+  const assignee = h('select', { disabled: '' }, h('option', { value: '' }, 'Loading…'));
+  const assigneeNote = h('span', { class: 't-sub' });
+  assignableUsers(s.project).then((users) => {
+    const match = s.person ? users.find((u) => nameKey(u.name) === nameKey(s.person.name)) : null;
+    assignee.replaceChildren(h('option', { value: '' }, 'Unassigned'), ...users.map((u) => h('option', { value: u.accountId, ...(match?.accountId === u.accountId ? { selected: '' } : {}) }, u.name)));
+    assignee.disabled = false;
+    assigneeNote.textContent = !s.person ? '' : match ? `suggested: ${s.person.name}` : `suggested: ${s.person.name} (no Jira account in ${s.project})`;
+  }).catch((e) => { assignee.replaceChildren(h('option', { value: '' }, 'Unassigned')); assignee.disabled = false; assigneeNote.textContent = `the people of ${s.project} could not be read: ${e.message}`; });
   const analyze = h('input', { type: 'checkbox' });
   const state = h('span', { class: 'meta' });
   const go = h('button', { class: 'primary small', onclick: async () => {
-    if (!confirm(`Create this ${type.value} in Jira (${s.project})?\n\n${summary.value}`)) return;
+    const who = assignee.value ? assignee.selectedOptions[0].textContent : 'nobody';
+    if (!confirm(`Create this ${type.value} in Jira (${s.project}), assigned to ${who}?\n\n${summary.value}`)) return;
     go.disabled = true; state.textContent = 'Creating…';
     try {
-      const r = await post('/api/insights/tickets', { project: s.project, id: s.id, assign: assign.checked, analyze: analyze.checked,
+      const r = await post('/api/insights/tickets', { project: s.project, id: s.id, assigneeId: assignee.value || null, analyze: analyze.checked,
         edits: { summary: summary.value, type: type.value, priority: priority.value, description: description.value } });
       openSuggestion = null;
       state.textContent = `Created ${r.key}`;
@@ -826,7 +849,7 @@ function suggestionEditor(s) {
     h('label', {}, h('div', { class: 't-sub' }, 'Summary'), summary),
     h('div', { style: 'display:flex;gap:12px;align-items:center;flex-wrap:wrap' },
       h('label', {}, h('span', { class: 't-sub' }, 'Type '), type), h('label', {}, h('span', { class: 't-sub' }, 'Priority '), priority),
-      s.person ? h('label', {}, assign, ` Assign to ${s.person.name} if they have a Jira account in ${s.project} (otherwise named in the description)`) : null),
+      h('label', {}, h('span', { class: 't-sub' }, 'Assignee '), assignee), assigneeNote),
     h('label', {}, h('div', { class: 't-sub' }, 'Description (Jira wiki markup)'), description),
     h('label', {}, analyze, ' Let the agent analyze it like a new ticket (without this it gets the no-ai label)'),
     h('div', { style: 'display:flex;gap:10px;align-items:center' }, go, state));

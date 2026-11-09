@@ -231,6 +231,7 @@ async function drain() {
 const insightsCache = new Map(); // project key → { at, data }
 let recommending = false;
 let reviewing = null; // the project whose app review is running
+const assignableCache = new Map(); // project key → { at, users }
 let asking = false;
 async function insightsCached(p, refresh = false) {
   const hit = insightsCache.get(p.key);
@@ -387,6 +388,19 @@ const server = createServer(async (req, res) => {
       broadcast({ type: 'review-progress', project: p.key, step: null });
     }
   }
+  // Who can be assigned tickets of a project (the assignee list of Create in Jira…), cached for ten minutes.
+  if (req.method === 'GET' && path === '/api/insights/assignable') {
+    try {
+      const p = readyProject({ project: queryOf(req).get('project') });
+      const hit = assignableCache.get(p.key);
+      if (hit && Date.now() - hit.at < 600_000) return json(res, 200, { users: hit.users });
+      const users = await jira.assignableUsers(p.key, '');
+      assignableCache.set(p.key, { at: Date.now(), users });
+      return json(res, 200, { users });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    }
+  }
   // Create one suggested ticket in Jira, after a person checked and confirmed it on the dashboard (policy createTicket).
   if (req.method === 'POST' && path === '/api/insights/tickets') {
     try {
@@ -397,7 +411,8 @@ const server = createServer(async (req, res) => {
       const s = suggestTickets({ insights: data, review: readReview(p, data), rules: p.cfg.insights?.components ?? [], created: readCreated(p.stateDir), project: p.key }).find((x) => x.id === body.id);
       if (!s) return json(res, 404, { ok: false, error: 'this suggestion is no longer there; refresh the Insights tab' });
       if (s.created) return json(res, 409, { ok: false, error: `already created as ${s.created.key}` });
-      const created = await createSuggested({ jira, project: p.key, stateDir: p.stateDir, suggestion: s, edits: body.edits ?? {}, assign: body.assign !== false, analyze: body.analyze === true });
+      if (s.openAs && body.evenIfOpen !== true) return json(res, 409, { ok: false, error: `${s.openAs} is open and says the same` });
+      const created = await createSuggested({ jira, project: p.key, stateDir: p.stateDir, suggestion: s, edits: body.edits ?? {}, assign: body.assign !== false, assigneeId: body.assigneeId, analyze: body.analyze === true });
       events.emit('insights', { project: p.key, text: `${created.key} created from an Insights suggestion: ${created.summary}${created.assignee ? ` (assigned to ${created.assignee})` : ''}` });
       insightsCache.delete(p.key);
       return json(res, 200, { ok: true, ...created });

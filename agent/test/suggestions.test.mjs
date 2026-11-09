@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { createSuggested, shortText, sideTag, suggestTickets } from '../lib/suggestions.mjs';
+import { createSuggested, shortText, sideTag, suggestTickets, wordsAlike } from '../lib/suggestions.mjs';
 
 const RULES = [{ name: 'Risultati', paths: ['backend/src/main/java/com/x/result/', 'frontend/src/app/features/results/'] }, { name: 'Shared', paths: ['backend/src/main/java/com/x/common/'] }];
 const RESULT_FORM = 'frontend/src/app/features/results/result-entry.component.ts';
@@ -27,6 +27,18 @@ const REVIEW = {
   refactors: [{ title: 'One state machine for requests and tubes', files: ['backend/src/main/java/com/x/result/ResultService.java', RESULT_FORM], why: 'LAB-9 and LAB-12.', steps: ['Enums', 'One place'], effort: 'M', payoff: 'Fewer bugs' }],
   growth: [{ title: 'Result history for MediFarma', why: 'MediFarma reads the latest creatinine (LAB-14).', buildsOn: ['LAB-14', 'backend/src/main/java/com/x/result/PatientResultController.java'], prerequisites: 'Store the unit.' }],
 };
+
+test('a suggestion that an open ticket already says is marked with that ticket; a done one does not count', () => {
+  const tickets = [
+    { key: 'LAB-40', status: 'To Do', summary: '[FE] - Risultati e referti: decimal comma values are saved as whole numbers!' },
+    { key: 'LAB-41', status: 'Done', summary: '[BE] - Refactor: a state machine for the requests and the tubes' }, // alike, but done
+  ];
+  const s = suggestTickets({ insights: { ...INSIGHTS, tickets }, review: REVIEW, rules: RULES, project: 'LAB' });
+  assert.equal(s.find((x) => x.source === 'review-finding').openAs, 'LAB-40');
+  assert.equal(s.find((x) => x.source === 'review-refactor').openAs, null);
+  assert.ok(wordsAlike('[BE] - Prenotazioni: a cancelled appointment time is never offered again', '[BE] - Prenotazioni: a cancelled appointment is never offered again') >= 0.6);
+  assert.ok(wordsAlike('[BE] - Report: add a test for ReportController.java', '[BE] - Report: monthly bookings per structure') < 0.6);
+});
 
 test('summary helpers: the first sentence cut at a word; the [BE]/[FE] tag from the files', () => {
   assert.equal(shortText('Values are parsed with parseFloat. It stops.'), 'Values are parsed with parseFloat');
@@ -80,6 +92,19 @@ test('creating a suggestion: the person is assigned only with a matching Jira ac
   assert.deepEqual(giorgio.calls[0].labels, ['ai-suggested']);
 
   await assert.rejects(createSuggested({ jira: giorgio, project: 'LAB', stateDir, suggestion: s, edits: { type: 'Epic' } }), /type must be one of/);
+
+  // The person picked on the dashboard: assigned after checking they are assignable; the note says who was suggested.
+  const team = fakeJira([{ accountId: 'b1', name: 'Bojan Mijatović' }]);
+  const c3 = await createSuggested({ jira: team, project: 'LAB', stateDir, suggestion: s, assigneeId: 'b1' });
+  assert.equal(c3.assignee, 'Bojan Mijatović');
+  assert.equal(team.calls[0].assigneeId, 'b1');
+  assert.match(team.calls[0].description, /Giorgio Esposito has no Jira account in LAB; assigned to Bojan Mijatović/);
+  await assert.rejects(createSuggested({ jira: team, project: 'LAB', stateDir, suggestion: s, assigneeId: 'x9' }), /cannot be assigned/);
+  // Nobody picked although the suggested person has an account: left unassigned, and said so.
+  const withGiorgio = fakeJira([{ accountId: 'g1', name: 'Giorgio Esposito' }]);
+  await createSuggested({ jira: withGiorgio, project: 'LAB', stateDir, suggestion: s, assigneeId: null });
+  assert.equal(withGiorgio.calls[0].assigneeId, null);
+  assert.match(withGiorgio.calls[0].description, /Suggested: Giorgio Esposito; left unassigned/);
 
   // Shown as created while LAB-31 is in Jira; open again once it was deleted there.
   const created = JSON.parse(readFileSync(join(stateDir, 'insights', 'suggestions-created.json'), 'utf8'));

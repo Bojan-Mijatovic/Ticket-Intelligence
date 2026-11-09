@@ -22,6 +22,15 @@ const base = (p) => String(p).split('/').pop();
 const clean = (t) => String(t ?? '').replace(/\s+/g, ' ').trim();
 const normal = (s) => clean(s).toLowerCase().replace(/^\[[a-z\]\[]+\]\s*-\s*/, '').replace(/[^\p{L}\p{N} ]/gu, '');
 
+/** Share of the words (3+ letters, without the [BE]/[FE] tag) two summaries have in common (0..1). */
+export function wordsAlike(a, b) {
+  const words = (s) => new Set(normal(s).split(' ').filter((w) => w.length >= 3));
+  const [A, B] = [words(a), words(b)];
+  let both = 0;
+  for (const w of A) if (B.has(w)) both++;
+  return both / (A.size + B.size - both || 1);
+}
+
 /** The first sentence of a text, at most `max` characters (cut at a word). */
 export function shortText(text, max = 80) {
   const s = clean(text);
@@ -161,9 +170,13 @@ export function suggestTickets({ insights, review = null, rules = [], created = 
   // A created ticket counts only while it is still in Jira (deleted there: the suggestion is open again).
   const keys = new Set(insights.tickets.map((t) => t.key));
   const createdOf = (s) => (created[s.id] && keys.has(created[s.id].key) ? created[s.id] : null);
+  // An open ticket that already says the same (most words of the summary alike): no second ticket. A done one does not
+  // count: the same problem found again on main is a regression worth a ticket.
+  const open = insights.tickets.filter((t) => !/done|closed|resolved/i.test(t.status ?? ''));
+  const openAs = (s) => open.find((t) => t.key !== createdOf(s)?.key && wordsAlike(s.summary, t.summary) >= 0.6)?.key ?? null;
   return out
     .filter((s) => !existing.has(normal(s.summary)) || createdOf(s))
-    .map((s) => ({ ...s, created: createdOf(s), project }))
+    .map((s) => ({ ...s, created: createdOf(s), openAs: createdOf(s) ? null : openAs(s), project }))
     .sort((a, b) => Number(Boolean(a.created)) - Number(Boolean(b.created)) || (ORDER[a.priority] ?? 9) - (ORDER[b.priority] ?? 9) || TYPES.indexOf(a.type) - TYPES.indexOf(b.type));
 }
 
@@ -178,10 +191,14 @@ export function readCreated(stateDir) {
 }
 
 /**
- * Creates one suggested ticket after a person confirmed it, with their edits. Assigns the suggested person only when a
- * Jira user of the project has that name; labels it ai-suggested, and no-ai unless the agent should analyze it.
+ * Creates one suggested ticket after a person confirmed it, with their edits; labels it ai-suggested, and no-ai unless
+ * the agent should analyze it. The assignee:
+ *   assigneeId (a string)  the person picked on the dashboard; it must be assignable in the project (checked in Jira)
+ *   assigneeId '' or null  nobody
+ *   assigneeId undefined   the suggested person, when a Jira user of the project has that name (with assign: true)
+ * When the suggested person has no Jira account, the description says so.
  */
-export async function createSuggested({ jira, project, stateDir, suggestion, edits = {}, assign = true, analyze = false }) {
+export async function createSuggested({ jira, project, stateDir, suggestion, edits = {}, assign = true, assigneeId = undefined, analyze = false }) {
   const summary = clean(edits.summary ?? suggestion.summary);
   const type = edits.type ?? suggestion.type;
   const priority = edits.priority ?? suggestion.priority;
@@ -192,10 +209,19 @@ export async function createSuggested({ jira, project, stateDir, suggestion, edi
   if (description.length > 30000) throw Object.assign(new Error('the description is too long'), { status: 400 });
 
   let assignee = null;
-  if (assign && suggestion.person) {
+  if (typeof assigneeId === 'string' && assigneeId) {
+    assignee = (await jira.assignableUsers(project, '')).find((u) => u.accountId === assigneeId) ?? null;
+    if (!assignee) throw Object.assign(new Error(`that person cannot be assigned tickets in ${project}`), { status: 400 });
+  } else if (assigneeId === undefined && assign && suggestion.person) {
     const users = await jira.assignableUsers(project, suggestion.person.name).catch(() => []);
     assignee = users.find((u) => personKey(u.name) === personKey(suggestion.person.name)) ?? null;
-    if (!assignee) description += `\n\n_${suggestion.person.name} has no Jira account in ${project}, so the ticket is not assigned._`;
+  }
+  if (suggestion.person && personKey(assignee?.name) !== personKey(suggestion.person.name)) {
+    // Say why the suggested person is not the assignee: no account, or someone else (or nobody) was picked.
+    const hasAccount = (await jira.assignableUsers(project, suggestion.person.name).catch(() => [])).some((u) => personKey(u.name) === personKey(suggestion.person.name));
+    description += hasAccount
+      ? `\n\n_Suggested: ${suggestion.person.name}; ${assignee ? `assigned to ${assignee.name}` : 'left unassigned'} when it was created._`
+      : `\n\n_${suggestion.person.name} has no Jira account in ${project}${assignee ? `; assigned to ${assignee.name}` : ', so the ticket is not assigned'}._`;
   }
   const labels = ['ai-suggested', ...(analyze ? [] : ['no-ai'])];
   const res = await jira.createIssue({ project, summary, description, type, priority, labels, assigneeId: assignee?.accountId ?? null });
