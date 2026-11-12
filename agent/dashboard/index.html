@@ -207,6 +207,7 @@
     <input id="run-key" placeholder="DEM-12" autocomplete="off" aria-label="Ticket key"><button type="submit">Run ticket</button>
   </form>
   <button class="small" id="tour-btn" title="A guided tour with voice: the dashboard shows itself (read-only, starts no agent run)">▶ Tour</button>
+  <button class="small" id="present-btn" title="A presentation of about fourteen minutes: slides, the guided tour as the demo, then results, technologies and sources (also ?present)">▶ Present</button>
   <button class="primary" id="check">Check now</button>
 </header>
 
@@ -1309,6 +1310,7 @@ setInterval(() => { renderStatus(); if (status?.processing && tab === 'tickets')
 connect();
 try { const saved = localStorage.getItem('ti-tab'); if (saved === 'insights' || saved === 'ask') showTab(saved); } catch { /* storage blocked */ }
 </script>
+<script src="/slides.js"></script>
 <script src="/tour.js"></script>
 </body>
 </html>

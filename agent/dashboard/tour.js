@@ -10,8 +10,14 @@
 //
 // Read-only: it never starts an agent run, an Ask question, a review or a recommendation.
 //
-// Start it with the ▶ Tour button in the header, or open the dashboard with ?tour (a click is still needed: browsers
-// do not let a page speak before the person has clicked on it). It uses the dashboard's own globals (tickets, status,
+// Three modes. ?tour (or ▶ Tour): the tour above, with its slides over the dashboard. ?present (or ▶ Present): a
+// presentation of about fourteen minutes: full-screen slides (slides.js), then the tour's dashboard part as the demo,
+// then full-screen slides again (what you just saw, results, technologies, sources, thank you) and backup Q&A slides
+// after the end. ?deck: the slides alone. In a presentation, P switches to presenter mode (no voice; → shows the next
+// part of a slide, then the next slide) and F to full screen.
+//
+// Start it with the buttons in the header, or open the dashboard with ?tour, ?present or ?deck (a click is still
+// needed: browsers do not let a page speak before the person has clicked on it). It uses the dashboard's own globals (tickets, status,
 // showTab, selectProject, apply, render, answers, …): top-level let/const of the page's script are visible here too.
 
 (() => {
@@ -35,7 +41,7 @@
       border: 3px solid var(--accent); opacity: 0; transform: scale(.3); }
     #tour-cursor.click .ring { animation: tour-ring .5s ease-out; }
     @keyframes tour-ring { 0% { opacity: .9; transform: scale(.3); } 100% { opacity: 0; transform: scale(1.6); } }
-    #tour-bar { position: fixed; z-index: 63; left: 50%; bottom: 18px; transform: translateX(-50%); width: min(920px, calc(100vw - 32px));
+    #tour-bar { position: fixed; z-index: 63; left: 50%; bottom: 18px; transform: translateX(-50%); width: min(1180px, calc(100vw - 32px));
       background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px 12px;
       box-shadow: 0 10px 30px rgb(0 0 0 / 0.25); display: grid; gap: 10px; }
     #tour-bar .tt { font-size: 16px; line-height: 1.5; min-height: 48px; }
@@ -48,40 +54,16 @@
     .tour-replay { font-size: 11px; font-weight: 800; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); white-space: nowrap; margin-left: 6px; }
     #tour-start { position: fixed; inset: 0; z-index: 65; display: grid; place-items: center; background: rgb(10 14 20 / 0.55); }
     #tour-start button { font-size: 18px; padding: 14px 28px; border-radius: 12px; }
-
-    #tour-slide { position: fixed; z-index: 62; left: 50%; transform: translateX(-50%); width: min(1120px, calc(100vw - 32px)); overflow: auto;
-      background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 18px; padding: 26px 30px 24px;
-      box-shadow: 0 20px 50px rgb(0 0 0 / .3); }
-    #tour-slide .kick { color: var(--accent); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
-    #tour-slide h1 { font-size: 26px; line-height: 1.25; margin: 4px 0 6px; }
-    #tour-slide .lead { color: var(--muted); font-size: 15px; margin: 0 0 18px; }
-    #tour-slide [data-r] { opacity: 0; transform: translateY(10px); transition: opacity .55s ease, transform .55s ease; }
-    #tour-slide [data-r].on { opacity: 1; transform: none; }
-    #tour-slide ul, #tour-slide ol { margin: 0; padding-left: 20px; }
-    #tour-slide li { margin: 4px 0; font-size: 14px; }
-    #tour-slide code { background: var(--code); padding: 1px 5px; border-radius: 4px; }
-    .ts-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .ts-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-    .ts-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--surface-2); font-size: 14px; }
-    .ts-card h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
-    .ts-card p { margin: 0 0 6px; }
-    .ts-goal { margin-top: 16px; border-left: 4px solid var(--ok); background: var(--ok-soft); padding: 12px 16px; border-radius: 0 10px 10px 0; font-size: 15px; }
-    .ts-big { font-size: 28px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
-    .ts-flow { display: grid; gap: 12px; }
-    .ts-row { display: grid; grid-template-columns: 120px 1fr; gap: 12px; align-items: center; }
-    .ts-row .lbl { font-weight: 800; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; transition: color .4s; }
-    .ts-nodes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-    .ts-node { border: 1.5px solid var(--border); border-radius: 10px; padding: 7px 11px; background: var(--surface-2); font-size: 13px; font-weight: 650;
-      transition: border-color .4s, background .4s, box-shadow .4s; transition-delay: 0s; }
-    .ts-node small { display: block; font-weight: 500; color: var(--muted); font-size: 11.5px; }
-    .ts-node.ai::before { content: "✦ "; color: var(--teams); }
-    .ts-arrow { color: var(--muted); font-weight: 700; }
-    .ts-row.hot .lbl { color: var(--accent); }
-    .ts-row.hot .ts-node { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
-      transition-delay: calc(var(--i, 0) * 260ms); }
-    @media (max-width: 900px) { .ts-cols, .ts-grid { grid-template-columns: 1fr; } .ts-row { grid-template-columns: 1fr; } #tour-slide { padding: 18px; } }
+    #tour-bar .parts { display: inline-flex; gap: 4px; }
+    #tour-bar .parts[hidden], #tour-bar .tm[hidden] { display: none; }
+    #tour-bar .parts button.on, #tour-bar button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+    #tour-bar .tm { display: inline-flex; gap: 3px; font-size: 11px; font-weight: 700; }
+    #tour-bar .tm span { padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); white-space: nowrap; }
+    #tour-bar .tm span.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
     @media (max-width: 600px) { #tour-bar { bottom: 8px; } #tour-bar .tt { font-size: 14px; } }
   ` }));
+  // The slides' own styles (slides.js).
+  document.head.append(Object.assign(document.createElement('style'), { textContent: window.TourSlides?.css ?? '' }));
 
   // ------------------------------------------------------------------ helpers
   const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
@@ -305,95 +287,51 @@
     if (typeof openSuggestion !== 'undefined' && openSuggestion) { openSuggestion = null; if (insightsData) renderSuggestions(insightsData); }
   }
 
-  // ------------------------------------------------------------------ explainer slides
-  const SLIDES = {
-    problem: () => `
-      <div class="kick">The problem</div>
-      <h1>“I opened a ticket. What is the status? Can it be sped up?”</h1>
-      <p class="lead">Customers of hospital scheduling systems ask this every day. A good answer takes a lot of digging.</p>
-      <div class="ts-cols">
-        <div class="ts-card" data-r="1"><h3>To answer well, an engineer has to</h3><ol>
-          <li>read the ticket, its comments, history and screenshots</li>
-          <li>search Jira for earlier tickets with the same symptom</li>
-          <li>find where it lives in the code, and what changed there recently</li>
-          <li>work out who knows that part of the code</li>
-          <li>hand it over, with the context, to that person</li></ol></div>
-        <div class="ts-card" data-r="2"><h3>Today it is done by hand</h3><ul>
-          <li><b>Customers</b> wait for a real answer</li>
-          <li><b>Support</b> cannot say anything concrete without a developer</li>
-          <li><b>Developers new to a project</b> do not know the code, the history, or whom to ask</li>
-          <li><b>Team leads</b> spend their time routing tickets and chasing status</li>
-          <li><b>Experienced developers</b> keep explaining old history again</li></ul></div>
-      </div>
-      <div class="ts-goal" data-r="3"><b>The goal:</b> for every new ticket, within minutes and with no human start, an analysis with evidence in Jira,
-        the right person informed, drafts for a human to approve, and the knowledge kept when it is solved.</div>`,
-    pipeline: () => {
-      const node = (t, s, i, ai = false) => `<span class="ts-node${ai ? ' ai' : ''}" style="--i:${i}">${t}${s ? `<small>${s}</small>` : ''}</span>`;
-      const row = (g, label, nodes) => `<div class="ts-row" data-r="${g}" data-g="${g}"><div class="lbl">${label}</div><div class="ts-nodes">${nodes.join('<span class="ts-arrow">→</span>')}</div></div>`;
-      return `
-      <div class="kick">Behind the scenes</div>
-      <h1>From a Jira ticket to a reviewed fix, with nobody starting it</h1>
-      <p class="lead">Plain code collects and checks the facts. The AI reads, connects and writes. Only the watcher writes anywhere, and only what the policy allows.</p>
-      <div class="ts-flow">
-        ${row(1, '1 · Collect', [node('New Jira ticket', 'any of the 4 apps', 0), node('Watcher', 'checks Jira every 30 s', 1), node('Facts, by plain code', 'ticket, history, related tickets, commits, code, people', 2)])}
-        ${row(2, '2 · Analyze', [node('Claude, headless', 'cannot edit files', 0, true), node('JSON result', 'checked by code', 1), node('Policy', 'auto · draft · off', 2), node('Jira comment · Teams', 'drafts wait for a human', 3)])}
-        ${row(3, '3 · Prove & fix', [node('Own copy of the code', 'a worktree on a branch', 0), node('Test reproduces the bug', 'Playwright or JUnit; must fail', 1, true), node('Fix', 'smallest change', 2, true), node('Watcher re-runs everything', 'tests, build, backend', 3), node('Draft pull request', '', 4), node('AI reviewer', 'risk and findings', 5, true)])}
-        ${row(4, '4 · Learn', [node('Ticket Done', '', 0), node('Knowledge base', 'docs/knowledge, as a pull request', 1, true), node('Insights · Ask', 'read all of this history', 2, true)])}
-      </div>`;
-    },
-    ai: () => `
-      <div class="kick">The AI</div>
-      <h1>Claude, by Anthropic, run through Claude Code</h1>
-      <p class="lead">Headless runs, started by the watcher. Each run gets only the tools its job needs.</p>
-      <div class="ts-grid">
-        <div class="ts-card" data-r="1"><h3>Models</h3><p><b>Analysis:</b> Claude Sonnet: fast and cheaper.</p><p><b>Fix, review, Ask, app review:</b> Claude Opus.</p><p>Set in <code>agent.config.json</code>.</p></div>
-        <div class="ts-card" data-r="1"><h3>Who does what</h3><p><b>Plain code</b> collects Jira, git or SVN, people and signals, computes scores and checks every result.</p><p><b>The model</b> reads, connects the facts and writes.</p></div>
-        <div class="ts-card" data-r="2"><h3>Guardrails</h3><p>The analysis cannot edit files; Ask and the reviewer can only read. No MCP servers, no publishing tools.</p><p>Every cited ticket, commit and file is checked by code.</p></div>
-        <div class="ts-card" data-r="2"><h3>Not trained, improved</h3><p>No fine-tuning: the model is the same for everyone. It improves through what it reads: instructions, project conventions, commit messages, the knowledge base, tests.</p><p>Each change is scored on tickets with a known answer.</p></div>
-        <div class="ts-card" data-r="3"><h3>Cost</h3><p><span class="ts-big">$0.15–0.60</span> per ticket analysis</p><p><span class="ts-big">$0.10–0.40</span> per Ask question, 15–30 s</p></div>
-        <div class="ts-card" data-r="3"><h3>Patient data</h3><p>Tickets may contain personal and health data. Nothing goes to an AI service outside the approved tools; redaction comes before company tickets.</p></div>
-      </div>`,
-    work: () => `
-      <div class="kick">At work</div>
-      <h1>GitHub Copilot, git and SVN</h1>
-      <p class="lead">The same skills on demand in the editor; the autonomous agent runs on Claude Code.</p>
-      <div class="ts-grid">
-        <div class="ts-card" data-r="1"><h3>GitHub Copilot</h3><p>The two skills, <code>/analyze-ticket</code> and <code>/document-ticket</code>, use the same <code>SKILL.md</code> format: VS Code agent mode and the Copilot CLI read them (<code>node install.mjs</code>).</p><p>Copilot runs the same Node scripts in the terminal, with the model picked there, Claude included.</p><p><b>Status:</b> not tried inside Copilot yet; the test plan is ready.</p></div>
-        <div class="ts-card" data-r="2"><h3>git and SVN</h3><p>Detected automatically. git: <code>git log</code>, <code>git show</code>. SVN: <code>svn log --search</code>, <code>svn diff -c</code>, logins mapped to names.</p><p>Tested on an SVN copy of MediAgenda: the same components, people and related tickets as on git.</p></div>
-        <div class="ts-card" data-r="3"><h3>Documentation on SVN</h3><p><code>/document-ticket</code> can commit, make a branch (<code>svn copy</code>) or write a patch file. An SVN commit goes straight to the server, so it always asks first. Patch mode is tested.</p><p><b>Git only for now:</b> the automatic fix, pull requests and Insights.</p></div>
-      </div>`,
-    built: () => `
-      <div class="kick">How it was built</div>
-      <h1>Problem first, evidence over opinion, and a human decides</h1>
-      <div class="ts-cols">
-        <div class="ts-card" data-r="1"><h3>The ideas</h3><ol>
-          <li><b>Problem first:</b> the problem, success metrics, risks and exit criteria were written and approved before the code.</li>
-          <li><b>A skill, then autonomy:</b> <code>/analyze-ticket</code> on demand first, then the watcher that runs it alone.</li>
-          <li><b>Evidence over opinion:</b> a test proves the bug, the watcher re-runs every check, every claim cites its source.</li>
-          <li><b>A human decides:</b> a policy per action, drafts for anything customer-facing, merging is never automatic.</li></ol></div>
-        <div class="ts-card" data-r="2"><h3>Tested honestly</h3><ul>
-          <li>Four linked hospital apps with real git history, Jira projects and teams</li>
-          <li>Bugs brought in by later changes, like real ones; the answer keys are hidden from the agent</li>
-          <li>Every run scored: the file, the change that caused it, related tickets, owner, the fix</li></ul>
-          <p style="margin-top:10px"><span class="ts-big">~80 s</span> to an analysis in Jira · <span class="ts-big">6–8 / 8</span> scored · <span class="ts-big">0</span> writes outside the policy</p></div>
-      </div>
-      <div class="ts-goal" data-r="3"><b>Next:</b> approval straight from Teams · a night shift with a morning digest · release notes ·
-        a reply to the customer after the merge · redaction of patient data before company tickets.</div>`,
-  };
+  // ------------------------------------------------------------------ slides (their content is in slides.js)
   let slideEl = null;
   let slideName = null;
-  function showSlide(name, reveal) {
-    if (!slideEl) { slideEl = Object.assign(document.createElement('div'), { id: 'tour-slide' }); document.body.append(slideEl); }
-    if (slideName !== name) { slideEl.innerHTML = SLIDES[name](); slideName = name; slideEl.scrollTop = 0; }
-    requestAnimationFrame(() => {
-      for (const el of slideEl.querySelectorAll('[data-r]')) el.classList.toggle('on', Number(el.dataset.r) <= reveal);
-      for (const el of slideEl.querySelectorAll('[data-g]')) el.classList.toggle('hot', Number(el.dataset.g) === reveal);
-    });
+  let revealed = 0; // the newest group of the slide's data-r elements that is shown
+  /** The number of reveal groups on the slide shown (data-r="1", "2", …). */
+  const groups = () => Math.max(0, ...[...(slideEl?.querySelectorAll('[data-r]') ?? [])].map((el) => Number(el.dataset.r) || 0));
+  /** Shows the groups up to `n`; group `n` is lit (data-g). */
+  function reveal(n) {
+    revealed = n;
+    if (!slideEl) return;
+    for (const el of slideEl.querySelectorAll('[data-r]')) el.classList.toggle('on', Number(el.dataset.r) <= n);
+    for (const el of slideEl.querySelectorAll('[data-g]')) el.classList.toggle('hot', Number(el.dataset.g) === n);
+  }
+  function showSlide(name, n) {
+    const make = window.TourSlides?.slides?.[name];
+    if (!make) return;
+    if (!slideEl) {
+      slideEl = Object.assign(document.createElement('div'), { id: 'tour-slide', className: full ? 'full' : '' });
+      document.body.append(slideEl);
+    }
+    if (slideName !== name) {
+      const html = make({ ...ctx, full });
+      slideEl.innerHTML = full ? `<div class="page">${html}</div>` : html;
+      slideName = name;
+      slideEl.scrollTop = 0;
+      revealed = 0;
+    }
+    requestAnimationFrame(() => reveal(n));
     cursor?.classList.remove('on');
   }
-  function hideSlide() { slideEl?.remove(); slideEl = null; slideName = null; }
+  /** A full-screen slide fades out (into the dashboard); one over the page just goes. */
+  function hideSlide() {
+    const el = slideEl;
+    slideEl = null;
+    slideName = null;
+    if (!el) return;
+    if (running && el.classList.contains('full')) { el.classList.add('out'); setTimeout(() => el.remove(), 450); } else el.remove();
+  }
 
   // ------------------------------------------------------------------ the script
+  let mode = 'tour'; // 'tour' | 'present' | 'deck'
+  let full = false; // slides cover the whole screen (present, deck)
+  let presenter = false; // no voice; → moves on (present, deck)
+  let deckCfg = {}; // agent.config.json "presentation": presenter, team, contact
+  let ctx = {}; // what the slides show: the cases, the apps (built with the steps)
   let asks = []; // recorded Ask answers for the tour
   let suite = null; // the suite insights, fetched at the start (it also warms the server's cache)
   let preIns = null; // the first case's project insights, fetched at the start for the same reason
@@ -455,15 +393,15 @@
 
     /** Case 1: one ticket end to end, from Jira to a reviewed pull request. */
     const caseOne = (k) => [
-      { ch: 'Case 1', when: () => k && rps.has(k), go: async (my) => { await toTickets(k, my); await playTo(k, 'picked', my); }, target: () => ticketEl(k)?.querySelector('.t-head'),
+      { ch: 'Case 1', stage: 'collect', when: () => k && rps.has(k), go: async (my) => { await toTickets(k, my); await playTo(k, 'picked', my); }, target: () => ticketEl(k)?.querySelector('.t-head'),
         say: () => `Case one: a ticket for ${appWithRole(k).replace(/,$/, '')}: ${titleOf(k)}.${recorded(k)}` },
-      { ch: 'Case 1', when: () => k && rps.has(k), play: playUntil(k, 'analyzed'), target: () => ticketEl(k)?.querySelector('.steps') ?? ticketEl(k),
+      { ch: 'Case 1', stage: 'collect', when: () => k && rps.has(k), play: playUntil(k, 'analyzed'), target: () => ticketEl(k)?.querySelector('.steps') ?? ticketEl(k),
         say: () => `Nobody starts it. The watcher picks it up within seconds, gives the agent its own copy of the code on a branch named ${k}${did(k, 'warmed') ? ', and starts the app\'s development server in parallel' : ''}. Then a plain script collects the facts: the ticket and its history, related tickets, commits, code and people. Claude reads that bundle and opens the suspect files itself.` },
-      { ch: 'Case 1', when: () => k && !rps.has(k), go: async (my) => { await toTickets(k, my); T(k).expanded = true; render(); }, target: () => ticketEl(k)?.querySelector('.steps') ?? ticketEl(k)?.querySelector('.t-head'),
+      { ch: 'Case 1', stage: 'collect', when: () => k && !rps.has(k), go: async (my) => { await toTickets(k, my); T(k).expanded = true; render(); }, target: () => ticketEl(k)?.querySelector('.steps') ?? ticketEl(k)?.querySelector('.t-head'),
         say: () => `Case one, a real ticket: ${k}. ${firstSentence(titleOf(k), 160)} Here are the steps the agent took: a plain script collected the facts, then Claude read them and opened the suspect files itself.` },
-      { ch: 'Case 1', when: () => R(k), target: () => rowOf(k, 'Likely cause'),
+      { ch: 'Case 1', stage: 'analyze', when: () => R(k), target: () => rowOf(k, 'Likely cause'),
         say: () => `${did(k, 'picked') && did(k, 'analyzed') ? `After ${duration(secs(k, 'picked', 'analyzed'))}, the` : 'The'} result is in, validated by the watcher: the likely cause with its confidence, the exact files and lines, and the owner, ${R(k).owner?.name ?? 'the right person'}. Here, with ${R(k).confidence} confidence: ${firstSentence(noParens(R(k).likelyCause))} All of it is posted as an internal comment in Jira.` },
-      { ch: 'Case 1', when: () => did(k, 'notified'), go: (my) => moveTo($('#teams'), my, { x: 0.5, y: 0.3 }), target: () => $('#teams')?.closest('aside'),
+      { ch: 'Case 1', stage: 'analyze', when: () => did(k, 'notified'), go: (my) => moveTo($('#teams'), my, { x: 0.5, y: 0.3 }), target: () => $('#teams')?.closest('aside'),
         say: () => `${R(k)?.owner?.name ?? 'The owner'} gets a handoff message in Teams, simulated here. Anything for the customer, like a reply to the reporter, waits below as a draft until a person approves it: that is the policy.` },
       { ch: 'Case 1', when: () => did(k, 'reproduced'), play: playUntil(k, 'reproduced'), go: (my) => (rps.has(k) ? moveTo(ticketEl(k), my, { x: 0.3, y: 0.8 }) : true), target: () => boxOf(k, '🛠') ?? ticketEl(k),
         say: () => (side(k) === 'backend'
@@ -485,9 +423,9 @@
 
     /** Case 2: a bug whose cause is a change in another app. */
     const caseTwo = (k) => [
-      { ch: 'Case 2', when: () => k, go: async (my) => { if (k1 && T(k1)) { T(k1).expanded = false; render(); } await toTickets(k, my); await playTo(k, 'picked', my); }, play: playUntil(k, 'analyzed'), target: () => ticketEl(k) ?? null,
+      { ch: 'Case 2', stage: 'collect', when: () => k, go: async (my) => { if (k1 && T(k1)) { T(k1).expanded = false; render(); } await toTickets(k, my); await playTo(k, 'picked', my); }, play: playUntil(k, 'analyzed'), target: () => ticketEl(k) ?? null,
         say: () => `Case two is harder. ${appWithRole(k)} gets a ticket: ${titleOf(k)}. The trouble started in another app. ${appName(k)} calls ${linkedApps(k).length ? list(linkedApps(k)) : 'other apps of the suite'}, so the run also gets a read-only copy of each, and their Jira projects are searched too.` },
-      { ch: 'Case 2', when: () => k && crossApp(k), target: () => rowOf(k, 'Other projects') ?? rowOf(k, 'Likely cause'),
+      { ch: 'Case 2', stage: 'analyze', when: () => k && crossApp(k), target: () => rowOf(k, 'Other projects') ?? rowOf(k, 'Likely cause'),
         say: () => {
           const o = crossApp(k);
           const ev = String(o.evidence ?? '').match(/\b[A-Z][A-Z0-9_]+-\d+\b/)?.[0];
@@ -504,8 +442,26 @@
     const editorEl = () => document.querySelector('#ins-suggestions td[colspan="4"]');
     const labelOf = (text) => [...(editorEl()?.querySelectorAll('label') ?? [])].find((l) => l.textContent.includes(text)) ?? null;
 
-    return [
-      // Opening and the explainers
+    // What the presentation's slides show: the same cases and numbers as the demo.
+    const caseFacts = (k) => {
+      const last = ['reviewed', 'fix-proposed', 'analyzed'].find((t) => did(k, t));
+      const o = crossApp(k);
+      const fixIn = cross(k)?.fixIn ?? crossEv(k)?.fixIn;
+      return {
+        key: k, app: appName(k), title: titleOf(k),
+        analyzeSecs: secs(k, 'picked', 'analyzed'), totalSecs: last ? secs(k, 'picked', last) : 0,
+        reproduced: did(k, 'reproduced'), fixed: did(k, 'fix-proposed'), side: side(k), risk: did(k, 'reviewed') ? reviewOf(k)?.risk ?? null : null,
+        cross: o ? projectInfo(o.key)?.name ?? o.key : null, fixIn: fixIn ? projectInfo(fixIn)?.name ?? fixIn : null,
+        cost: firstOf(k, 'analyzed')?.meta?.costUsd ?? T(k)?.meta?.costUsd ?? 0,
+      };
+    };
+    ctx = {
+      mode, deck: deckCfg,
+      apps: projects().map((p) => ({ key: p.key, name: p.name, role: String(p.description ?? ROLE[p.key] ?? '').split(/[;:]/)[0], linked: p.linked ?? [] })),
+      cases: [k1, k2].filter(Boolean).map(caseFacts),
+    };
+
+    const opening = [
       { ch: 'Welcome', target: () => $('.brand'),
         say: "Hi. This is Ticket Intelligence: an AI agent that reads every new Jira ticket, finds the code behind it, proves the bug with a test, proposes a fix, and gets it to the right person. In about twelve minutes: the problem, how it works, two real cases, Insights and Ask. Nothing I do here costs money or changes anything." },
       { ch: 'The problem', slide: 'problem', reveal: 3,
@@ -518,8 +474,10 @@
         say: "The AI is Claude, by Anthropic, through Claude Code: Sonnet for the analysis, Opus for the fix, the review and Ask. Code does the facts and the checks; the model does the judgement. Each run gets only the tools it needs, and every source it cites is checked. It is not trained on our data; it improves through what it reads, and every change is scored. An analysis costs fifteen to sixty cents." },
       { ch: 'At work', slide: 'work', reveal: 3,
         say: "At work, the same skills run on demand in GitHub Copilot, which reads the same skill files; that is still to be tried there. Projects can be in git or SVN: the analysis gives the same result on an SVN copy of the demo app, and documentation on SVN can be a commit, a branch or a patch. The automatic fix and Insights are git only for now." },
+    ];
 
-      // The dashboard
+    // The dashboard: the demo part of a presentation.
+    const dashboard = [
       { ch: 'The dashboard', target: () => $('#state'), go: async (my) => { await toTickets(k1, my); await moveTo($('#state'), my); },
         say: () => `This is the live dashboard: the agent is watching Jira${pollSecs > 0 ? ` every ${pollSecs < 90 ? `${pollSecs} seconds` : `${Math.round(pollSecs / 60)} minutes`}` : ''}${projects().length > 1 ? `, for ${projects().length} linked apps of one hospital suite` : ''}.` },
       { ch: 'The dashboard', when: () => !k1, target: () => $('#tickets'),
@@ -630,14 +588,25 @@
         },
         target: () => $('#ask-form'),
         say: "The last tab is Ask: anyone can ask the knowledge base in plain English. The answer comes only from Jira, the agent's analyses, the git history and the code, and every claim cites its source. If the answer is not there, it says so. I won't press Ask now: each question is a short paid run." },
+    ];
 
-      // How it was built, and the end
+    const closing = [
       { ch: 'How it was built', slide: 'built', reveal: 3,
         say: "How was it built? Problem first: the problem, metrics, risks and rules were approved before any code. Then a skill on demand, then the watcher that runs it alone, with evidence over opinion and a human deciding. It is tested on four linked demo apps with hidden answer keys: about eighty seconds to an analysis, six to eight out of eight on the scored cases, no writes outside the policy. Next: approval from Teams, a night shift, and redaction of patient data before company tickets." },
       { ch: 'The end', go: async (my) => { await openTab('tickets', my); window.scrollTo({ top: 0, behavior: 'smooth' }); }, target: () => $('header'),
         say: "That's Ticket Intelligence: tickets understood in minutes, the bug proven with a test, a fix proposed and reviewed, the right person informed, and the knowledge kept. Thanks for watching." },
     ];
+
+    if (mode === 'tour' || !window.TourSlides) return [...opening, ...dashboard, ...closing];
+    const deck = window.TourSlides.deck(ctx);
+    if (mode === 'deck') return [...deck.intro, ...deck.outro, ...deck.backup];
+    return [...deck.intro, ...dashboard.map((s) => ({ ...s, part: 2 })), ...deck.outro, ...deck.backup];
   }
+
+  // Where each demo step is in the flow of the "How it works" slide (the caption bar's small map).
+  const STAGES = [['collect', 'Collect'], ['analyze', 'Analyze'], ['fix', 'Prove & fix'], ['learn', 'Learn']];
+  const CH_STAGE = { 'The dashboard': 'collect', 'Case 1': 'fix', 'Case 2': 'fix', Insights: 'learn', 'A new ticket': 'learn', Ask: 'learn' };
+  const PARTS = { 1: 'Presentation', 2: 'Demo', 3: 'Conclusion' };
 
   // ------------------------------------------------------------------ player
   let steps = [];
@@ -647,7 +616,7 @@
   let paused = false;
   let target = null;
   let saved = null;
-  let spot, bar, textEl, numEl, chEl, progEl, pauseBtn;
+  let spot, bar, textEl, numEl, chEl, progEl, pauseBtn, partsEl, mapEl, presenterBtn;
 
   function ui() {
     spot = Object.assign(document.createElement('div'), { id: 'tour-spot' });
@@ -678,9 +647,20 @@
     rateSel.replaceChildren(...[0.85, 1, 1.15, 1.3].map((x) => new Option(`${x}×`, String(x))));
     rateSel.value = String(rate);
     rateSel.onchange = () => { rate = Number(rateSel.value); store.set('ti-tour-rate', String(rate)); };
+    // A presentation's parts (filled when the steps are built) and, in the demo, where the step is in the flow.
+    partsEl = Object.assign(document.createElement('span'), { className: 'parts', hidden: true });
+    mapEl = Object.assign(document.createElement('span'), { className: 'tm', hidden: true });
+    mapEl.setAttribute('aria-label', 'Stage');
+    for (const [key, label] of STAGES) {
+      const el = Object.assign(document.createElement('span'), { textContent: label });
+      el.dataset.stage = key;
+      mapEl.append(el);
+    }
+    presenterBtn = btn('🎤 Presenter', 'Presenter mode: no voice, → moves on (P)', () => setPresenter(!presenter));
+    presenterBtn.hidden = !full;
     const controls = Object.assign(document.createElement('div'), { className: 'tc' });
     controls.append(btn('⏮ Back', 'Previous step (←)', () => jump(-1)), pauseBtn, btn('Next ⏭', 'Next step (→)', () => jump(1)),
-      chEl, numEl, Object.assign(document.createElement('span'), { className: 'spacer' }), voiceSel, rateSel, btn('✕ End', 'End the tour (Esc)', stop));
+      partsEl, chEl, numEl, mapEl, Object.assign(document.createElement('span'), { className: 'spacer' }), presenterBtn, voiceSel, rateSel, btn('✕ End', 'End the tour (Esc)', stop));
     bar.append(textEl, progEl, controls);
     document.body.append(spot, bar);
     cursorUi();
@@ -691,7 +671,9 @@
     if (!running) return;
     const headBottom = $('header').getBoundingClientRect().bottom;
     const barTop = bar.getBoundingClientRect().top;
-    if (slideEl) {
+    if (slideEl?.classList.contains('full')) {
+      slideEl.style.setProperty('--tour-bar-h', `${Math.max(0, innerHeight - barTop)}px`);
+    } else if (slideEl) {
       slideEl.style.top = `${headBottom + 14}px`;
       slideEl.style.maxHeight = `${Math.max(200, barTop - headBottom - 30)}px`;
     }
@@ -731,6 +713,29 @@
     window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
   }
 
+  /** The caption bar: the step number, the progress, the part of a presentation and, in the demo, the stage. */
+  function mark(i, st) {
+    const main = steps.filter((s) => !s.backup).length;
+    numEl.textContent = st.backup ? '' : `${i + 1} / ${main}`;
+    chEl.textContent = st.ch ?? '';
+    progEl.firstChild.style.width = `${Math.round((Math.min(i + 1, main) / main) * 100)}%`;
+    for (const b of partsEl.children) b.classList.toggle('on', Number(b.dataset.part) === st.part);
+    const stage = st.slide ? null : st.stage ?? CH_STAGE[st.ch] ?? null;
+    mapEl.hidden = !stage;
+    for (const s of mapEl.children) s.classList.toggle('on', s.dataset.stage === stage);
+  }
+
+  /** While the voice speaks, the slide's groups appear one after another. */
+  async function stagger(text, my) {
+    const n = groups();
+    if (n < 2) return;
+    const ms = ((text.split(/\s+/).length / 2.6) * 1000) / rate;
+    for (let g = 2; g <= n; g++) {
+      if (!(await until(() => false, ms / n, my))) return;
+      if (g > revealed) reveal(g);
+    }
+  }
+
   async function play(from, dir) {
     const my = ++token;
     synth?.cancel();
@@ -740,12 +745,12 @@
       try { ok = !st.when || Boolean(st.when()); } catch { ok = false; }
       if (!ok) continue;
       dir = 1; // after a jump back, go on forward
+      // The same step again (resume, presenter mode switched): what the slide already shows stays.
+      const keep = i === cur && st.slide && st.slide === slideName ? revealed : 0;
       cur = i;
-      numEl.textContent = `${i + 1} / ${steps.length}`;
-      chEl.textContent = st.ch ?? '';
-      progEl.firstChild.style.width = `${Math.round(((i + 1) / steps.length) * 100)}%`;
+      mark(i, st);
       textEl.textContent = '…';
-      if (st.slide) { showSlide(st.slide, st.reveal ?? 99); target = () => slideEl; } else hideSlide();
+      if (st.slide) { showSlide(st.slide, Math.max(keep, st.stagger ? 1 : st.reveal ?? 99)); target = () => slideEl; } else hideSlide();
       try { await st.go?.(my); } catch { /* the step shows what it can */ }
       if (my !== token) return;
       const tgt = st.slide ? () => slideEl : st.target;
@@ -760,17 +765,28 @@
       let text = '';
       try { text = typeof st.say === 'function' ? st.say() : st.say; } catch { continue; }
       textEl.textContent = text;
+      // Presenter mode, or a silent slide (the backup Q&A): show it and wait for → (a replay still plays).
+      if (presenter || st.silent) {
+        if (st.silent) reveal(groups());
+        if (playing) { await playing; if (my === token && !st.slide) bringIntoView(tgt()); }
+        return;
+      }
       await sleep(200);
+      if (st.stagger) stagger(text, my);
       if (!(await say(text, my))) return;
+      if (st.slide && revealed < groups()) reveal(groups());
       // Only a stop, pause or jump (a new token) ends this loop; what the step's animation returned does not.
       if (playing) { await playing; if (my !== token) return; if (!st.slide) bringIntoView(tgt()); }
       try { await st.after?.(my); } catch { /* optional */ }
+      if (st.hold) return; // the end of a presentation: it stays until → (the Q&A slides) or Esc
       if (!(await until(() => false, 300, my))) return;
     }
     if (my === token) stop();
   }
 
   function jump(by) {
+    // Presenter mode: → first shows the rest of the slide, then goes on.
+    if (presenter && by > 0 && slideEl && revealed < groups()) { reveal(revealed + 1); return; }
     paused = false;
     pauseBtn.textContent = '⏸ Pause';
     play(Math.max(0, Math.min(steps.length - 1, cur + by)), by < 0 ? -1 : 1);
@@ -778,6 +794,31 @@
   // Pause cancels the speech; resume says the current step again (pause/resume of speech is unreliable in browsers).
   function pause() { paused = true; token++; synth?.cancel(); pauseBtn.textContent = '▶ Resume'; }
   function resume() { paused = false; pauseBtn.textContent = '⏸ Pause'; play(cur, 1); }
+  /** Presenter mode: no voice, the captions stay as notes, and the presenter moves on with →. */
+  function setPresenter(on) {
+    presenter = on;
+    presenterBtn.classList.toggle('on', on);
+    paused = false;
+    pauseBtn.textContent = '⏸ Pause';
+    play(cur, 1);
+  }
+  function fullscreen(on) {
+    try {
+      if (on && !document.fullscreenElement) document.documentElement.requestFullscreen?.()?.catch?.(() => {});
+      if (!on && document.fullscreenElement) document.exitFullscreen?.()?.catch?.(() => {});
+    } catch { /* not allowed here */ }
+  }
+  /** The part buttons of a presentation: Presentation · Demo · Conclusion; a click goes to the part's first step. */
+  function renderParts() {
+    const parts = [...new Set(steps.map((s) => s.part).filter(Boolean))];
+    partsEl.replaceChildren(...parts.map((p) => {
+      const b = Object.assign(document.createElement('button'), { className: 'small', type: 'button', textContent: PARTS[p], title: `Go to: ${PARTS[p]}` });
+      b.dataset.part = p;
+      b.onclick = () => { paused = false; pauseBtn.textContent = '⏸ Pause'; play(steps.findIndex((s) => s.part === p), 1); };
+      return b;
+    }));
+    partsEl.hidden = parts.length < 2;
+  }
 
   function onKey(e) {
     if (!running || e.target.closest?.('input, textarea, select')) return;
@@ -785,6 +826,8 @@
     else if (e.key === 'ArrowRight') jump(1);
     else if (e.key === 'ArrowLeft') jump(-1);
     else if (e.key === ' ') { e.preventDefault(); paused ? resume() : pause(); }
+    else if ((e.key === 'p' || e.key === 'P') && full) setPresenter(!presenter);
+    else if (e.key === 'f' || e.key === 'F') fullscreen(!document.fullscreenElement);
     else return;
     e.preventDefault();
   }
@@ -793,8 +836,12 @@
     try { const res = await fetch(url); return res.ok ? await res.json() : null; } catch { return null; }
   }
 
-  async function start() {
+  /** `m`: 'tour' (the default), 'present' (slides, demo, slides) or 'deck' (the slides alone). */
+  async function start(m) {
     if (running) return;
+    mode = m === 'present' || m === 'deck' ? m : 'tour';
+    full = mode !== 'tour';
+    if (full) fullscreen(true); // still inside the click that started it, as browsers require
     document.getElementById('tour-start')?.remove();
     running = true;
     paused = false;
@@ -815,8 +862,10 @@
     // Not awaited: the first suite read takes several seconds; by the time the tour reaches Insights it is cached.
     getJson('/api/insights/suite').then((x) => { if (running) suite = x; });
     if (askProject) getJson(`/api/insights?project=${encodeURIComponent(askProject)}`).then((x) => { if (running) preIns = x; });
+    deckCfg = full ? (await getJson('/api/tour/deck'))?.presentation ?? {} : {};
     if (!running) return;
     steps = buildSteps();
+    renderParts();
     play(0, 1);
   }
 
@@ -834,6 +883,8 @@
     asks = [];
     suite = null;
     preIns = null;
+    presenter = false;
+    if (full) fullscreen(false);
     if (saved) {
       for (const t of tickets.values()) if (saved.expanded.has(t.key)) t.expanded = saved.expanded.get(t.key);
       if (selected !== saved.project) selectProject(saved.project);
@@ -845,11 +896,14 @@
   }
 
   // ------------------------------------------------------------------ entry points
-  document.getElementById('tour-btn')?.addEventListener('click', start);
+  document.getElementById('tour-btn')?.addEventListener('click', () => start('tour'));
+  document.getElementById('present-btn')?.addEventListener('click', () => start('present'));
   window.startTour = start;
-  if (new URLSearchParams(location.search).has('tour')) {
+  const entry = ['present', 'deck', 'tour'].find((k) => new URLSearchParams(location.search).has(k));
+  if (entry) {
+    const label = { present: '▶ Start the presentation', deck: '▶ Start the slides', tour: '▶ Start the guided tour' }[entry];
     const wrap = Object.assign(document.createElement('div'), { id: 'tour-start' });
-    const go = Object.assign(document.createElement('button'), { className: 'primary', textContent: '▶ Start the guided tour', onclick: start, type: 'button' });
+    const go = Object.assign(document.createElement('button'), { className: 'primary', textContent: label, onclick: () => start(entry), type: 'button' });
     wrap.append(go);
     wrap.addEventListener('click', (e) => { if (e.target === wrap) wrap.remove(); });
     document.body.append(wrap);

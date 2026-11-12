@@ -6,6 +6,8 @@
   "analysisTimeoutMinutes": 10,
   "dashboardPort": 7070,
   "tourReplay": ["DEM-36", "FAR-19"],
+  "_presentation": "Shown on the first and the last slide of the presentation (?present, ?deck): who presents, the team, a contact. An empty value is left out.",
+  "presentation": { "presenter": "Bojan Mijatović", "team": "", "contact": "github.com/Bojan-Mijatovic" },
   "labels": {
     "inProgress": "ai-analyzing",
     "done": "ai-analyzed",

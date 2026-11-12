@@ -126,7 +126,7 @@ function githubInfo(repoDir) {
 }
 
 const projectStatus = (p) => ({
-  key: p.key, name: p.name, repo: p.repoDir, ready: existsSync(p.repoDir), app: p.app, linked: p.linked,
+  key: p.key, name: p.name, description: p.cfg.description, repo: p.repoDir, ready: existsSync(p.repoDir), app: p.app, linked: p.linked,
   appBranch: existsSync(p.repoDir) ? currentBranch(p.repoDir) : null, github: githubInfo(p.repoDir), askExamples: p.askExamples,
 });
 const status = { projects: all.projects.map(projectStatus), jiraUrl: jira.baseUrl, policy: policy.actions, lastPoll: null, nextPoll: null, queue: [], processing: null, startedAt: new Date().toISOString(), pid: process.pid };
@@ -282,10 +282,12 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     return res.end(page());
   }
-  if (path === '/tour.js') {
+  if (path === '/tour.js' || path === '/slides.js') {
     res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache' });
-    return res.end(readFileSync(join(HERE, 'dashboard', 'tour.js')));
+    return res.end(readFileSync(join(HERE, 'dashboard', path.slice(1))));
   }
+  // Who presents (title and last slide of ?present): agent.config.json "presentation".
+  if (path === '/api/tour/deck') return json(res, 200, { presentation: cfg.presentation ?? {} });
   // The recorded runs the tour replays when no ticket was analyzed since the last reset (read-only).
   if (path === '/api/tour/replay') {
     const runs = recordedRuns(rootState, cfg.tourReplay ?? []).map((run) => {

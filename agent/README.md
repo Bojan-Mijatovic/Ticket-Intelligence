@@ -110,6 +110,7 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 | `dashboardPort` | dashboard port |
 | `dashboardAllowRemote` | default off: the dashboard and its API answer only requests from this machine (they start paid agent runs) |
 | `tourReplay` | the tickets whose recorded runs the guided tour replays as its cases when nothing was analyzed since the last reset (see [Guided tour](#guided-tour)) |
+| `presentation` | `presenter`, `team`, `contact`: shown on the first and last slide of the presentation (see [Presentation](#presentation)) |
 | `reviewTimeoutMinutes` | the AI review is stopped after this long (default 8) |
 | `askTimeoutSeconds`, `askMaxTurns` | limits of one Ask question (defaults 120 s, 16 turns) |
 | `insights.months`, `insights.churnDays`, `insights.components` | hotspot map: months shown, churn window, path rules per component |
@@ -307,9 +308,27 @@ Numbers and names come from the data on the page (tickets, owners, causes, hotsp
 - **Voice.** The browser's own speech synthesis: free, no key, nothing leaves the machine. The tour picks a natural English voice when there is one (Edge on Windows has *Aria*, *Jenny* and *Guy Natural*); the voice and speed can be changed in the caption bar, or switched to *captions only*.
 - **Controls.** Back / Pause / Next, or ← space →; Esc ends it. Afterwards the dashboard returns to the tab and project it showed before.
 - **For a presentation** open `http://localhost:7070/?tour`: a *Start the guided tour* button covers the page, because browsers let a page speak only after a click.
-- **After changing the code** restart the watcher (`node agent/watcher.mjs --replace`) and reload the page: a watcher started earlier does not serve `tour.js`, and the button then does nothing.
+- **After changing the code** restart the watcher (`node agent/watcher.mjs --replace`) and reload the page: a watcher started earlier does not serve `tour.js` and `slides.js`, and the buttons then do nothing.
 
-The script, the slides and the player are in `dashboard/tour.js`; the choice of the recorded runs and answers in `lib/tour.mjs`.
+### Presentation
+
+**▶ Present** in the header (or `http://localhost:7070/?present`) wraps the tour in a presentation of about fourteen minutes, in three parts. The caption bar has a button per part, so a click goes straight to the demo or to the conclusion:
+
+| Part | Slides (full screen) | About |
+|---|---|---|
+| **Presentation** | title (presenter and team) · the problem, with an example from the demo data · the goal and its six success metrics · how it works (the flow, row by row) · the AI and the policy · the four demo apps and why the cases are replays · what you will see | 3 min |
+| **Demo** | the tour's dashboard part: the dashboard, case 1, case 2, Insights, a suggested ticket, Ask. The caption bar shows where each step is in the flow: Collect › Analyze › Prove & fix › Learn | 8 min |
+| **Conclusion** | what you just saw (the flow again, with the cases' real timings) · results against the same six metrics · how it was built and what we learned · technologies · limits and next steps · sources (public documentation and the project's documents) · thank you, with a contact | 2.5 min |
+
+After *Thank you* it stays on that slide. **→** then shows backup slides for questions (patient data, what if it is wrong, cost, Copilot and SVN), without voice.
+
+- **Voice by default.** **P** (or *🎤 Presenter*) switches to presenter mode: no voice, the captions stay as notes, and **→** shows the next part of a slide, then the next slide. **P** again brings the voice back.
+- **Full screen.** It asks for full screen at the start; **F** toggles it.
+- **The slides alone:** `?deck` (no demo; the recap slide then says "what the demo shows").
+- **Who presents:** `presentation` in `agent.config.json` (`presenter`, `team`, `contact`); an empty value is left out.
+- The slides and the words of parts 1 and 3 are in `dashboard/slides.js`; `test/slides.test.mjs` checks them, including the time they take.
+
+The script and the player are in `dashboard/tour.js`, the slides in `dashboard/slides.js`; the choice of the recorded runs and answers in `lib/tour.mjs`.
 
 ## Done → documentation
 
