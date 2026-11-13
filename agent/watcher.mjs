@@ -36,6 +36,7 @@ import { loadGraph, readSuitePullRequests } from './lib/git-graph.mjs';
 import { recordAccuracy, scoreAccuracy } from './lib/accuracy.mjs';
 import { laneLayout } from './lib/graph-lanes.mjs';
 import { readReplays } from './lib/replay.mjs';
+import { impactOf } from './lib/impact.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const all = loadProjects(HERE);
@@ -485,6 +486,22 @@ const server = createServer(async (req, res) => {
       const p = readyProject({ project: queryOf(req).get('project') });
       await health.require();
       return json(res, 200, (await graphCached(p, queryOf(req).get('refresh') === '1')).accuracy);
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    }
+  }
+  // The management week (WF5): /api/impact?weeks=8[&refresh=1], the whole suite from the projects' cached graphs.
+  if (req.method === 'GET' && path === '/api/impact') {
+    try {
+      const q = queryOf(req);
+      await health.require();
+      const apps = [];
+      for (const p of all.projects.filter((x) => existsSync(x.repoDir))) {
+        const { graph, accuracy } = await graphCached(p, q.get('refresh') === '1');
+        apps.push({ project: p.key, name: p.name, graph, accuracy });
+      }
+      const weeks = Math.min(Math.max(Number(q.get('weeks')) || 8, 1), 52);
+      return json(res, 200, impactOf(apps, { baseline: cfg.baseline, weeks }));
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     }

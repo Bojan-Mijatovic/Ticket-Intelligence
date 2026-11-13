@@ -188,8 +188,11 @@
   .review-list li { margin: 3px 0; }
   .rec { border-left: 3px solid var(--accent); padding: 6px 10px; background: var(--accent-soft); border-radius: 0 6px 6px 0; font-size: 13px; }
   /* Graph tab (G1): the main line and one lane per ticket. Node colour = the state of the step (the row's text says it too). */
-  #acc-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  @media (max-width: 1100px) { #acc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  #acc-kpis, #impact-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  @media (max-width: 1100px) { #acc-kpis, #impact-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .bars.solid .bar i { background: var(--accent); border-radius: 4px 4px 0 0; min-height: 0; }
+  .bars.solid .bar span:first-child { color: var(--text); font-weight: 600; }
+  .bars.solid .bar span { white-space: nowrap; }
   .graph-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 10px; }
   .graph-tools select, .graph-tools input[type=text] { font: inherit; font-size: 13px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
   .graph-tools input[type=text] { width: 96px; }
@@ -225,7 +228,7 @@
     <span class="meta">Project</span>
     <select id="project-sel" aria-label="Project"><option value="all">All projects</option></select>
   </label>
-  <nav class="tabs" id="tabs"><button data-tab="tickets" class="active">Tickets</button><button data-tab="graph">Graph</button><button data-tab="insights">Insights</button><button data-tab="ask">Ask</button></nav>
+  <nav class="tabs" id="tabs"><button data-tab="tickets" class="active">Tickets</button><button data-tab="graph">Graph</button><button data-tab="impact">Impact</button><button data-tab="insights">Insights</button><button data-tab="ask">Ask</button></nav>
   <span class="spacer"></span>
   <span class="meta" id="poll"></span>
   <span class="pill" id="app-branch" title="Branch the selected project's app shows"></span>
@@ -329,6 +332,22 @@
       </div>
       <div class="panel graph" id="graph-lanes"><div class="empty">Loading…</div></div>
     </div>
+  </section>
+  <section id="tab-impact" hidden>
+    <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0">Impact · the whole suite</h2><span class="spacer"></span>
+      <label class="meta">Weeks <select id="impact-weeks" aria-label="Weeks shown"><option value="4">4</option><option value="8" selected>8</option><option value="12">12</option></select></label>
+      <span class="meta" id="impact-state"></span><button class="small" id="impact-refresh">Refresh</button></div>
+    <div class="hint" style="margin:4px 0 10px">The week, for management: what the agent did, what it cost, the hours it saved against the team's own estimates, and what waits for a person. Weeks start on Monday.</div>
+    <div class="kpis" id="impact-kpis"></div>
+    <div class="charts" style="margin-bottom:20px;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr))">
+      <div class="panel chart" style="padding:12px 14px"><div class="ct">Hours saved per week</div><div class="cs">estimate: the team's minutes per step minus the agent's</div><div id="impact-hours"></div></div>
+      <div class="panel chart" style="padding:12px 14px"><div class="ct">Cost per week ($)</div><div class="cs">AI runs: analyses, fixes, reviews, documentation</div><div id="impact-cost"></div></div>
+    </div>
+    <h2>Week by week</h2>
+    <div class="panel ins-list" id="impact-weeks-table"></div>
+    <h2>Per app</h2>
+    <div class="panel ins-list" id="impact-apps"></div>
+    <div class="panel ins-list" id="impact-notes"></div>
   </section>
   <section id="tab-ask" hidden>
     <h2 id="ask-title">Ask the knowledge base</h2>
@@ -701,7 +720,7 @@ function connect() {
     if (ev.type === 'status') {
       const first = !status;
       status = ev.status; renderStatus(); render();
-      if (first) { renderAskHead(); if (tab === 'insights') loadInsights(); if (tab === 'graph') loadGraph(); }
+      if (first) { renderAskHead(); if (tab === 'insights') loadInsights(); if (tab === 'graph') loadGraph(); if (tab === 'impact') loadImpact(); }
       return;
     }
     if (ev.type === 'ping') return;
@@ -729,9 +748,10 @@ let tab = 'tickets';
 function showTab(name) {
   tab = name;
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === name);
-  for (const s of ['tickets', 'graph', 'insights', 'ask']) $(`#tab-${s}`).hidden = s !== name;
+  for (const s of ['tickets', 'graph', 'impact', 'insights', 'ask']) $(`#tab-${s}`).hidden = s !== name;
   if (name === 'insights') loadInsights();
   if (name === 'graph') loadGraph();
+  if (name === 'impact') loadImpact();
   if (name === 'ask') renderAskHead();
   try { localStorage.setItem('ti-tab', name); } catch { /* storage blocked */ }
 }
@@ -1561,6 +1581,68 @@ function renderLanes(d) {
     L.cut ? h('div', { class: 'hint', style: 'padding:6px' }, `${L.cut} older row(s) not shown: pick a shorter window or one ticket.`) : null].filter(Boolean));
 }
 
+// ---------------------------------------------------------------- impact (WF5, FR-72): the management week
+let impactWeeks = 8;
+async function loadImpact(refresh = false) {
+  $('#impact-state').textContent = 'reading the suite…';
+  try {
+    const res = await fetch(`/api/impact?weeks=${impactWeeks}${refresh ? '&refresh=1' : ''}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+    renderImpact(data);
+    $('#impact-state').textContent = `${data.perProject.length} apps`;
+  } catch (e) {
+    $('#impact-kpis').replaceChildren(h('pre', { class: 'err', style: 'grid-column:1/-1' }, `Impact failed: ${e.message}`));
+    $('#impact-state').textContent = '';
+  }
+}
+$('#impact-refresh').addEventListener('click', () => loadImpact(true));
+$('#impact-weeks').addEventListener('change', (e) => { impactWeeks = Number(e.target.value); loadImpact(); });
+
+const weekLabel = (w) => new Date(`${w}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const money = (x) => (x == null ? '–' : `$${x.toFixed(2)}`);
+/** One series per chart, so no legend: the title names it. The value sits on each bar, the week below it. */
+function weekBars(weeks, value, fmt) {
+  const max = Math.max(1e-9, ...weeks.map(value));
+  return h('div', { class: 'bars solid' }, weeks.map((w) => h('div', { class: 'bar', title: `week of ${weekLabel(w.week)}: ${fmt(value(w))}` },
+    h('span', {}, value(w) ? fmt(value(w)) : ''),
+    h('i', { style: `height:${Math.round((value(w) / max) * 60)}px` }),
+    h('span', {}, weekLabel(w.week)))));
+}
+function renderImpact(d) {
+  const [prev, now] = [d.weeks.at(-2) ?? null, d.weeks.at(-1)];
+  const kpi = (label, value, sub) => h('div', { class: 'kpi' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), h('div', { class: 'sub' }, sub));
+  const waiting = d.perProject.reduce((s, p) => s + p.waiting.fixPrs + p.waiting.docsPrs, 0);
+  $('#impact-kpis').replaceChildren(
+    kpi('Hours saved this week', String(now.hoursSaved), `last week ${prev?.hoursSaved ?? '–'} · ${d.total.hoursSaved} in ${d.weeks.length} weeks (estimate)`),
+    kpi('Tickets analysed', String(now.analysed), `${now.known} already known · last week ${prev?.analysed ?? '–'}`),
+    kpi('Fixes merged', String(now.fixMerged), `${now.fixPrs} draft PR(s), ${now.fixStopped} stopped this week`),
+    kpi('Tickets documented', String(now.docsMerged), `merged into the knowledge base · last week ${prev?.docsMerged ?? '–'}`),
+    kpi('Cost this week', money(now.costUsd), `${money(now.costPerTicket)} per ticket · ${money(d.total.costUsd)} in ${d.weeks.length} weeks`),
+    kpi('Waiting for a person', String(waiting), 'draft fix PRs and documentation PRs to review'));
+  $('#impact-hours').replaceChildren(weekBars(d.weeks, (w) => w.hoursSaved, (v) => String(v)));
+  $('#impact-cost').replaceChildren(weekBars(d.weeks, (w) => w.costUsd, (v) => `$${v.toFixed(2)}`));
+  const num = (v) => h('td', { class: 'num' }, v ?? '–');
+  const th = (x, n) => h('th', { class: n ? 'num' : null }, x);
+  $('#impact-weeks-table').replaceChildren(h('table', {},
+    h('thead', {}, h('tr', {}, th('Week of'), th('Tickets', 1), th('Already known', 1), th('Fix PRs', 1), th('Merged', 1), th('Stopped', 1), th('Reviews', 1), th('Documented', 1), th('Cost', 1), th('$ / ticket', 1), th('Hours saved', 1))),
+    h('tbody', {}, [...d.weeks].reverse().map((w) => h('tr', {}, h('td', {}, weekLabel(w.week)), num(w.analysed), num(w.known), num(w.fixPrs), num(w.fixMerged), num(w.fixStopped), num(w.reviews), num(w.docsMerged), num(money(w.costUsd)), num(money(w.costPerTicket)), num(w.hoursSaved))),
+      h('tr', { style: 'font-weight:700' }, h('td', {}, 'Total'), num(d.total.analysed), num(d.total.known), num(d.total.fixPrs), num(d.total.fixMerged), num(d.total.fixStopped), num(d.total.reviews), num(d.total.docsMerged), num(money(d.total.costUsd)), num(money(d.total.costPerTicket)), num(d.total.hoursSaved)))));
+  const acc = new Map(d.accuracy.map((a) => [a.project, a]));
+  const pc = (r) => (r?.of ? `${Math.round(r.rate * 100)}% (${r.n}/${r.of})` : '–');
+  $('#impact-apps').replaceChildren(h('table', {},
+    h('thead', {}, h('tr', {}, th('App'), th('Tickets', 1), th('Fixes merged', 1), th('Documented', 1), th('Cost', 1), th('Hours saved', 1), th('Waiting'), th('Fix PRs merged unchanged'), th('Review agrees'), th('Replay: files, owner'))),
+    h('tbody', {}, d.perProject.map((p) => {
+      const a = acc.get(p.project);
+      return h('tr', {}, h('td', {}, p.name), num(p.analysed), num(p.fixMerged), num(p.docsMerged), num(money(p.costUsd)), num(p.hoursSaved),
+        h('td', {}, p.waiting.fixPrs + p.waiting.docsPrs ? `${p.waiting.fixPrs} fix, ${p.waiting.docsPrs} docs` : 'nothing'),
+        h('td', {}, pc(a?.fixAcceptedUnchanged)), h('td', {}, pc(a?.reviewAgreement)), h('td', {}, a?.replayFiles ? `${pc(a.replayFiles)} · ${pc(a.replayOwner)}` : '–'));
+    }))));
+  $('#impact-notes').replaceChildren(h('ul', { class: 'review-list', style: 'margin:0' }, [
+    `Analysis takes ${d.total.avgAnalysisMin ?? '–'} min on average; from the analysis to a verified draft PR ${d.total.avgToPrMin ?? '–'} min.`,
+    ...d.notes].map((n) => h('li', { class: 't-sub' }, n))));
+}
+
 // ---------------------------------------------------------------- ask (FR-65)
 const answers = [];
 let askId = null;
@@ -1646,7 +1728,7 @@ function onAskProgress(ev) {
 
 setInterval(() => { renderStatus(); if (status?.processing && tab === 'tickets') render(); }, 1000);
 connect();
-try { const saved = localStorage.getItem('ti-tab'); if (saved === 'insights' || saved === 'ask' || saved === 'graph') showTab(saved); } catch { /* storage blocked */ }
+try { const saved = localStorage.getItem('ti-tab'); if (['insights', 'ask', 'graph', 'impact'].includes(saved)) showTab(saved); } catch { /* storage blocked */ }
 </script>
 <script src="/slides.js"></script>
 <script src="/tour.js"></script>

@@ -64,6 +64,7 @@ The command-line tools take the project from the ticket key (`LAB-7` → MediLab
 | `node agent/insights.mjs` | hotspot map in the terminal (`--json`, `--recommend`, `--review` runs the AI review of the app) | no |
 | `node agent/ask.mjs "question"` | ask the knowledge base (sourced answer or "not found") | no |
 | `node agent/accuracy.mjs` | how often the agent was right, per project (`--project DEM`, `--rows`, `--json`) | no |
+| `node agent/impact.mjs` | the management week for the whole suite: what the agent did, cost, hours saved, what waits (`--weeks 4`, `--json`) | no |
 | `node agent/replay.mjs --project DEM` | replay resolved bugs a person fixed as they came in, and compare with the real fix (dry run; `--yes`, `--limit`, `--only`, `--max-cost`) | no |
 | `node agent/mail-test.mjs` / `DEM-7` / `DEM-7 --dry-run` | send a test email, or the "analysis ready" email of a saved analysis, to `MAIL_TO` | no |
 | `node --test agent/test` | unit tests of the agent's plain-code parts | no |
@@ -431,6 +432,18 @@ Until people fix tickets the agent analysed, the live numbers cannot test the an
 | what Jira learned later | a frozen Jira (`<state>/replay-work/<KEY>/jira.json`) served by the skill's offline source (`JIRA_MOCK=1`, `JIRA_MOCK_FILE`). It holds the ticket as reported (no comments, status, resolution, assignee, links or attachments) and the tickets that existed then, without comments. "Existed then" goes by git time (a change before the fix; with no change, a lower number), because the demo's Jira dates are all from one day and its numbers are not in time order |
 
 Linked apps are left out, and the replay needs git: SVN shows later revisions from the server. The command is a dry run by default (candidates and estimated cost); `--yes` runs it, with `--limit`, `--only DEM-5,DEM-22`, `--again` and `--max-cost` (default $10). Each result is kept in `<state>/replay/<KEY>.json`. `accuracy.mjs` and the Graph tab show the replays under **Replay**, apart from the live numbers. The frozen Jira file is stored locally only; the skill masks personal data before the model reads anything (R-02).
+
+### Impact tab (the management week)
+
+The **Impact** tab (and `node agent/impact.mjs`) covers the whole suite, week by week, with weeks starting on Monday. It shows six tiles for this week against last week: hours saved, tickets analysed, fixes merged, tickets documented, cost, and what waits for a person. Below them are bars of hours saved and of cost per week, a table week by week, and a table per app that adds the accuracy (fix PRs merged unchanged, review agreement, replay). Everything comes from the projects' graphs, with no AI.
+
+**Hours saved is an estimate, and the page says so.** For each step it takes the team's minutes without the agent (`agent.config.json` → `baseline`: analysis 45, reproduce 60, fix 180, documentation 30) and subtracts the measured time, never going below zero. It counts only work a person can use:
+
+- a ticket's first analysis in the week;
+- a fix PR of the agent merged that week (reproduce + fix, minus the time from the analysis to the PR);
+- each ticket in a documentation PR merged that week.
+
+The time people spend reviewing is not subtracted. Fixes and documentation have a recorded cost only from 2026-11-13; the page notes how many fix PRs from before then have none.
 
 ### Graph tab
 
