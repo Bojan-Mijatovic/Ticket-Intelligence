@@ -64,8 +64,15 @@ The masking is measured on every ticket. On the first one (VAX-13) it masked the
 | card-booster-label | FE | one label for both tables; the booster loses its label on the card | the influenza booster shows as "Dose 2" |
 | late-today | FE | a comment on the late marker; a dose due today counts as late | a dose due today is marked "in ritardo" |
 | search-two-letters | BE | comments on the search limits; the minimum becomes 3 characters while the page says 2 | two letters find nobody (fixing either side is right) |
+| booster-anytime | BE | a comment on the interval rule; boosters skip the interval check | an influenza booster is accepted six months after the previous dose |
+| due-phone | BE | a note on the call list; the health card goes where the phone was | the phone column of Scadenze shows a 20-digit number |
+| vaccines-order | BE | the standard query for the catalog; the alphabetical order is lost | the vaccines are no longer in alphabetical order (low priority) |
+| lot-expiry-iso | FE | shorter lot labels; the expiry date loses its Italian format | the lot expiry shows as 2026-11-30 |
+| card-sex-raw | FE | a compact card header; the sex shows as its code | the header shows "F" instead of "Femmina" (low priority) |
 
-`node demo/pilot.mjs check` checks each case without pushing anything: it must apply to `main`, and the existing tests must miss it. All 7 passed this check on 2026-11-13. Seven cases last about four working days, so the catalog has to grow. A case already used can come back later as a regression once its fix is merged, but only if the fix's regression test does not catch it.
+`node demo/pilot.mjs check` checks each case without pushing anything: it must apply to `main`, and the existing tests must miss it. All 12 passed this check on 2026-11-13. Twelve cases last about six working days, so the catalog has to keep growing.
+
+A used case can come back later as a **regression** once its fix is merged. Regressions that the fix's own test catches never reach `main`, because the planter runs the tests first, as CI would. So the regression cases will be the ones that slip past that test: the bug comes back through another path, or the developer "adjusts" the failing test. They come with A1 (the regression guard), which should flag them before the ticket.
 
 ## Commands
 
@@ -79,6 +86,14 @@ node demo/pilot.mjs schedule --install     install the schedule (--remove to sto
 ```
 
 The app itself: `node demo/run-mediagenda.mjs --project VAX` (backend :8084, frontend :4204). Repository: `Bojan-Mijatovic/MediVax` (private), built by `node demo/make-project.mjs medivax` from `demo/src/medivax/`. Jira project: VAX.
+
+## First results (2026-11-13)
+
+| Case | Ticket | Result |
+|---|---|---|
+| due-last-day | VAX-13 | everything right. The analysis named the breaking commit (d2fe6eb, story VAX-12), the file and the owner. The bisect confirmed the commit in 18 s. The draft PR came 259 s after the ticket was picked: a one-condition fix and a regression test. AI review: low risk. $1.17. Masking: 2 of 3 identifiers (the name "Ferrara Iolanda" passed) |
+
+The first case found a defect in the bisect, now fixed. For a regression, the analysis gave the breaking commit as `priorArt.commit`, the field meant for the earlier fix, and the bisect plan dropped that commit's parent. Both readings are now covered.
 
 ## Costs and limits
 

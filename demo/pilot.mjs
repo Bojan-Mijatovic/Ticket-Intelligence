@@ -162,7 +162,7 @@ async function report(run) {
   const { h, identifiers } = ticketHelpers({ patients, day: localDay(new Date()), seed: hashOf(run.id) });
   const t = c.ticket(h);
   const j = await jira();
-  const key = await j.create({ type: 'Bug', summary: t.summary, description: t.description, labels: ['PRODUZIONE'], priority: c.priority ?? 'High' });
+  const key = await j.create({ type: 'Bug', summary: t.summary, description: t.description, labels: ['PRODUZIONE'], priority: t.priority ?? 'High' });
   // The masking the analysis applies, measured on this ticket (the team stays readable, patients must not).
   const { createRedactor } = await skillLib('redact.mjs');
   const team = [...Object.values(PEOPLE).map(([n]) => n), ...(all.global.staff ?? [])];

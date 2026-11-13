@@ -11,7 +11,7 @@
 //   story     the Jira story the change belongs to (created Done when the change is pushed)
 //   subject   the commit subject after "<STORY KEY>: "
 //   edits     [{ file, from, to }]: each `from` must occur exactly once on main
-//   ticket(h) the bug report: { summary, description }, built when it is reported. h: { patient(id), person(spec),
+//   ticket(h) the bug report: { summary, description, priority? (default High) }, built when it is reported. h: { patient(id), person(spec),
 //             it(iso) → "20/11/2026", day: the report day (ISO) }; patient() and person() record the identifiers
 //             the ticket quotes, for the redaction score
 //   answer    { files: [path], owners: [name] }: a file the analysis must name, the people who know the code
@@ -146,5 +146,83 @@ export const CASES = [
     }),
     // Either side is a right answer: the backend went back to 3 characters, the page still says 2.
     answer: { files: [PATIENTS, SEARCH], owners: ['Irene Fabbri'] },
+  },
+  {
+    id: 'booster-anytime',
+    side: 'BE',
+    author: 'federica',
+    story: { summary: '[BE] - Registrazione dose: say which interval rule applies', description: 'A comment on each branch of the interval check, for the new nurses reading the rules.' },
+    subject: 'comment the interval rule',
+    edits: [
+      { file: DOSES, from: '            if (request.givenOn().isBefore(next.get().dueOn())) {', to: '            // Inside the series a dose waits for its interval.\n            if (!next.get().booster() && request.givenOn().isBefore(next.get().dueOn())) {' },
+    ],
+    ticket: (h) => ({
+      summary: '[BE] - Registrazione dose: a booster is accepted months too early',
+      description: `For ${h.patient(6, { birth: true })} REGISTRA accepted an influenza dose on ${h.it('2026-05-12')}, six months after the previous one (${h.it('2025-11-16')}). The influenza booster is yearly, and the card still shows the next one in November. The same happens with the TDAP booster, which is every ten years.${SIGN}`,
+    }),
+    answer: { files: [DOSES], owners: ['Federica Gallo'] },
+  },
+  {
+    id: 'due-phone',
+    side: 'BE',
+    author: 'irene',
+    story: { summary: '[BE] - Scadenze: prepare the call list for the SMS reminders', description: 'The SMS gateway will read the same list; a note on the record.' },
+    subject: 'note the SMS reminders on the call list',
+    edits: [
+      { file: DUE, from: '    /** A dose due in a period, for the call list of the week. */', to: '    /** A dose due in a period, for the call list of the week (and, later, the SMS reminders). */' },
+      { file: DUE, from: 'out.add(new DueRow(p.getId(), p.displayName(), p.getFiscalCode(), p.getPhone(), ', to: 'out.add(new DueRow(p.getId(), p.displayName(), p.getFiscalCode(), p.getHealthCard(), ' },
+    ],
+    ticket: (h) => ({
+      summary: '[BE] - Scadenze: the phone column shows a 20-digit number',
+      description: `In Scadenze the "Telefono" column shows long numbers starting with 80380. For ${h.patient(8, { phone: true, healthCard: true })} it shows the health card instead of the phone, so the calls of this week cannot be made from the list.${SIGN}`,
+    }),
+    answer: { files: [DUE], owners: ['Federica Gallo', 'Irene Fabbri'] },
+  },
+  {
+    id: 'vaccines-order',
+    side: 'BE',
+    author: 'irene',
+    story: { summary: '[BE] - Vaccini: no custom query for the catalog', description: 'The catalog is small; the standard repository method is enough.' },
+    subject: 'use the standard query for the catalog',
+    edits: [
+      { file: `${BE}/vaccine/VaccineController.java`, from: '        return vaccines.findAllByOrderByName();', to: '        return vaccines.findAll();' },
+    ],
+    ticket: (h) => ({
+      summary: '[BE] - Vaccini: the vaccines are no longer in alphabetical order',
+      description: `The Vaccini page and the vaccine list of "Registra una dose" now start with Esavalente and Papillomavirus; until last week they were in alphabetical order (Antinfluenzale first). Yesterday a nurse picked the wrong line for ${h.patient(26)} and had to correct it.${SIGN}`,
+      priority: 'Low',
+    }),
+    answer: { files: [`${BE}/vaccine/VaccineController.java`, `${BE}/vaccine/VaccineRepository.java`], owners: ['Irene Fabbri'] },
+  },
+  {
+    id: 'lot-expiry-iso',
+    side: 'FE',
+    author: 'tommaso',
+    story: { summary: '[FE] - Registra dose: shorter lot labels', description: 'The lot list is wide on the tablets of the ambulatory; shorter labels.' },
+    subject: 'shorter lot labels in the dose form',
+    edits: [
+      { file: CARD, from: '{{ l.code }} · scade il {{ formatDate(l.expiry) }} · {{ l.dosesLeft }} dosi', to: '{{ l.code }} · scade {{ l.expiry }} · {{ l.dosesLeft }} dosi' },
+    ],
+    ticket: (h) => ({
+      summary: '[FE] - Registra dose: the lot expiry is shown as 2026-11-30',
+      description: `Recording the second esavalente dose for ${h.patient(17, { birth: true })}, the lot list shows "ESA-25A · scade 2026-11-30". Everywhere else dates are 30/11/2026, and a nurse read it as a lot code.${SIGN}`,
+    }),
+    answer: { files: [CARD], owners: ['Tommaso Bruno'] },
+  },
+  {
+    id: 'card-sex-raw',
+    side: 'FE',
+    author: 'tommaso',
+    story: { summary: '[FE] - Scheda paziente: a more compact header', description: 'Less text in the header line of the card.' },
+    subject: 'compact card header',
+    edits: [
+      { file: CARD, from: '{{ c.patient.fiscalCode }} · {{ sexLabel(c.patient.sex) }} · nato/a il', to: '{{ c.patient.fiscalCode }} · {{ c.patient.sex }} · nato/a il' },
+    ],
+    ticket: (h) => ({
+      summary: '[FE] - Scheda paziente: the header shows "F" instead of "Femmina"',
+      description: `The card of ${h.patient(19, { birth: true })} shows "F" in the header line, where it used to say "Femmina". The search list still says "Femmina".${SIGN}`,
+      priority: 'Low',
+    }),
+    answer: { files: [CARD], owners: ['Tommaso Bruno'] },
   },
 ];
