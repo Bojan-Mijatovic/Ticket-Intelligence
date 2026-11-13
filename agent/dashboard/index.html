@@ -1471,6 +1471,19 @@ $('#ins-recommend').addEventListener('click', async (e) => {
 });
 
 // ---------------------------------------------------------------- graph (G1, FR-70) and accuracy (AI1, FR-69)
+/**
+ * JSON of an API page, with a reason a person can act on. The page itself is read from disk on every load, so after
+ * an update it can be newer than the running watcher, which then answers 404 with no body for the new routes.
+ */
+async function fetchJsonOrHint(url) {
+  const res = await fetch(url);
+  const text = await res.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch { /* not JSON: see below */ }
+  if (res.status === 404 && !data) throw new Error('the running watcher was started before this page was added. Restart it: node agent/watcher.mjs --replace');
+  if (!res.ok || !data) throw new Error(data?.error ?? `HTTP ${res.status}`);
+  return data;
+}
 const graphOpts = { days: 30, agentOnly: false, ticket: null };
 let graphFor = null; // the project whose graph is shown (a late answer for another project is dropped)
 async function loadGraph(refresh = false) {
@@ -1484,9 +1497,7 @@ async function loadGraph(refresh = false) {
   $('#graph-all').hidden = !graphOpts.ticket;
   const q = new URLSearchParams({ project: p.key, days: graphOpts.days, ...(graphOpts.agentOnly ? { agentOnly: '1' } : {}), ...(graphOpts.ticket ? { ticket: graphOpts.ticket } : {}), ...(refresh ? { refresh: '1' } : {}) });
   try {
-    const res = await fetch(`/api/graph?${q}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+    const data = await fetchJsonOrHint(`/api/graph?${q}`);
     if (graphFor !== p.key) return;
     renderAccuracy(data.accuracy);
     renderLanes(data);
@@ -1586,9 +1597,7 @@ let impactWeeks = 8;
 async function loadImpact(refresh = false) {
   $('#impact-state').textContent = 'reading the suite…';
   try {
-    const res = await fetch(`/api/impact?weeks=${impactWeeks}${refresh ? '&refresh=1' : ''}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+    const data = await fetchJsonOrHint(`/api/impact?weeks=${impactWeeks}${refresh ? '&refresh=1' : ''}`);
     renderImpact(data);
     $('#impact-state').textContent = `${data.perProject.length} apps`;
   } catch (e) {
