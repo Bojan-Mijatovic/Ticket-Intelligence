@@ -81,11 +81,14 @@ export function testLine(tests) {
   return tests.map((t) => `\`${t.file}\`${t.names.length ? ` (${t.names.map((n) => `\`${n}\``).join(', ')})` : ''}`).join('; ');
 }
 
-/** **Test** value → [{ file, names }]; [] for "none". */
+/**
+ * **Test** value → [{ file, names }]; [] for "none". The names in parentheses are read as whole backticked strings, so a
+ * Playwright title with its own parentheses ("dark (now dark red, DEM-33) background") does not end the list early.
+ */
 export function parseTestLine(value) {
   const v = String(value ?? '').trim();
   if (!v || /^none\b/i.test(v)) return [];
-  return [...v.matchAll(/`([^`]+)`(?:\s*\(([^)]*)\))?/g)]
+  return [...v.matchAll(/`([^`]+)`(?:\s*\(\s*((?:`[^`]*`\s*,?\s*)+)\))?/g)]
     .filter((m) => TEST_FILE.test(m[1]))
     .map((m) => ({ file: m[1], names: [...(m[2] ?? '').matchAll(/`([^`]+)`/g)].map((x) => x[1]) }));
 }

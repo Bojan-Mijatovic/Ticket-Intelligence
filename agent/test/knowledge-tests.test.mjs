@@ -34,6 +34,15 @@ test('the tests of a ticket: its own commits (not documentation), test files sti
   assert.deepEqual(parseTestLine(NONE), []);
 });
 
+test('a Test line reads back when a test title has its own parentheses (DEM-33 on MediAgenda main)', () => {
+  const tests = [
+    { file: 'e2e/tests/DEM-32.spec.ts', names: ['DEM-32: the Pazienti page has its own dark (now dark red, DEM-33) background'] },
+    { file: 'e2e/tests/DEM-33.spec.ts', names: ['DEM-33: the Pazienti page has a dark red background'] },
+  ];
+  assert.deepEqual(parseTestLine(testLine(tests)), tests);
+  assert.deepEqual(parseTestLine(`\`${JAVA}\` (\`a\`, \`b\`); \`${SPEC}\``), [{ file: JAVA, names: ['a', 'b'] }, { file: SPEC, names: [] }]);
+});
+
 const FILE = `# Campioni
 
 ## Known issues
