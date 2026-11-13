@@ -81,7 +81,7 @@ export function describeTool(name, input = {}) {
  * Runs `claude -p` headless in `cwd` and returns the parsed JSON block of its final answer.
  * The prompt goes through stdin: on Windows the CLI is a .cmd shim run through cmd.exe, which cannot pass
  * multi-line arguments.
- * @returns {Promise<{ result: object, meta: { costUsd: number, durationMs: number, turns: number } }>}
+ * @returns {Promise<{ result: object, meta: { costUsd: number, durationMs: number, turns: number, sessionId: string | null } }>}
  */
 export async function runClaude(opts) {
   const { required = [], transcriptFile } = opts;
@@ -104,7 +104,8 @@ export async function runClaude(opts) {
   }
   if (transcriptFile) writeFileSync(transcriptFile, transcript.map((e) => JSON.stringify(e)).join('\n'));
   if (parsed.error) throw new Error(parsed.error);
-  return { result: parsed.result, meta: { costUsd: final.total_cost_usd ?? 0, durationMs: final.duration_ms ?? 0, turns: final.num_turns ?? 0 } };
+  // sessionId: a caller can continue the same session (--resume), e.g. to correct what a check found (document.mjs).
+  return { result: parsed.result, meta: { costUsd: final.total_cost_usd ?? 0, durationMs: final.duration_ms ?? 0, turns: final.num_turns ?? 0, sessionId: final.session_id ?? null } };
 }
 
 function parseResult(final, required) {
@@ -195,6 +196,16 @@ function invokeClaude({ cwd, prompt, cfg, addDirs = [], disallowedTools = [], to
 }
 
 /**
+ * Environment for a run that uses the skills: the project's named components (insights.components), so the skill
+ * names knowledge files and components as Insights does (K6); null when there is nothing to add.
+ */
+export function skillEnv(cfg, extra = {}) {
+  const components = cfg.insights?.components ?? [];
+  const env = { ...extra, ...(components.length ? { TICKET_INTEL_COMPONENTS: JSON.stringify(components.map(({ name, paths }) => ({ name, paths }))) } : {}) };
+  return Object.keys(env).length ? env : null;
+}
+
+/**
  * Read-only analysis of one ticket (analyze-ticket skill). File-editing tools are disabled.
  * @param {object} [p.project]  { key, name } of the ticket's project (for the linked-projects section)
  * @param {{ key: string, name: string, dir: string, relation?: string }[]} [p.peers]  linked projects: their code
@@ -213,7 +224,7 @@ export async function runAnalysis({ key, repoDir, stateDir, cfg, project = null,
     addDirs: [workDir, ...peers.map((p) => p.dir)],
     // The skill's config.mjs adds these Jira projects to the related-ticket search (the ticket's own is always in).
     // The own key comes first: a configured list also scopes the skill's title search (resolve).
-    env: peers.length ? { TICKET_INTEL_PROJECTS: [project?.key ?? key.split('-')[0], ...peers.map((p) => p.key)].join(',') } : null,
+    env: skillEnv(cfg, peers.length ? { TICKET_INTEL_PROJECTS: [project?.key ?? key.split('-')[0], ...peers.map((p) => p.key)].join(',') } : {}),
     disallowedTools: ['Edit', 'Write', 'NotebookEdit'],
     required: REQUIRED,
     onProgress,

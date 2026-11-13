@@ -90,15 +90,17 @@ export function checkSources(sources, { tickets, analyses, log, repoDir, links }
 }
 
 /**
+ * @param {string} [p.logDir]  where the run folder (ask/<time>) and asks.jsonl go; default stateDir. The eval
+ *   (demo/score-ask.mjs) uses its own, so its questions are not taken for real ones (the tour replays those).
  * @returns {Promise<{ question, found, answer, sources, closest, meta, at }>}
  */
-export async function askQuestion({ question, repoDir, stateDir, cfg, jira, project = null, onProgress = () => {} }) {
+export async function askQuestion({ question, repoDir, stateDir, logDir = stateDir, cfg, jira, project = null, onProgress = () => {} }) {
   project ??= { key: cfg.project, name: cfg.name ?? cfg.project };
   const q = String(question ?? '').trim();
   if (q.length < 3) throw Object.assign(new Error('the question is empty'), { status: 400 });
   if (q.length > 500) throw Object.assign(new Error('the question is longer than 500 characters'), { status: 400 });
   const id = new Date().toISOString().replace(/[:.]/g, '-');
-  const dir = join(stateDir, 'ask', id);
+  const dir = join(logDir, 'ask', id);
   mkdirSync(dir, { recursive: true });
 
   onProgress('collecting tickets, analyses and history');
@@ -140,6 +142,6 @@ export async function askQuestion({ question, repoDir, stateDir, cfg, jira, proj
   };
   writeFileSync(join(dir, 'answer.json'), JSON.stringify(answer, null, 2));
   // Audit trail, local only (agent/state is not committed).
-  appendFileSync(join(stateDir, 'asks.jsonl'), `${JSON.stringify({ at: answer.at, question: q, found: answer.found, sources: sources.map((s) => s.ref), costUsd: out.meta.costUsd, durationMs: out.meta.durationMs })}\n`);
+  appendFileSync(join(logDir, 'asks.jsonl'), `${JSON.stringify({ at: answer.at, question: q, found: answer.found, sources: sources.map((s) => s.ref), costUsd: out.meta.costUsd, durationMs: out.meta.durationMs })}\n`);
   return answer;
 }

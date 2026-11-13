@@ -73,6 +73,31 @@ Rules:
 - **Keep the scores** (a table in this document or in the team's wiki): date, change, score per scenario. Then the progress is visible.
 - **Add a scenario for every real miss.** When the agent gets a real ticket wrong, turn it into a scenario (anonymized, with no patient data), so the same mistake is caught next time.
 
+## Knowledge and prior art
+
+The analysis scenarios above check one ticket at a time. Two more evals check what the agent knows across tickets ([KNOWLEDGE_PLAN.md](KNOWLEDGE_PLAN.md), K1 and K21). Their answer keys also stay outside the app repositories.
+
+| Eval | Answer key | Command | Cost |
+|---|---|---|---|
+| Ask: questions with a known answer (history, why, where, who, latest, a question in Serbian, a page URL, a cause in another app, and topics that do not exist) | `demo/ask-scenarios.json` | `node demo/score-ask.mjs --project DEM` or `--all` (`--list` shows the questions; `--rescore <file>` scores saved answers again) | ~$0.1–0.4 per question |
+| Prior art of suggested tickets: is a suggestion already a ticket, fixed, or new? | `demo/prior-art-cases.json` | `node demo/score-prior-art.mjs` | none (no AI) |
+| Prior art of reported tickets: duplicate, fixed on main, genuinely new | `expected.priorArt` in `demo/scenarios.json` (`struttura-again`, `lab-decimal-again`, `annullate-filter`) | `new-ticket.mjs --scenario …`, then `score-run.mjs` | a normal run |
+| Recurrence: the analysis cites the knowledge entry of the earlier bug | `expected.knowledgeEntry` (`struttura` → DEM-5) | `score-run.mjs`; shown as n/a until the entry is on main | a normal run |
+
+The Ask eval writes its runs to `<project state>/ask-eval/`, so they are not taken for real questions, and saves the scored answers in `agent/state/ask-eval/<time>.json`.
+
+Results:
+
+| Date | Eval | Result | Note |
+|---|---|---|---|
+| 2026-11-12 | prior art, suggestions | 3/4 | baseline. The decimal-comma suggestion shows "created LAB-23" but not that LAB-23 fixed it (a427822); the two genuinely new suggestions stay new (no false duplicate) |
+| 2026-11-12 | Ask, DEM | 10/10 | baseline; 0 invented sources; avg 15 s, $0.21 |
+| 2026-11-12 | Ask, LAB | 8/8 | baseline; 0 invented; avg 16 s, $0.16 |
+| 2026-11-12 | Ask, FAR | 3/3 | baseline; avg 16 s, $0.13 |
+| 2026-11-12 | Ask, BIL | 2/3 | baseline. Missed: the cross-app question (the cause, DEM-17, is in MediAgenda, which Ask does not read: K11). One invented source was dropped by the source check |
+
+**Limit of the Ask eval on the demo data.** The demo projects have 18–26 tickets, and Ask collects 15–23 of them for every question (the 15 latest plus the keyword hits). So the questions in Serbian, with a page URL or about "the latest" pass whatever the keyword search does: this eval cannot show a retrieval miss. It measures answering, source checking and "not found". A retrieval test needs a project with hundreds of tickets (a real one, or a larger seeded history).
+
 ## Typical findings and the lever that fixes them
 
 | Symptom in the score | Usual cause | Lever |

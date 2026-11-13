@@ -12,11 +12,14 @@
     "mergeFix": "off",
     "reviewFix": "auto",
     "documentOnDone": "auto",
+    "mergeDocs": "draft",
     "emailUpdates": "auto",
     "createTicket": "draft"
   },
   "_createTicketComment": "createTicket = tickets suggested on the Insights tab (from the AI review and the facts). 'draft' = shown with a Create in Jira button: a person checks and edits the ticket, then confirms; 'off' = shown only as suggestions. Never 'auto'.",
   "notifyMinConfidence": "medium",
+  "documentScope": "withFix",
+  "_documentScopeComment": "Which resolved tickets documentOnDone documents. 'analyzed' = only tickets the agent analyzed. 'withFix' = also bugs it did not analyze, when a commit on main names the ticket or a branch named after it holds the fix. Older ones: node agent/document-backfill.mjs.",
   "commentHeader": "(robot) *AI analysis* — automated first analysis. Please verify before acting on it.",
   "maxCommentChars": 6000,
   "proposeFixWhen": {
@@ -40,5 +43,6 @@
   "_fixComment": "proposeFix = reproduce with a browser test, fix on branch <KEY>, verify independently, open a DRAFT pull request. mergeFix is always off: a human merges.",
   "_reviewComment": "reviewFix = after a draft PR is opened, a second read-only agent reviews it and posts a COMMENT review with a risk level (it never approves or merges).",
   "_emailComment": "emailUpdates = mail a status update to MAIL_TO (per-user .env) at each milestone listed in agent.config.json mail.on (analysis ready, draft fix PR, fix stopped, AI review, documentation PR, failures). Needs SMTP_* settings; without them it is off and the watcher says why at start.",
-  "_documentComment": "documentOnDone = when a ticket the agent analyzed moves to Done, write docs/knowledge on branch docs/<KEY> and open a DRAFT pull request."
+  "_documentComment": "documentOnDone = when a ticket the agent analyzed moves to Done, write docs/knowledge on branch docs/<KEY> and open a DRAFT pull request.",
+  "_mergeDocsComment": "mergeDocs = the documentation PRs on the Insights tab (Knowledge base). 'draft' = a Merge button; a person confirms each merge. 'off' = listed only. Only a docs/ branch that changes nothing but docs/knowledge/*.md can be merged from there. 'auto' is not used (decision 1 of docs/KNOWLEDGE_PLAN.md: a person merges until the knowledge lint has run for a few weeks without a miss) and behaves like 'draft'."
 }

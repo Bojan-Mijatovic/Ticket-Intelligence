@@ -1,0 +1,9 @@
+{
+  "_note": "Prior-art eval (K21 of docs/KNOWLEDGE_PLAN.md), part (a): what the Insights tab says about suggested tickets whose answer is known. Scored by demo/score-prior-art.mjs. 'match' picks the suggestion by its summary; 'verdicts' are the accepted answers: new, ticket-exists (created or already open), duplicate-of, fixed-by, in-progress, regression-of. Reported tickets (parts b–e) are scenarios in demo/scenarios.json with expected.priorArt, scored by demo/score-run.mjs.",
+  "suggestions": [
+    { "id": "lab-decimal-fixed", "project": "LAB", "match": "decimal comma", "verdicts": ["fixed-by"], "key": "LAB-23", "why": "LAB-23 (Done) fixed it on main in a427822 (parseDecimal); the AI review of 2026-11-09 is older than the fix" },
+    { "id": "lab-presigned-ticket", "project": "LAB", "match": "pre-signed", "verdicts": ["ticket-exists", "duplicate-of"], "key": "LAB-24", "why": "LAB-24 (To Do) reports it already" },
+    { "id": "dem-birth-date-new", "project": "DEM", "match": "birth date is saved one day earlier", "verdicts": ["new"], "why": "the bug is on main (toIsoDate uses toISOString) and no ticket reports it: a true new ticket, no false duplicate" },
+    { "id": "bil-cancelled-new", "project": "BIL", "match": "cancelled MediAgenda visits are charged", "verdicts": ["new"], "why": "ChargeImportService still ignores the booking status and no BIL ticket reports it; DEM-17 is the cause, not a duplicate" }
+  ]
+}

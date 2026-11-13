@@ -10,7 +10,27 @@
         "introducedBy": "CUP_DEMO-2398 (store appends every selected structure); CUP_DEMO-2511 fixed only the PULISCI button",
         "related": ["CUP_DEMO-2511", "CUP_DEMO-2398"],
         "owner": "Sara Colombo",
-        "agentFix": true
+        "agentFix": true,
+        "_knowledgeEntry": "recurrence check (K1): once CUP_DEMO-2511 is documented on main, the analysis must cite that knowledge entry; n/a before",
+        "knowledgeEntry": "CUP_DEMO-2511"
+      }
+    },
+    "struttura-again": {
+      "_note": "K21 (b): the Struttura problem reported again in other words while the 'struttura' ticket is still open. Create 'struttura' first and leave it open.",
+      "summary": "[FE] - Agenda: Ricerca per struttura: the time slot table mixes two structures",
+      "description": "In Agenda I searched by Struttura with SVIL_MS_VISITE, then deleted the text with the backspace key and chose TEST_GEN_25.\nThe time slot table now shows the slots of both structures. If I press PULISCI before choosing the second one, only TEST_GEN_25 is shown.",
+      "issueType": "Bug",
+      "priority": "Medium",
+      "labels": ["SVIL"],
+      "expected": {
+        "component": "frontend/src/app/features/agenda (AgendaSearchStore + StructureAutocompleteComponent)",
+        "cause": "the same as the open 'struttura' ticket: clearing the field by hand leaves the structure in AgendaSearchStore",
+        "files": ["frontend/src/app/features/agenda/state/agenda-search.store.ts", "frontend/src/app/shared/components/structure-autocomplete/structure-autocomplete.component.ts"],
+        "introducedBy": "CUP_DEMO-2398 (store appends every selected structure); CUP_DEMO-2511 fixed only the PULISCI button",
+        "related": ["CUP_DEMO-2511", "CUP_DEMO-2398"],
+        "owner": "Sara Colombo",
+        "agentFix": false,
+        "priorArt": { "verdicts": ["duplicate"], "key": "scenario:struttura" }
       }
     },
     "birth-date": {
@@ -61,7 +81,9 @@
         "related": ["CUP_DEMO-2533"],
         "owner": "Marta Ricci",
         "fix": "option value=\"ANNULLATA\" (better: options built from the BookingStatus type)",
-        "agentFix": true
+        "agentFix": true,
+        "_priorArt": "K21 (e): a genuinely new problem; prior art must not call it a duplicate or fixed",
+        "priorArt": { "verdicts": ["none"] }
       }
     },
     "lab-decimal": {
@@ -81,6 +103,26 @@
         "fix": "parse the Italian decimal comma (replace ',' with '.' before Number(), ideally a parseDecimal next to formatDecimal in shared/utils/numbers.ts)",
         "fixInProject": "LAB",
         "agentFix": true
+      }
+    },
+    "lab-decimal-again": {
+      "project": "LAB",
+      "_note": "K21 (c): the decimal comma bug reported again after LAB-23 fixed it on main (a427822, 2026-11-10). The test environment still runs an older version. LAB-23 is a live ticket: if a demo reset deletes it, update the key.",
+      "summary": "[FE] - Risultati: Potassio 4,6 is stored as 4 after SALVA",
+      "description": "Since this morning in Risultati e referti, when I type Potassio 4,6 and press SALVA, the value shown afterwards is 4. Creatinina 0,95 becomes 0. With a dot it works.\nThe version installed in COLLAUDO is the one of 3 November.",
+      "issueType": "Bug",
+      "priority": "High",
+      "labels": ["COLLAUDO"],
+      "expected": {
+        "component": "frontend/src/app/features/results (ResultEntryComponent)",
+        "cause": "already fixed on main by LAB-23 (parseDecimal, a427822); the reported version predates the fix",
+        "files": ["frontend/src/app/features/results/result-entry.component.ts", "frontend/src/app/shared/utils/numbers.ts"],
+        "introducedBy": "CUP_LAB-120 (Francesca Lombardi, 2026-10-27): text fields instead of number fields",
+        "related": ["LAB-23", "CUP_LAB-120"],
+        "owner": "Francesca Lombardi",
+        "fixInProject": "LAB",
+        "agentFix": false,
+        "priorArt": { "verdicts": ["fixed-on-main", "solved-before"], "key": "LAB-23" }
       }
     },
     "far-renal": {

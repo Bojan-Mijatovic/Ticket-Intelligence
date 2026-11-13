@@ -25,7 +25,7 @@
     "analysisModel": "sonnet"
   },
   "mail": {
-    "on": ["analyzed", "fix-proposed", "fix-failed", "reviewed", "documented", "doc-failed", "failed"]
+    "on": ["analyzed", "fix-proposed", "fix-failed", "reviewed", "documented", "doc-failed", "failed", "jira-down"]
   },
   "fixTimeoutMinutes": 15,
   "toolsDir": "../tools",

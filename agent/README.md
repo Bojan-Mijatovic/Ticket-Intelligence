@@ -95,6 +95,7 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
   | change priority / status | off |
 
 - **Validated output.** A result that is not valid JSON or misses required fields is rejected: the ticket gets `ai-failed`, and nothing is posted.
+- **No work on a Jira it cannot read.** With rejected credentials Jira answers every search with an empty list, not an error (an expired API token once looked like four empty projects). So the watcher first checks the credentials and that every watched project is visible (`lib/jira-health.mjs`; at start and on each poll, a good result is kept 5 minutes). While Jira is unavailable, the header shows **Jira unavailable: <reason>** and the state **paused**; no ticket is picked or started; Insights, Ask, Run ticket and Create in Jira answer 503 with the reason; one `jira-down` event (and email) per outage, `jira-up` when Jira answers again, and then stale labels are cleaned up. A project that had tickets and now returns none is shown as a warning. `ask.mjs` and `insights.mjs` stop with the reason too. A renewed token needs a restart (`--replace`).
 - **Everything is logged** in `state/events.jsonl`; each run's transcript and result are in `state/work/<KEY>/`.
 
 ## Configuration: `agent.config.json`
@@ -135,6 +136,7 @@ With `emailUpdates: auto` in `policy.json`, the agent mails one update per miles
 | `reviewed` | AI review: risk, verdict, findings |
 | `documented` / `doc-failed` | documentation PR ready / documentation failed |
 | `failed` | analysis failed |
+| `jira-down` | Jira unavailable (rejected credentials, a project it cannot see): the agent is paused; once per outage |
 
 Settings in `~/.claude/skills/analyze-ticket/.env` (see `.env.example`): `SMTP_HOST` (default `smtp.gmail.com`), `SMTP_PORT` (465 = TLS, 587 = STARTTLS), `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` (default `SMTP_USER`), `MAIL_TO` (comma separated). For Gmail, `SMTP_PASS` is an **app password** (https://myaccount.google.com/apppasswords, needs 2-step verification), not the account password.
 
@@ -332,7 +334,33 @@ The script and the player are in `dashboard/tour.js`, the slides in `dashboard/s
 
 ## Done → documentation
 
-When a ticket the agent analyzed moves to **Done** (`documentOnDone: auto`), the watcher runs the `document-ticket` skill headless on branch `docs/<KEY>`. The agent may only write `docs/knowledge/*.md` (checked); the watcher commits, pushes, opens a draft pull request and comments in Jira. Labels: `ai-documenting` → `ai-documented` (or `ai-doc-failed`).
+When a ticket moves to **Done** (`documentOnDone: auto`), the watcher runs the `document-ticket` skill headless on branch `docs/<KEY>`. Which tickets: `documentScope` in `policy.json`: `analyzed` = the ones the agent analyzed; `withFix` (default) = also bugs it did not analyze, when a commit on `main` names the ticket or a branch named after it holds the fix. The watcher keeps the time of its last check (`state/done-poll.json`) and looks back at least `lookbackHours`, so tickets resolved while it was down are found too. The agent may only write `docs/knowledge/*.md` (checked); the watcher commits, pushes, opens a draft pull request and comments in Jira. Labels: `ai-documenting` → `ai-documented` (or `ai-doc-failed`).
+
+The analysis and Ask read the knowledge base on `main` only, so a documentation PR helps nobody until it is merged. **Insights → Knowledge base** shows how many tickets are documented on `main`, and the documentation PRs waiting: open and draft ones, and ones closed without merging whose branch still exists (a demo reset closes them, see `demo/reset-demo.mjs`). With `mergeDocs: draft` in `policy.json` each has a **Merge…** button (**Reopen and merge…** for a closed one): after a confirmation the watcher marks it ready, squash-merges it, deletes its branch, comments on the ticket in Jira and emits `docs-merged`. A PR that changes anything outside `docs/knowledge/*.md`, or whose branch is not `docs/…`, is never merged from there (`lib/docs-prs.mjs`). GitHub refuses a PR that conflicts with one merged before (both edit the README index): the reason is shown, and the PR is fixed on GitHub. `mergeDocs: off` lists them only; `auto` is not used yet and behaves as `draft`.
+
+**One file per component.** The knowledge files are named after the project's components, the same names as on the Insights tab (`insights.components`): `docs/knowledge/pazienti.md`, `prenotazioni.md`, … The agent passes them to the skills (`TICKET_INTEL_COMPONENTS`); a team that runs the skills by hand (Claude Code, Copilot) puts the same list in the app's `.ticket-intel.json` → `components`, and without either the files stay named after code paths. Tests are documented with the code or screen they test. The Insights drill-down of a component links its knowledge file. A knowledge base written before (path-named files) is moved once, without AI, as one draft PR:
+
+```
+node agent/knowledge-migrate.mjs --project DEM          # dry run: where every entry goes, the lint after the move, a preview
+node agent/knowledge-migrate.mjs --project DEM --yes    # branch docs/migrate-<time>, one commit, draft PR
+```
+
+**Knowledge lint.** Before a documentation branch is pushed, plain code checks the entries the run wrote (`lib/knowledge.mjs`): **Type**, **Symptom**, **Search terms** (at least 3), **Root cause** labelled confirmed or assumed, and **Fix** are there; every cited commit exists; no statement about the state of a PR or branch ("not merged yet", "draft PR #14", "as of <date>"); no fixture keys (`CUP_…`); "People who know it" lists people, not the agent; and no personal data anywhere in the file (fiscal codes, e-mail addresses, phone numbers, IBANs, birth dates). With findings, the agent corrects them once in the same session; if they remain, nothing is pushed and the ticket gets `ai-doc-failed` with the findings. The same rules on what is already written:
+
+```
+node agent/knowledge-lint.mjs --project DEM                          # docs/knowledge on main
+node agent/knowledge-lint.mjs --project LAB --ref origin/docs/LAB-23  # a documentation branch
+```
+
+**Backfill.** Tickets resolved before the agent documented them get their entries with one command, all on one branch (`docs/backfill-<time>`, one commit per ticket) and one draft pull request:
+
+```
+node agent/document-backfill.mjs --project DEM          # dry run: coverage, the tickets, why others are left out, the estimated cost
+node agent/document-backfill.mjs --project DEM --yes    # document them (defaults: bugs fixed since 2026-01-01, 10 per PR, stop at $5)
+   ... --since 2026-03-01 --limit 5 --max-cost 2 --types Bug,Story --only DEM-5,DEM-22
+```
+
+A candidate is a Done ticket of the chosen types with a commit on `main` that names it, no entry on `main`, no `docs/<KEY>` branch waiting, and no `no-ai` label. A ticket whose run fails is left out (its changes undone) and the batch goes on; each documented ticket gets a Jira comment and the `ai-documented` label. The estimate is the average cost of the documentation runs so far. `demo/reset-demo.mjs` keeps documentation PRs and branches (`--drop-docs` closes them too).
 
 ## Duplicates
 

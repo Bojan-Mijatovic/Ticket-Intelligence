@@ -1,0 +1,37 @@
+{
+  "_note": "Ask eval (K1 of docs/KNOWLEDGE_PLAN.md): questions with a known answer, scored by demo/score-ask.mjs. The answer key stays outside the app repositories. Ticket keys are fixture keys (CUP_…, mapped with demo/jira-keys.json) or live keys. A question passes when 'found' matches and, for found questions, at least 'min' of 'expect' (tickets; a cited commit counts for the keys in its subject) are cited, every path in 'files' is cited, and the answer names one of 'names'. Kinds: history, why, where, who, latest, cross-app, language (not English), url, not-found.",
+  "projects": {
+    "DEM": [
+      { "id": "dem-struttura-history", "kind": "history", "question": "Has the Struttura field bug happened before?", "found": true, "expect": ["CUP_DEMO-2511"] },
+      { "id": "dem-cancel-twice", "kind": "why", "question": "Why can a cancelled booking not be cancelled again?", "found": true, "expect": ["CUP_DEMO-2541"] },
+      { "id": "dem-report-bugs", "kind": "history", "question": "Which bugs did the monthly bookings report have, and why?", "found": true, "expect": ["CUP_DEMO-2627"] },
+      { "id": "dem-birth-date-where", "kind": "where", "question": "Where is the birth date of a patient converted before it is saved?", "found": true, "expect": ["CUP_DEMO-2612"], "min": 0, "files": ["frontend/src/app/shared/utils/dates.ts"] },
+      { "id": "dem-timeslot-who", "kind": "who", "question": "Who knows the time slot code best?", "found": true, "expect": [], "names": ["Luca Bianchi"] },
+      { "id": "dem-open", "kind": "latest", "question": "Which MediAgenda ticket is still open, apart from tests?", "found": true, "expect": ["DEM-41"] },
+      { "id": "dem-sr-cancelled", "kind": "language", "question": "Da li je bilo grešaka sa otkazanim prenotacijama i kako su rešene?", "found": true, "expect": ["CUP_DEMO-2541", "CUP_DEMO-2627", "CUP_DEMO-2549"], "min": 2 },
+      { "id": "dem-url-pazienti", "kind": "url", "question": "who last worked on this page http://localhost:4200/pazienti and what did they change?", "found": true, "expect": ["DEM-32", "DEM-33", "DEM-39", "DEM-40", "CUP_DEMO-2612", "CUP_DEMO-2580"], "min": 1 },
+      { "id": "dem-sap", "kind": "not-found", "question": "How do we export the monthly bookings to SAP?", "found": false },
+      { "id": "dem-sms", "kind": "not-found", "question": "Why does the SMS reminder for an appointment arrive twice?", "found": false }
+    ],
+    "LAB": [
+      { "id": "lab-creatinine-unit", "kind": "why", "question": "What changed in the creatinine unit, and who changed it?", "found": true, "expect": ["CUP_LAB-118"], "names": ["Alessandro Moretti"] },
+      { "id": "lab-decimal-history", "kind": "history", "question": "Has the decimal comma problem in the results happened before?", "found": true, "expect": ["LAB-23", "CUP_LAB-117"], "min": 2 },
+      { "id": "lab-women-range", "kind": "why", "question": "Why were women flagged with the wrong reference range?", "found": true, "expect": ["CUP_LAB-108"] },
+      { "id": "lab-sr-rifiuta", "kind": "language", "question": "Zašto zahtev posle odbijene epruvete nikad ne ide u rad?", "found": true, "expect": ["CUP_LAB-112"] },
+      { "id": "lab-open", "kind": "latest", "question": "Which MediLab bug is still open?", "found": true, "expect": ["LAB-24"] },
+      { "id": "lab-integration-who", "kind": "who", "question": "Who knows the MediAgenda integration best?", "found": true, "expect": [], "names": ["Luca Bianchi", "Francesca Lombardi"] },
+      { "id": "lab-mediagenda-down", "kind": "history", "question": "What happens in Nuova richiesta when MediAgenda is down?", "found": true, "expect": ["CUP_LAB-113"] },
+      { "id": "lab-insurance", "kind": "not-found", "question": "How is the patient's insurance card checked against the national registry?", "found": false }
+    ],
+    "FAR": [
+      { "id": "far-renal-unit", "kind": "cross-app", "question": "Why could the renal check get the creatinine in the wrong unit?", "found": true, "expect": ["CUP_LAB-118", "CUP_FAR-211"], "min": 1 },
+      { "id": "far-double-click", "kind": "history", "question": "Has a prescription ever been dispensed twice?", "found": true, "expect": ["CUP_FAR-216"] },
+      { "id": "far-sap", "kind": "not-found", "question": "How are the drug orders sent to SAP?", "found": false }
+    ],
+    "BIL": [
+      { "id": "bil-cancelled-visits", "kind": "cross-app", "question": "Can a visit cancelled in MediAgenda be charged, and since when can bookings be cancelled there?", "found": true, "expect": ["CUP_DEMO-2533", "CUP_BIL-304"], "min": 2 },
+      { "id": "bil-copay", "kind": "history", "question": "Which bugs did the co-pay calculation have?", "found": true, "expect": ["CUP_BIL-308", "CUP_BIL-312"], "min": 2 },
+      { "id": "bil-sms", "kind": "not-found", "question": "Why is the payment reminder SMS not sent?", "found": false }
+    ]
+  }
+}

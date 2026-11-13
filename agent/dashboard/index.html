@@ -160,7 +160,7 @@
   .project-pick { display: inline-flex; align-items: center; gap: 6px; }
   .project-pick select { font: inherit; font-weight: 600; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: inherit; }
   .pick-first { padding: 14px 16px; margin-bottom: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .pick-first[hidden], .ins-list[hidden] { display: none; }
+  .pick-first[hidden], .ins-list[hidden], .pill[hidden] { display: none; }
   .proj { font-size: 11px; font-weight: 700; letter-spacing: .02em; padding: 1px 6px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); }
   .charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
   .chart .ct { font-size: 13px; font-weight: 600; }
@@ -195,6 +195,7 @@
 <header>
   <div class="brand"><span class="logo">✦</span> Ticket Intelligence <span class="meta" style="font-weight:500">agent</span></div>
   <span class="pill" id="state"><span class="dot"></span><span id="state-text">connecting…</span></span>
+  <span class="pill off" id="jira" hidden></span>
   <label class="project-pick" title="Which project the dashboard shows: its tickets, its hotspot map and its knowledge base">
     <span class="meta">Project</span>
     <select id="project-sel" aria-label="Project"><option value="all">All projects</option></select>
@@ -252,6 +253,10 @@
     <h2 style="margin-top:20px">Suggested tickets</h2>
     <div class="hint" style="margin:-4px 0 8px" id="ins-sugg-hint">From the AI review and the facts on this page, with the person who knows the code best. Nothing is created on its own: open one, check and edit it, then confirm.</div>
     <div class="panel ins-list" id="ins-suggestions"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin:20px 0 10px"><h2 style="margin:0">Knowledge base</h2><span class="spacer"></span>
+      <span class="meta" id="ins-docs-state"></span><button class="small" id="ins-docs-refresh">Refresh</button></div>
+    <div class="hint" style="margin:-4px 0 8px" id="ins-docs-hint">What the agent documented when tickets were resolved. The analysis and Ask read only what is merged into main.</div>
+    <div class="panel ins-list" id="ins-docs"></div>
     <h2 style="margin-top:20px">Risk files</h2>
     <div class="hint" style="margin:-4px 0 8px">Where the next bug is most likely: fixed by several bugs, changed often, big, and without a test of its own.</div>
     <div class="panel ins-list" id="ins-risk"></div>
@@ -333,7 +338,7 @@ function h(tag, attrs = {}, ...kids) {
 }
 const initials = (name = '?') => name.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
 const ago = (iso) => { if (!iso) return '–'; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`; };
-const ICON = { mailed: '✉', 'mail-failed': '✖', resolved: '☑', documenting: '📝', documented: '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺', reviewing: '👀', reviewed: '🧐', 'review-skipped': '–' };
+const ICON = { mailed: '✉', 'mail-failed': '✖', resolved: '☑', documenting: '📝', documented: '📚', 'docs-merged': '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺', reviewing: '👀', reviewed: '🧐', 'review-skipped': '–' };
 
 const tickets = new Map();
 const teams = [];
@@ -383,6 +388,8 @@ function ticketOf(ev) {
 
 function apply(ev) {
   if (!ev.key) return;
+  // A documentation merge (Insights → Knowledge base) is shown on the ticket's card when it has one; it opens none.
+  if (ev.type === 'docs-merged' && !tickets.has(ev.key)) return;
   const t = ticketOf(ev);
   if (ev.url && !t.url && ev.type !== 'commented') t.url = ev.url;
   if (ev.priority) t.priority = ev.priority;
@@ -408,11 +415,12 @@ function apply(ev) {
     case 'documenting': t.docs = { stage: 'writing' }; break;
     case 'documented': t.docs = { stage: 'done', url: ev.url, files: ev.files }; break;
     case 'doc-failed': t.docs = { stage: 'failed', error: ev.text }; break;
+    case 'docs-merged': t.docs = { ...(t.docs ?? {}), stage: 'merged', url: ev.url ?? t.docs?.url }; break;
     case 'reviewing': t.review = { stage: 'running' }; break;
     case 'reviewed': t.review = { stage: 'done', ...ev.review, url: ev.url }; break;
     case 'review-skipped': t.review = { stage: 'skipped', error: ev.text }; break;
   }
-  if (['picked', 'analyzing', 'progress', 'cross-project', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'warmed', 'workspace', 'reproducing', 'reproduced', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-skipped', 'reviewing', 'reviewed', 'review-skipped', 'mailed', 'mail-failed'].includes(ev.type)) {
+  if (['picked', 'analyzing', 'progress', 'cross-project', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'docs-merged', 'warmed', 'workspace', 'reproducing', 'reproduced', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-skipped', 'reviewing', 'reviewed', 'review-skipped', 'mailed', 'mail-failed'].includes(ev.type)) {
     t.steps.push({ at: ev.at, type: ev.type, text: ev.step ?? ev.text });
   }
 }
@@ -456,7 +464,7 @@ function docsView(t) {
   if (!d) return null;
   return h('div', { class: 'fix' },
     h('div', { class: 'fix-title' }, '📚 Knowledge base (ticket resolved)',
-      h('span', { class: `chip ${d.stage === 'done' ? 'done' : d.stage === 'failed' ? 'failed' : 'analyzing'}` }, d.stage === 'done' ? 'docs PR ready' : d.stage)),
+      h('span', { class: `chip ${d.stage === 'done' || d.stage === 'merged' ? 'done' : d.stage === 'failed' ? 'failed' : 'analyzing'}` }, d.stage === 'done' ? 'docs PR ready' : d.stage === 'merged' ? 'merged into main' : d.stage)),
     d.error ? h('pre', { class: 'err' }, d.error) : null,
     d.url ? h('div', {}, h('a', { class: 'pr-link', href: d.url, target: '_blank' }, '⇄ Open documentation pull request')) : null,
     d.files?.length ? h('div', { class: 'files' }, d.files.map((x) => h('code', {}, x))) : null);
@@ -596,7 +604,17 @@ function renderStatus() {
   const pill = $('#state');
   if (!live) { pill.className = 'pill off'; $('#state-text').textContent = 'disconnected'; return; }
   if (status?.processing) { pill.className = 'pill busy'; $('#state-text').textContent = `${{ review: 'reviewing', document: 'documenting' }[status.processing.kind] ?? 'analyzing'} ${status.processing.key}`; }
+  else if (status?.jira?.ok === false) { pill.className = 'pill warn'; $('#state-text').textContent = 'paused'; }
   else { pill.className = 'pill live'; $('#state-text').textContent = 'watching'; }
+  // Jira health (agent/lib/jira-health.mjs): red when Jira cannot be used, amber for a warning (a project now empty).
+  const j = status?.jira;
+  const jp = $('#jira');
+  jp.hidden = !(j && (j.ok === false || j.warnings?.length));
+  if (!jp.hidden) {
+    jp.className = `pill ${j.ok === false ? 'off' : 'warn'}`;
+    jp.textContent = j.ok === false ? `Jira unavailable: ${String(j.error ?? '').split(':')[0]}` : `Jira: ${j.warnings.length} warning${j.warnings.length > 1 ? 's' : ''}`;
+    jp.title = j.ok === false ? `${j.error}\n\nNo new tickets are picked, and Insights, Ask and Create in Jira wait until Jira answers again.` : j.warnings.join('\n');
+  }
   if (status) {
     fillProjectSelect();
     const fp = focus();
@@ -679,6 +697,7 @@ async function loadInsights(refresh = false) {
   insightsFor = p.key;
   $('#ins-title').textContent = `Insights · ${projLabel(p)}`;
   $('#ins-heat').replaceChildren(h('div', { class: 'empty' }, `Reading the ${p.name} git history, Jira and the saved analyses…`));
+  loadKnowledge(refresh); // its own request: GitHub answers in a few seconds and must not hold up the rest
   try {
     const res = await fetch(`/api/insights?project=${encodeURIComponent(p.key)}${refresh ? '&refresh=1' : ''}`);
     const data = await res.json();
@@ -703,6 +722,7 @@ function showInsightTickets({ component, month = null }) {
   box.replaceChildren(
     h('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:8px' },
       h('b', {}, `${component}${month ? ` · ${monthLabel(month)}` : ''}: ${list.length} ticket(s)`), h('span', { class: 'spacer' }),
+      knowledgeLink(component),
       h('button', { class: 'small', onclick: () => { box.hidden = true; } }, 'Close')),
     h('table', {},
       h('thead', {}, h('tr', {}, ['Ticket', 'Type', 'Priority', 'Status', 'Summary', 'Commits'].map((x) => h('th', {}, x)))),
@@ -793,6 +813,66 @@ function assignableUsers(project) {
     }).catch((e) => { assignableByProject.delete(project); throw e; }));
   }
   return assignableByProject.get(project);
+}
+
+// ---------------------------------------------------------------- knowledge base (K2): documentation PRs to merge
+let knowledgeData = null; // the last /api/knowledge answer of the selected project (its files on main, K6)
+// The same slug as the skill's components.mjs: "Shared (forms, dates, layout)" → "shared-forms-dates-layout".
+const componentSlug = (name) => String(name).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+/** A link to the component's knowledge file on main, when there is one (Insights drill-down). */
+function knowledgeLink(component) {
+  const file = `${componentSlug(component)}.md`;
+  const repo = focus()?.github?.repo;
+  if (!repo || knowledgeData?.project !== focus()?.key || !knowledgeData?.onMain?.names?.includes(file)) return null;
+  return h('a', { href: `https://github.com/${repo}/blob/main/docs/knowledge/${file}`, target: '_blank', style: 'margin-right:8px' }, `📚 Known issues of ${component}`);
+}
+
+async function loadKnowledge(refresh = false) {
+  const p = focus();
+  if (!p) return;
+  $('#ins-docs-state').textContent = 'reading GitHub…';
+  try {
+    const res = await fetch(`/api/knowledge?project=${encodeURIComponent(p.key)}${refresh ? '&refresh=1' : ''}`);
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+    if (focus()?.key === p.key) {
+      knowledgeData = d;
+      renderKnowledgeBase(d, p);
+    }
+  } catch (e) {
+    if (focus()?.key === p.key) { $('#ins-docs').replaceChildren(h('pre', { class: 'err' }, `Knowledge base: ${e.message}`)); $('#ins-docs-state').textContent = ''; }
+  }
+}
+
+function renderKnowledgeBase(d, p) {
+  const on = d.onMain;
+  $('#ins-docs-state').textContent = on ? `on main: ${on.entries} documented ticket${on.entries === 1 ? '' : 's'} in ${on.files} file${on.files === 1 ? '' : 's'}` : '';
+  if (d.error) { $('#ins-docs').replaceChildren(h('div', { class: 'empty' }, d.error)); return; }
+  const canMerge = d.mergeDocs !== 'off';
+  if (!d.prs.length) {
+    $('#ins-docs').replaceChildren(h('div', { class: 'empty' }, 'No documentation waiting: every documentation PR is merged or discarded.'));
+    return;
+  }
+  const STATE = { draft: ['analyzing', 'draft'], open: ['analyzing', 'open'], closed: ['failed', 'closed, not merged'] };
+  const rows = d.prs.map((x) => {
+    const [cls, label] = STATE[x.state];
+    const state = h('span', { class: 'meta' });
+    const btn = !canMerge ? null : !x.mergeable ? h('span', { class: 't-sub', title: x.why }, 'not from here') : h('button', { class: 'small', onclick: async () => {
+      const how = x.state === 'closed' ? 'It was closed without merging; it will be reopened first.\n\n' : x.state === 'draft' ? 'It is a draft; it will be marked ready first.\n\n' : '';
+      if (!confirm(`Merge documentation PR #${x.number} (${x.key ?? 'several tickets'}) into main of ${p.name}?\n\n${how}It changes only:\n${x.files.join('\n')}`)) return;
+      btn.disabled = true; state.textContent = 'Merging…';
+      try {
+        await post('/api/knowledge/merge', { project: p.key, number: x.number });
+        await loadKnowledge(true);
+      } catch (err) { state.textContent = ''; btn.disabled = false; alert(`Not merged: ${err.message}`); }
+    } }, x.state === 'closed' ? 'Reopen and merge…' : 'Merge…');
+    return h('tr', {},
+      h('td', {}, x.key ? jiraLink(x.key) : h('span', { class: 't-sub' }, 'several (backfill)')),
+      h('td', {}, h('div', {}, h('a', { href: x.url, target: '_blank' }, `#${x.number} ${x.title}`)), h('div', { class: 't-sub' }, x.files.map((f) => f.split('/').pop()).join(', '))),
+      h('td', {}, h('span', { class: `chip ${cls}` }, label), h('div', { class: 't-sub' }, `${x.ageDays} day${x.ageDays === 1 ? '' : 's'} old`)),
+      h('td', {}, btn, state));
+  });
+  $('#ins-docs').replaceChildren(table(['Ticket', 'Documentation pull request', 'State', ''].map((x) => h('th', {}, x)), rows));
 }
 
 function renderSuggestions(d) {
@@ -1222,6 +1302,7 @@ function renderInsights(d) {
 }
 
 $('#ins-refresh').addEventListener('click', () => loadInsights(true));
+$('#ins-docs-refresh').addEventListener('click', () => loadKnowledge(true));
 $('#ins-review').addEventListener('click', async (e) => {
   const b = e.target;
   const p = focus();

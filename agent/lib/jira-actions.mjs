@@ -27,7 +27,8 @@ export function createJira() {
         continue;
       }
       const text = await res.text();
-      if (!res.ok) throw new Error(`${method} ${path} -> ${res.status}: ${text.slice(0, 200)}`);
+      // jiraStatus (not status): the dashboard API uses an error's `status` as its own HTTP status.
+      if (!res.ok) throw Object.assign(new Error(`${method} ${path} -> ${res.status}: ${text.slice(0, 200)}`), { jiraStatus: res.status });
       return text ? JSON.parse(text) : null;
     }
   }
@@ -35,6 +36,18 @@ export function createJira() {
   return {
     baseUrl: cfg.baseUrl,
     browseUrl: (key) => `${cfg.baseUrl}/browse/${key}`,
+
+    /** The account the credentials belong to; 401 when Jira rejects them (jira-health.mjs). */
+    async myself() {
+      const u = await api('GET', '/rest/api/2/myself');
+      return { accountId: u.accountId ?? null, name: u.displayName ?? u.name ?? null };
+    },
+
+    /** One project; 404 when it does not exist or this account cannot see it. */
+    async project(key) {
+      const p = await api('GET', `/rest/api/2/project/${encodeURIComponent(key)}`);
+      return { key: p.key, name: p.name };
+    },
 
     async search(jql, max = 20) {
       return (await this.searchAll(jql, max, Math.min(max, 100))).slice(0, max);

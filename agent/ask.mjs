@@ -7,6 +7,7 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createJira } from './lib/jira-actions.mjs';
+import { createJiraHealth } from './lib/jira-health.mjs';
 import { askQuestion } from './lib/ask.mjs';
 import { cliProject, loadProjects } from './lib/projects.mjs';
 
@@ -18,6 +19,13 @@ if (!question) {
   process.exit(1);
 }
 const p = cliProject(loadProjects(HERE));
+const jira = createJira();
+// Without valid credentials Jira answers with no tickets instead of an error: the answer would be a wrong "not found".
+const health = await createJiraHealth({ jira, projects: [p.key] }).check();
+if (health.ok === false) {
+  console.error(`Jira unavailable: ${health.error}`);
+  process.exit(1);
+}
 
 const started = Date.now();
 console.log(`${p.name} (${p.key})`);
@@ -26,7 +34,7 @@ const a = await askQuestion({
   repoDir: p.repoDir,
   stateDir: p.stateDir,
   cfg: p.cfg,
-  jira: createJira(),
+  jira,
   project: { key: p.key, name: p.name },
   onProgress: (step) => console.log(`  [${Math.round((Date.now() - started) / 1000)}s] ${step}`),
 });

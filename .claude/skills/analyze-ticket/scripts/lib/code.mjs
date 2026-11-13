@@ -5,6 +5,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { codeClues, keywords, trimText } from './text.mjs';
+import { componentRules, namedComponentOf, namedComponentOfFiles, slugOf } from './components.mjs';
 
 const DAY = 864e5;
 
@@ -97,6 +98,7 @@ export function codeContext({ vcs, target, related, envs }) {
   const alias = (c) => ({ ...c, author: cfg.authorAliases[c.author] ?? c.author });
   const files = vcs.files();
   const componentFor = makeComponentResolver(files, cfg.componentContainers);
+  const rules = componentRules(cfg); // named components (K6), for the knowledge file names; [] = path-based
   const since = isoDaysAgo(cfg.lookbackDays);
   const exclude = [cfg.docsPath, '*lock*'];
   const keyRelevance = new Map([[target.key, 1.2], ...related.map((r) => [r.key, r.relevance])]);
@@ -124,11 +126,14 @@ export function codeContext({ vcs, target, related, envs }) {
   } catch (e) {
     warnings.push(e.message);
   }
+  // The knowledge base is not code: a documentation commit ("DEM-3: document …") names the ticket too, but its files
+  // must not make docs/knowledge a component of the ticket.
+  const isDoc = (f) => f === cfg.docsPath || f.startsWith(`${cfg.docsPath}/`);
   for (const c of keyCommits) {
     const msg = `${c.subject}\n${c.body}`;
     c.keys = keys.filter((k) => new RegExp(`\\b${k}\\b`, 'i').test(msg));
     for (const k of c.keys) {
-      for (const f of c.files) {
+      for (const f of c.files.filter((x) => !isDoc(x))) {
         const cp = comp(componentFor(f));
         note(cp, (3 * keyRelevance.get(k)) / Math.max(1, c.files.length / 3), `commit ${c.short} references ${k}`);
         cp.keys.add(k);
@@ -136,7 +141,8 @@ export function codeContext({ vcs, target, related, envs }) {
       }
     }
   }
-  keyCommits = keyCommits.filter((c) => c.keys.length);
+  // A commit that only writes the knowledge base is not a fix (the entry itself is found through knowledgeDocs).
+  keyCommits = keyCommits.filter((c) => c.keys.length && c.files.some((f) => !isDoc(f)));
 
   // --- 2. code search for clues from the ticket text
   const grepHits = [];
@@ -161,7 +167,7 @@ export function codeContext({ vcs, target, related, envs }) {
   if (msgTerms.length) {
     try {
       for (const c of vcs.logByMessage(msgTerms, { all: true, since, limit: 200 })) {
-        for (const f of c.files) note(comp(componentFor(f)), 0.3, `commit message ${c.short} matches the ticket text`);
+        for (const f of c.files.filter((x) => !isDoc(x))) note(comp(componentFor(f)), 0.3, `commit message ${c.short} matches the ticket text`);
       }
     } catch (e) {
       warnings.push(e.message);
@@ -198,7 +204,10 @@ export function codeContext({ vcs, target, related, envs }) {
       for (const m of `${h.subject} ${h.body}`.matchAll(/\b[A-Z][A-Z0-9_]+-\d+\b/g)) a.keys.add(m[0]);
       authors.set(h.author, a);
     }
-    const docSlug = c.path.replace(/[\\/]/g, '-').replace(/[()]/g, '');
+    // The knowledge file: named after the team's component when there are rules (components.mjs), else the path.
+    const hitFiles = [...c.files.keys()];
+    const named = rules.length ? namedComponentOfFiles(hitFiles.length ? hitFiles : [`${c.path}/x`], rules) ?? namedComponentOf(`${c.path}/x`, rules) : null;
+    const docSlug = named ? slugOf(named) : c.path.replace(/[\\/]/g, '-').replace(/[()]/g, '');
     return {
       path: c.path,
       score: Math.round(c.score * 10) / 10,
@@ -208,7 +217,10 @@ export function codeContext({ vcs, target, related, envs }) {
       authors: [...authors.values()].sort((a, b) => b.commits - a.commits).slice(0, 6).map((a) => ({ ...a, keys: [...a.keys] })),
       recentCommits: history.slice(0, 8).map(({ short, date, author, subject, files: f }) => ({ short, date, author, subject, files: f.slice(0, 8) })),
       componentReadme: ['README.md', 'readme.md'].map((r) => `${c.path}/${r}`).find((p) => c.path !== '(root)' && existsSync(join(repo, p))) ?? null,
-      knowledgeDoc: { path: `${cfg.docsPath}/${docSlug}.md`, exists: existsSync(join(repo, cfg.docsPath, `${docSlug}.md`)) },
+      // With named components, a path outside all of them (tests, build files) has no knowledge file of its own.
+      knowledgeDoc: rules.length && !named
+        ? { path: null, component: null, exists: false, note: 'not one of the named components: document a fix here in the component of the code or screen it belongs to' }
+        : { path: `${cfg.docsPath}/${docSlug}.md`, component: named, exists: existsSync(join(repo, cfg.docsPath, `${docSlug}.md`)) },
     };
   };
 

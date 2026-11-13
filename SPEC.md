@@ -93,19 +93,24 @@ Ticket Intelligence gives every Jira ticket a fast, evidence-based first analysi
 | FR-37 | Post owner notifications to Teams through a Workflows webhook when `TEAMS_WEBHOOK_URL` is set | Implemented (not tested against a real channel) |
 | FR-38 | Reproduce the bug with a generated Playwright test (mocked backend API); the watcher verifies that the test fails before the fix; attach screenshot and recorded API calls to Jira | Implemented |
 | FR-39 | Implement the fix on a branch named after the ticket in an isolated worktree; the watcher re-runs all browser tests, `ng build` and (if backend code changed) `mvn test`; push and open a draft PR (GitHub). SVN: patch file | Implemented for git/GitHub; SVN patch Later |
-| FR-40 | On transition to Done, run `/document-ticket` headless on branch `docs/<KEY>` (only `docs/knowledge/*.md` may change, checked by the watcher) and open a draft documentation PR | Implemented |
+| FR-40 | On transition to Done, run `/document-ticket` headless on branch `docs/<KEY>` (only `docs/knowledge/*.md` may change, checked by the watcher) and open a draft documentation PR; `documentScope: withFix` also documents bugs the agent did not analyze when their fix is on main or on a branch named after them; the window reaches back to the last check (K4) | Implemented |
+| FR-49 | Backfill: `agent/document-backfill.mjs` documents resolved tickets with a fix on main and no entry, on one branch with one commit each and one draft PR; dry run by default with coverage and a cost estimate; `--limit`, `--max-cost`, `--since`, `--types`, `--only` (K4) | Implemented |
 | FR-41 | Fix eligibility: `[FE]` in the title, or no tag at all and every file the analysis names (tests excluded) is under `frontend/` (`inferTagFromFiles`, `inferIgnoreFiles`); an explicit other tag is respected | Implemented |
 | FR-42 | Run again: from the dashboard (card button or key field), reset the agent's result labels and queue the ticket now; `no-ai` respected | Implemented |
 | FR-43 | Preview: switch the served application clone to a fix branch and wait for the dev server rebuild (dashboard button, `demo/preview.mjs`); the dashboard shows which branch the app serves | Implemented |
 | FR-44 | The analysis always reads `origin/main` (detached worktree `state/analysis-repo`), never the branch the application clone is on | Implemented |
 | FR-45 | Single watcher instance (`state/watcher.pid`); `--replace` stops the running one; preflight fails when the watcher runs older agent code | Implemented |
+| FR-47 | Jira health guard: before trusting a search, check the credentials (`/myself`) and that every watched project is visible; while Jira is unavailable, pause the poll and the queue, refuse Insights, Ask, Run and Create in Jira with the reason (503), show it in the dashboard header, emit `jira-down` / `jira-up` once per change; warn when a project that had tickets returns none (`agent/lib/jira-health.mjs`; K16 of [docs/KNOWLEDGE_PLAN.md](docs/KNOWLEDGE_PLAN.md)) | Implemented |
+| FR-48 | Knowledge base on the dashboard: the documented tickets on `main` and the documentation PRs waiting (open, draft, closed-unmerged with their branch); merge one after a person confirms (`mergeDocs: draft`): ready, squash-merge, branch deleted, Jira comment, `docs-merged` event; only `docs/` branches that change nothing but `docs/knowledge/*.md` (`agent/lib/docs-prs.mjs`; K2) | Implemented |
 | FR-46 | Update emails: with `emailUpdates: auto`, one email per milestone (`mail.on`: analysis ready, draft fix PR, fix stopped, AI review, documentation PR, failures) to `MAIL_TO`, over SMTP with TLS/STARTTLS (plain Node, `agent/lib/mail.mjs`); sent after the event, one at a time; outcome as `mailed` / `mail-failed`; off with the reason when SMTP is not configured | Implemented (tested against a local SMTP server; real Gmail delivery pending credentials) |
 
 ### 4.5 Documentation of resolved tickets
 
 | ID | Requirement | Status |
 |---|---|---|
-| FR-50 | Write the cause/fix entry to `docs/knowledge/<component>.md` and update the index; confirmed facts vs. assumptions are labelled | Implemented |
+| FR-50 | Write the cause/fix entry to `docs/knowledge/<component>.md` and update the index; confirmed facts vs. assumptions are labelled; each entry has a Type and Search terms (error text, screen and route, user words in the ticket's language and English) and no PR or branch state | Implemented |
+| FR-53 | One knowledge file per named component (`insights.components`, or `.ticket-intel.json` → `components`; path-based without them), passed to the skills as `TICKET_INTEL_COMPONENTS`; tests belong to what they test; Insights drill-down links the file; one-time migration of path-named files without AI as one draft PR (`agent/knowledge-migrate.mjs`; K6) | Implemented |
+| FR-52 | Knowledge lint before a documentation push and on main (`agent/lib/knowledge.mjs`, `agent/knowledge-lint.mjs`): required fields, labelled root cause, existing commits, no PR/branch state, no fixture keys, people only, no personal data; one correction in the same session, otherwise nothing is pushed (K5) | Implemented |
 | FR-51 | git: review branch in a separate worktree + PR (`gh` on GitHub), or direct commit; SVN: direct commit of doc files only, `svn copy` branch, or patch file | Implemented |
 
 ### 4.6 Post-POC extensions (see [docs/ROADMAP.md](docs/ROADMAP.md))
@@ -140,7 +145,7 @@ A result that is not valid JSON or misses a required field fails the run (`ai-fa
 
 ### 5.3 Events (`agent/state/events.jsonl`, dashboard stream)
 
-`started`, `recovered`, `queued` (`rerun: true` when started with Run again), `picked`, `analyzing`, `progress`, `analyzed`, `duplicate`, `commented`, `notified`, `skipped`, `draft`, `done`, `failed`, `error`, `preview`; fix stage: `workspace`, `warmed`, `reproducing`, `reproduced`, `fixing`, `verifying`, `verified`, `pushed`, `pr`, `fix-proposed`, `fix-failed`, `fix-skipped`; documentation: `resolved`, `documenting`, `documented`, `doc-failed`; review: `reviewing`, `reviewed` (`review`, `meta`), `review-skipped`; email: `mailed` (`subject`, `for`), `mail-failed`. Each event has `at`, `type`, and usually `key` and `text`.
+`started`, `recovered`, `queued` (`rerun: true` when started with Run again), `picked`, `analyzing`, `progress`, `analyzed`, `duplicate`, `commented`, `notified`, `skipped`, `draft`, `done`, `failed`, `error`, `preview`; fix stage: `workspace`, `warmed`, `reproducing`, `reproduced`, `fixing`, `verifying`, `verified`, `pushed`, `pr`, `fix-proposed`, `fix-failed`, `fix-skipped`; documentation: `resolved`, `documenting`, `documented`, `doc-failed`, `docs-merged`; review: `reviewing`, `reviewed` (`review`, `meta`), `review-skipped`; email: `mailed` (`subject`, `for`), `mail-failed`; Jira: `jira-down`, `jira-up` (no `key`). Each event has `at`, `type`, and usually `key` and `text`.
 
 ### 5.4 Configuration
 
@@ -148,7 +153,7 @@ A result that is not valid JSON or misses a required field fails the run (`ai-fa
 |---|---|---|
 | `~/.claude/skills/analyze-ticket/.env` | per user, secret | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` or `JIRA_PAT`, `JIRA_MOCK`, `SVN_BIN`, `TEAMS_WEBHOOK_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `MAIL_TO` |
 | `~/.claude/skills/analyze-ticket/config.json` | per user | `environmentField`, `environmentMatch`, `projects`, `lookbackDays`, `maxRelated`, `halfLifeDays`, `doneStatuses`, `excludeUsers` |
-| `<repo>/.ticket-intel.json` | per project | `docsPath`, `commitMode`, `baseBranch`, `componentContainers`, `suspectWindowDays`, `authorAliases` |
+| `<repo>/.ticket-intel.json` | per project | `docsPath`, `commitMode`, `baseBranch`, `componentContainers`, `suspectWindowDays`, `authorAliases`, `components` (named components: `[{ name, paths }]`) |
 | `agent/agent.config.json` | agent | `project`, `repo`, `pollSeconds`, `lookbackHours`, `analysisTimeoutMinutes`, `dashboardPort`, `labels`, `claude.*`, `mail.on` |
 | `agent/policy.json` | agent | action → `auto|draft|off`, `notifyMinConfidence`, comment header and size |
 

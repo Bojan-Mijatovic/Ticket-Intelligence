@@ -5,9 +5,12 @@
 //   node demo/reset-demo.mjs --yes    do it
 //   ... --also DEM-11,DEM-12           also delete tickets made by hand in Jira (the dry run lists candidates)
 //   ... --project LAB                  only that app (default: every app of the suite that has a clone)
+//   ... --drop-docs                    also close the documentation PRs (docs/<KEY>, docs/backfill-…) and delete
+//                                      their branches; by default they are kept: knowledge outlives a rehearsal
 //
 // What it touches, and only that:
-//   - pull requests of the apps whose branch is <KEY> or docs/<KEY> (agent branches): closed, branches deleted
+//   - pull requests of the apps whose branch is <KEY> (agent fix branches): closed, branches deleted
+//     (documentation PRs, docs/…, only with --drop-docs)
 //   - remaining remote/local agent branches; each local clone back on an up-to-date main
 //   - Jira tickets created by new-ticket.mjs (demo/.demo-tickets.json) — never the seeded history or other tickets
 //   - the agent's state (event log archived, per-ticket work folders removed)
@@ -28,7 +31,12 @@ const only = process.argv.includes('--project') ? process.argv[process.argv.inde
 const APPS = suite.projects.filter((p) => existsSync(p.repoDir) && (!only || p.key === only));
 const TRACK = join(HERE, '.demo-tickets.json');
 const APPLY = process.argv.includes('--yes');
-const AGENT_BRANCH = /^(docs\/)?[A-Z][A-Z0-9_]+-\d+$/;
+// Documentation branches are kept unless --drop-docs: the knowledge base is meant to grow across rehearsals (F23 of
+// docs/KNOWLEDGE_PLAN.md: resets used to close 7 of 9 documentation PRs of MediAgenda).
+const DROP_DOCS = process.argv.includes('--drop-docs');
+const DOCS_BRANCH = /^docs\/([A-Z][A-Z0-9_]+-\d+|(backfill|migrate)-[\w.-]+)$/;
+const FIX_BRANCH = /^[A-Z][A-Z0-9_]+-\d+$/;
+const AGENT_BRANCH = { test: (b) => FIX_BRANCH.test(b) || (DROP_DOCS && DOCS_BRANCH.test(b)) };
 // Tickets made by hand in Jira to delete as well: --also DEM-11,DEM-12 (checked before anything is changed).
 const also = (process.argv.includes('--also') ? process.argv[process.argv.indexOf('--also') + 1] ?? '' : '').split(',').map((k) => k.trim().toUpperCase()).filter(Boolean);
 const badKey = also.find((k) => !/^[A-Z][A-Z0-9_]+-\d+$/.test(k));
@@ -59,6 +67,8 @@ for (const app of APPS) {
   for (const pr of prs.filter((p) => AGENT_BRANCH.test(p.headRefName))) {
     step(`close PR #${pr.number} (${pr.headRefName}) and delete its branch: ${pr.title}`, () => sh('gh', ['pr', 'close', String(pr.number), '--repo', slug, '--delete-branch'], APP));
   }
+  const keptDocs = prs.filter((p) => !DROP_DOCS && DOCS_BRANCH.test(p.headRefName));
+  if (keptDocs.length) console.log(`  kept ${keptDocs.length} documentation PR(s): ${keptDocs.map((p) => `#${p.number} ${p.headRefName}`).join(', ')} (--drop-docs to close them)`);
 
   // 2. Leftover agent branches (remote and local), local clone back on main
   if (remote) {

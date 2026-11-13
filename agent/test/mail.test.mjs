@@ -151,6 +151,19 @@ test('compose: fix, review and failure updates; other events are not mailed', ()
   assert.equal(composeUpdate({ type: 'progress', key: 'DEM-7' }, {}), null);
 });
 
+test('updates: Jira unavailable is mailed once, without a ticket', async () => {
+  const events = memoryEvents();
+  const sent = [];
+  const mail = attachMailUpdates({ events, policy: { actions: { emailUpdates: 'auto' } }, cfg: {}, browseUrl: (k) => `https://jira/browse/${k}`, settings: local(1), send: async (msg) => sent.push(msg) });
+  events.emit('jira-down', { text: 'Jira unavailable: credentials rejected (401): renew JIRA_API_TOKEN' });
+  events.emit('error', { text: 'Jira still unavailable: …' });
+  await mail.flush();
+  assert.deepEqual(sent.map((m) => m.subject), ['Jira unavailable · the agent is paused']);
+  assert.match(sent[0].text, /^Ticket Intelligence agent\n/);
+  assert.match(sent[0].text, /renew JIRA_API_TOKEN/);
+  assert.doesNotMatch(sent[0].text, /undefined|jira\/browse/);
+});
+
 function memoryEvents() {
   const subs = new Set();
   const log = [];

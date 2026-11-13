@@ -15,7 +15,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createEventLog } from './lib/events.mjs';
 import { createJira } from './lib/jira-actions.mjs';
+import { createJiraHealth } from './lib/jira-health.mjs';
 import { documentResolved } from './lib/document.mjs';
+import { createDocsPrs } from './lib/docs-prs.mjs';
+import { repoKnowledge } from './lib/doc-candidates.mjs';
 import { processTicket } from './lib/pipeline.mjs';
 import { currentBranch, previewBranch } from './lib/preview.mjs';
 import { reviewPullRequest } from './lib/review.mjs';
@@ -107,9 +110,47 @@ const IN_PROJECTS = `project in (${WATCHED.join(', ')})`;
 // (DEM-31, DEM-32, DEM-35). Run again on the dashboard does not wait.
 const SETTLE = Math.max(0, Number(cfg.settleMinutes ?? 1));
 const JQL = `${IN_PROJECTS} AND created >= -${cfg.lookbackHours}h AND statusCategory != Done AND (labels is EMPTY OR labels not in (${agentLabels.join(', ')}))${SETTLE ? ` AND updated <= -${SETTLE}m` : ''} ORDER BY created ASC`;
-// Resolved tickets the agent analyzed and has not documented yet.
+// Resolved tickets not documented yet (K4 of docs/KNOWLEDGE_PLAN.md). policy.json documentScope: 'analyzed' = only
+// tickets the agent analyzed; 'withFix' (default) = also bugs it did not analyze, when a commit on main names the
+// ticket or a branch named after it holds the fix. The window reaches back to the last check (state/done-poll.json),
+// at least lookbackHours, so tickets resolved while the watcher was down are not lost.
 const L = cfg.labels;
-const DONE_JQL = `${IN_PROJECTS} AND statusCategory = Done AND labels = ${L.done} AND labels not in (${[L.documenting, L.documented, L.docFailed, L.skip].join(', ')}) AND updated >= -${cfg.lookbackHours}h ORDER BY updated ASC`;
+const DOC_SCOPE = policy.documentScope ?? 'withFix';
+const DONE_FILE = join(rootState, 'done-poll.json');
+function doneJql() {
+  let last = null;
+  try {
+    last = Date.parse(JSON.parse(readFileSync(DONE_FILE, 'utf8')).since);
+  } catch {
+    /* first check */
+  }
+  const from = Math.min(Number.isFinite(last) ? last : Infinity, Date.now() - cfg.lookbackHours * 3600_000);
+  const minutes = Math.ceil((Date.now() - from) / 60_000) + 10; // relative: no time zone to get wrong; 10 min margin
+  const scope = DOC_SCOPE === 'analyzed' ? `labels = ${L.done} AND ` : '';
+  return `${IN_PROJECTS} AND statusCategory = Done AND ${scope}(labels is EMPTY OR labels not in (${[L.documenting, L.documented, L.docFailed, L.skip].join(', ')})) AND updated >= -${minutes}m ORDER BY updated ASC`;
+}
+/** The resolved tickets to document now: the agent's own, and (withFix) bugs with their fix on main or a branch. */
+async function doneCandidates() {
+  const checkedAt = new Date().toISOString();
+  const list = await jira.search(doneJql(), 50);
+  const out = [];
+  const knownOf = new Map(); // project → what its repository knows (one fetch per poll, only when needed)
+  for (const i of list) {
+    if (i.labels.includes(L.done)) {
+      out.push(i);
+      continue;
+    }
+    if (DOC_SCOPE !== 'withFix' || !/bug/i.test(i.issueType ?? '')) continue;
+    const p = all.ofTicket(i.key);
+    if (!p) continue;
+    if (!knownOf.has(p.key)) knownOf.set(p.key, repoKnowledge(p.repoDir));
+    const k = knownOf.get(p.key);
+    if (k.documented.has(i.key) || k.pending.has(i.key)) continue;
+    if (k.keyCommits.has(i.key) || k.fixBranches.has(i.key)) out.push(i);
+  }
+  writeFileSync(DONE_FILE, JSON.stringify({ since: checkedAt }));
+  return out;
+}
 
 /** The GitHub repository of an application and whether it is private (a private repo answers 404 when signed out). */
 function githubInfo(repoDir) {
@@ -129,7 +170,7 @@ const projectStatus = (p) => ({
   key: p.key, name: p.name, description: p.cfg.description, repo: p.repoDir, ready: existsSync(p.repoDir), app: p.app, linked: p.linked,
   appBranch: existsSync(p.repoDir) ? currentBranch(p.repoDir) : null, github: githubInfo(p.repoDir), askExamples: p.askExamples,
 });
-const status = { projects: all.projects.map(projectStatus), jiraUrl: jira.baseUrl, policy: policy.actions, lastPoll: null, nextPoll: null, queue: [], processing: null, startedAt: new Date().toISOString(), pid: process.pid };
+const status = { projects: all.projects.map(projectStatus), jiraUrl: jira.baseUrl, jira: { ok: null, error: null, warnings: [] }, policy: policy.actions, lastPoll: null, nextPoll: null, queue: [], processing: null, startedAt: new Date().toISOString(), pid: process.pid };
 const clients = new Set();
 const broadcast = (event) => {
   const line = `data: ${JSON.stringify(event)}\n\n`;
@@ -144,11 +185,41 @@ const pushStatus = () => {
   broadcast({ type: 'status', status });
 };
 
+// Jira health: with rejected credentials Jira answers every search with an empty list instead of an error, so the
+// watcher checks the credentials and the projects first. While Jira is unavailable, the poll, the queue and the
+// dashboard features that read Jira wait, and the header says why (jira-health.mjs).
+const SEEN_FILE = join(rootState, 'jira-health.json');
+const readSeen = () => {
+  try {
+    return JSON.parse(readFileSync(SEEN_FILE, 'utf8')).seen ?? {};
+  } catch {
+    return {};
+  }
+};
+const health = createJiraHealth({
+  jira,
+  projects: WATCHED,
+  seen: readSeen(),
+  onSeen: (seen) => writeFileSync(SEEN_FILE, JSON.stringify({ seen }, null, 2)),
+  onChange: (now, before) => {
+    status.jira = { ok: now.ok, error: now.error, user: now.user, warnings: now.warnings, checkedAt: now.checkedAt };
+    if (now.ok === false && before.ok !== false) events.emit('jira-down', { text: `Jira unavailable: ${now.error}. The agent waits until Jira answers again.` });
+    else if (now.ok === false) events.emit('error', { text: `Jira still unavailable: ${now.error}` });
+    if (now.ok && before.ok === false) {
+      events.emit('jira-up', { text: `Jira answers again (as ${now.user}); the agent continues` });
+      recoverStuckTickets().catch((e) => events.emit('error', { text: `recovery failed: ${e.message}` }));
+    }
+    for (const w of now.warnings.filter((x) => !before.warnings.includes(x))) events.emit('error', { text: w });
+    pushStatus();
+  },
+});
+
 // ---------------------------------------------------------------- watching
 
 async function recoverStuckTickets() {
   const stuck = await jira.search(`${IN_PROJECTS} AND labels in (${cfg.labels.inProgress}, ${cfg.labels.documenting})`, 50);
   for (const t of stuck) {
+    if (isBusyWith(t.key)) continue; // running now (recovery also runs when Jira answers again)
     await jira.labels(t.key, { remove: [cfg.labels.inProgress, cfg.labels.documenting] });
     events.emit('recovered', { key: t.key, text: 'removed a stale in-progress label from an interrupted run' });
   }
@@ -161,13 +232,18 @@ async function poll() {
   if (polling) return;
   polling = true;
   try {
+    if ((await health.check()).ok === false) {
+      status.lastPoll = new Date().toISOString();
+      return; // an empty search would only look like "no new tickets"
+    }
     const found = (await jira.search(JQL, 20)).map((i) => ({ ...i, kind: 'analyze' }));
-    const resolved = policy.actions.documentOnDone === 'auto' ? (await jira.search(DONE_JQL, 20)).map((i) => ({ ...i, kind: 'document' })) : [];
+    const resolved = policy.actions.documentOnDone === 'auto' ? (await doneCandidates()).map((i) => ({ ...i, kind: 'document' })) : [];
     status.lastPoll = new Date().toISOString();
     for (const issue of [...found, ...resolved]) {
       if (isBusyWith(issue.key)) continue;
       status.queue.push(issue);
-      events.emit(issue.kind === 'document' ? 'resolved' : 'queued', { key: issue.key, text: issue.kind === 'document' ? 'ticket moved to Done: documentation queued' : issue.summary, url: jira.browseUrl(issue.key), priority: issue.priority, reporter: issue.reporter });
+      const docText = issue.labels?.includes(L.done) ? 'ticket moved to Done: documentation queued' : `${issue.summary} · resolved without the agent: documentation queued`;
+      events.emit(issue.kind === 'document' ? 'resolved' : 'queued', { key: issue.key, text: issue.kind === 'document' ? docText : issue.summary, url: jira.browseUrl(issue.key), priority: issue.priority, reporter: issue.reporter });
     }
   } catch (e) {
     events.emit('error', { text: `poll failed: ${e.message}` });
@@ -185,6 +261,7 @@ async function poll() {
  */
 async function rerun(key) {
   if (!/^[A-Z][A-Z0-9_]+-\d+$/.test(key) || !WATCHED.includes(key.split('-')[0])) throw badRequest(`${key} is not a ticket of the watched projects ${WATCHED.join(', ')}`);
+  await health.require();
   if (isBusyWith(key)) throw Object.assign(new Error(`${key} is already queued or running`), { status: 409 });
   const [issue] = await jira.search(`key = ${key}`, 1);
   if (!issue) throw Object.assign(new Error(`${key} not found`), { status: 404 });
@@ -209,7 +286,9 @@ async function documentTicket(issue, p) {
 }
 
 async function drain() {
-  if (status.processing || !status.queue.length) return;
+  // While Jira is unavailable the queue waits: every step of a ticket reads or writes Jira. The poll that sees Jira
+  // again calls drain().
+  if (status.processing || !status.queue.length || status.jira.ok === false) return;
   const issue = status.queue.shift();
   status.processing = { key: issue.key, kind: issue.kind, since: new Date().toISOString() };
   pushStatus();
@@ -234,6 +313,8 @@ let recommending = false;
 let reviewing = null; // the project whose app review is running
 const assignableCache = new Map(); // project key → { at, users }
 let asking = false;
+const knowledgeCache = new Map(); // project key → { at, data }: the documentation PRs (gh + git, a few seconds)
+let mergingDocs = false;
 async function insightsCached(p, refresh = false) {
   const hit = insightsCache.get(p.key);
   if (!refresh && hit && Date.now() - hit.at < 120_000) return hit.data;
@@ -352,6 +433,7 @@ const server = createServer(async (req, res) => {
   if (req.method === 'GET' && path === '/api/insights') {
     try {
       const p = readyProject({ project: queryOf(req).get('project') });
+      await health.require(); // without Jira every ticket count would be 0 and every suggestion would look new
       const data = await insightsCached(p, queryOf(req).get('refresh') === '1');
       const review = readReview(p, data);
       const suggestions = suggestTickets({ insights: data, review, rules: p.cfg.insights?.components ?? [], created: readCreated(p.stateDir), project: p.key });
@@ -364,6 +446,7 @@ const server = createServer(async (req, res) => {
   if (req.method === 'GET' && path === '/api/insights/suite') {
     try {
       const refresh = queryOf(req).get('refresh') === '1';
+      await health.require();
       const apps = [];
       for (const p of all.projects.filter((x) => existsSync(x.repoDir))) {
         const data = await insightsCached(p, refresh);
@@ -381,6 +464,7 @@ const server = createServer(async (req, res) => {
     recommending = true;
     try {
       const p = readyProject(await readBody(req));
+      await health.require();
       const data = await insightsCached(p, true);
       const rec = await writeRecommendations({ insights: data, stateDir: p.stateDir, cfg: p.cfg });
       events.emit('insights', { project: p.key, text: `${p.key}: hotspot recommendations written for ${rec.recommendations.length} component(s)`, meta: rec.meta });
@@ -397,6 +481,7 @@ const server = createServer(async (req, res) => {
     let p;
     try {
       p = readyProject(await readBody(req));
+      await health.require();
     } catch (e) {
       return json(res, e.status ?? 400, { ok: false, error: e.message });
     }
@@ -420,6 +505,7 @@ const server = createServer(async (req, res) => {
   if (req.method === 'GET' && path === '/api/insights/assignable') {
     try {
       const p = readyProject({ project: queryOf(req).get('project') });
+      await health.require();
       const hit = assignableCache.get(p.key);
       if (hit && Date.now() - hit.at < 600_000) return json(res, 200, { users: hit.users });
       const users = await jira.assignableUsers(p.key, '');
@@ -435,6 +521,7 @@ const server = createServer(async (req, res) => {
       if ((policy.actions.createTicket ?? 'draft') === 'off') return json(res, 403, { ok: false, error: 'createTicket is "off" in policy.json' });
       const body = await readBody(req);
       const p = readyProject(body);
+      await health.require(); // the duplicate check compares with the tickets in Jira
       const data = await insightsCached(p);
       const s = suggestTickets({ insights: data, review: readReview(p, data), rules: p.cfg.insights?.components ?? [], created: readCreated(p.stateDir), project: p.key }).find((x) => x.id === body.id);
       if (!s) return json(res, 404, { ok: false, error: 'this suggestion is no longer there; refresh the Insights tab' });
@@ -448,6 +535,49 @@ const server = createServer(async (req, res) => {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     }
   }
+  // Knowledge base of one project (K2): the entries on main and the documentation PRs waiting for a person.
+  if (req.method === 'GET' && path === '/api/knowledge') {
+    try {
+      const p = readyProject({ project: queryOf(req).get('project') });
+      const hit = knowledgeCache.get(p.key);
+      const data = hit && Date.now() - hit.at < 60_000 && queryOf(req).get('refresh') !== '1' ? hit.data : await createDocsPrs({ repoDir: p.repoDir }).list();
+      knowledgeCache.set(p.key, { at: Date.now(), data });
+      return json(res, 200, { project: p.key, ...data, mergeDocs: policy.actions.mergeDocs ?? 'draft' });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    }
+  }
+  // Merge one documentation PR, after a person confirmed it on the dashboard (policy mergeDocs: draft).
+  if (req.method === 'POST' && path === '/api/knowledge/merge') {
+    if ((policy.actions.mergeDocs ?? 'draft') === 'off') return json(res, 403, { ok: false, error: 'mergeDocs is "off" in policy.json' });
+    if (mergingDocs) return json(res, 409, { ok: false, error: 'another documentation PR is being merged' });
+    mergingDocs = true;
+    try {
+      const body = await readBody(req);
+      const p = readyProject(body);
+      const number = Number(body.number);
+      if (!Number.isInteger(number) || number < 1) throw badRequest('which pull request? (number)');
+      const m = await createDocsPrs({ repoDir: p.repoDir }).merge(number);
+      knowledgeCache.delete(p.key);
+      const text = `documentation merged into main${m.reopened ? ' (the closed PR was reopened)' : ''}: PR #${m.number}`;
+      // A backfill PR (docs/backfill-…) covers several tickets: one event without a ticket; its tickets were told
+      // about it when it was opened.
+      events.emit('docs-merged', m.key ? { key: m.key, text, url: m.url } : { text: `${p.key}: ${text} (${m.branch})`, url: m.url });
+      // Best effort: the ticket may be gone (a demo reset) or Jira unavailable; the merge stands either way.
+      if (m.key) {
+        try {
+          await jira.comment(m.key, `(robot) *Knowledge base* — the documentation of this ticket is merged into main: [PR #${m.number}|${m.url}]. The analysis and Ask read it from now on.`);
+        } catch (e) {
+          events.emit('error', { text: `${m.key}: Jira comment after the documentation merge skipped: ${e.message.split('\n')[0]}` });
+        }
+      }
+      return json(res, 200, { ok: true, project: p.key, ...m });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    } finally {
+      mergingDocs = false;
+    }
+  }
   // Ask the knowledge base of one project (FR-65): one question at a time; progress goes to the dashboard stream.
   if (req.method === 'POST' && path === '/api/ask') {
     if (asking) return json(res, 409, { ok: false, error: 'another question is being answered; try again in a minute' });
@@ -455,6 +585,7 @@ const server = createServer(async (req, res) => {
     asking = true;
     try {
       const p = readyProject(body);
+      await health.require(); // otherwise "not in the knowledge base" when Jira only could not be searched
       const answer = await askQuestion({ question: body.question, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira, project: { key: p.key, name: p.name }, onProgress: (step) => broadcast({ type: 'ask-progress', id: body.id, step }) });
       return json(res, 200, { ok: true, project: p.key, ...answer });
     } catch (e) {
@@ -504,6 +635,10 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(0));
 
 setInterval(() => broadcast({ type: 'ping', at: new Date().toISOString() }), 15_000);
 events.emit('started', { text: `watching ${WATCHED.join(', ')} every ${cfg.pollSeconds}s` });
-await recoverStuckTickets().catch((e) => events.emit('error', { text: `recovery failed: ${e.message}` }));
+const first = await health.check();
+console.log(first.ok ? `Jira: connected as ${first.user}` : `Jira UNAVAILABLE: ${first.error}`);
+for (const w of first.warnings) console.log(`Jira warning: ${w}`);
+// Stale labels are removed once Jira answers (when it is unavailable now, the jira-up change above does it).
+if (first.ok) await recoverStuckTickets().catch((e) => events.emit('error', { text: `recovery failed: ${e.message}` }));
 await poll();
 setInterval(poll, cfg.pollSeconds * 1000);

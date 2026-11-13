@@ -6,9 +6,11 @@
 //   node demo/score-run.mjs DEM-21 --scenario birth-date
 //   node demo/score-run.mjs --all                         every scenario ticket created so far
 
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { priorArtOk } from './lib/eval.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STATE = join(HERE, '..', 'agent', 'state');
@@ -27,6 +29,24 @@ const stateOf = (key) => projects.ofTicket(key)?.stateDir ?? STATE;
 const events = existsSync(join(STATE, 'events.jsonl'))
   ? readFileSync(join(STATE, 'events.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))
   : [];
+
+/** "scenario:<name>" → the newest ticket created for that scenario; anything else → the live key. */
+function resolveKey(k) {
+  if (!k?.startsWith('scenario:')) return k ? mapKeys(k) : null;
+  const found = Object.entries(runs).filter(([, n]) => n === k.slice(9)).map(([key]) => key);
+  return found.sort((a, b) => Number(a.split('-')[1]) - Number(b.split('-')[1])).pop() ?? null;
+}
+
+/** The knowledge file on the app's main that has an entry for `entryKey` ("### KEY: …"), or null. */
+function knowledgeEntryOnMain(ticketKey, entryKey) {
+  const repo = projects.ofTicket(ticketKey)?.repoDir;
+  if (!repo) return null;
+  try {
+    return execFileSync('git', ['grep', '-l', `### ${entryKey}:`, 'origin/main', '--', 'docs/knowledge'], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n')[0].replace(/^origin\/main:/, '') || null;
+  } catch {
+    return null; // git grep exits 1 when nothing matches
+  }
+}
 
 function score(key, name) {
   const expected = scenarios[name]?.expected;
@@ -55,9 +75,24 @@ function score(key, name) {
     checks.push(['cross-project: the linked project of the cause', expected.otherProjects.every((k) => named.has(k))]);
   }
   if (expected.fixInProject) checks.push([`fix belongs in ${expected.fixInProject}`, String(r.fixInProject ?? key.split('-')[0]).toUpperCase() === expected.fixInProject]);
+  // K21: is the ticket already known? Until the analysis returns priorArt (K20), only an open duplicate is structured.
+  const notes = [];
+  if (expected.priorArt) {
+    const want = { ...expected.priorArt, key: resolveKey(expected.priorArt.key) };
+    const got = { verdict: r.priorArt?.kind ?? (r.duplicateOf?.key ? 'duplicate' : 'none'), key: r.priorArt?.key ?? r.duplicateOf?.key ?? null };
+    checks.push([`prior art: ${want.verdicts.join('|')}${want.key ? ` ${want.key}` : ''} (agent: ${got.verdict}${got.key ? ` ${got.key}` : ''})`, priorArtOk(want, got, mapKeys)]);
+  }
+  // K1: a recurrence of a documented problem must cite its knowledge entry; not scored until the entry is on main.
+  if (expected.knowledgeEntry) {
+    const entryKey = mapKeys(expected.knowledgeEntry);
+    const entry = knowledgeEntryOnMain(key, entryKey);
+    if (entry) checks.push([`knowledge entry of ${entryKey} cited (${entry})`, `${text}\n${(r.files ?? []).join('\n')}`.includes('docs/knowledge')]);
+    else notes.push(`n/a: knowledge entry of ${entryKey} (not documented on main yet)`);
+  }
   const points = checks.filter(([, ok]) => ok).length;
   console.log(`\n${key} · scenario ${name} · ${points}/${checks.length}`);
   for (const [label, ok] of checks) console.log(`  ${ok ? '✓' : '✗'} ${label}`);
+  for (const n of notes) console.log(`  · ${n}`);
   if (!checks[0][1]) console.log(`    expected one of: ${expected.files.join(', ')}\n    agent named:     ${files.slice(0, 5).join(', ')}`);
   if (!checks[3][1]) console.log(`    expected owner ${expected.owner}, agent chose ${r.owner?.name}`);
   const done = mine.find((e) => e.type === 'done');

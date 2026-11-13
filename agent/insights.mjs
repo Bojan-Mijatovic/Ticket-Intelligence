@@ -10,6 +10,7 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createJira } from './lib/jira-actions.mjs';
+import { createJiraHealth } from './lib/jira-health.mjs';
 import { buildInsights, readRecommendations, writeRecommendations } from './lib/insights.mjs';
 import { cliProject, loadProjects } from './lib/projects.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
@@ -18,7 +19,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const all = loadProjects(HERE);
 const { cfg, stateDir, repoDir, name, key } = cliProject(all); // --project <KEY>, default the first
 const peers = all.projects.filter((x) => x.key !== key).map((x) => ({ key: x.key, name: x.name, repoDir: x.repoDir }));
-const data = await buildInsights({ repoDir, stateDir, cfg, jira: createJira(), peers });
+const jira = createJira();
+// Without valid credentials Jira answers with no tickets instead of an error: every count would be 0.
+const health = await createJiraHealth({ jira, projects: [key] }).check();
+if (health.ok === false) {
+  console.error(`Jira unavailable: ${health.error}`);
+  process.exit(1);
+}
+const data = await buildInsights({ repoDir, stateDir, cfg, jira, peers });
 if (!process.argv.includes('--json')) console.log(`${name} (${key})`);
 
 if (process.argv.includes('--json')) {

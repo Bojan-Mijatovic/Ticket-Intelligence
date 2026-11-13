@@ -6,7 +6,7 @@
 
 import { mailProblems, mailSettings, sendMail } from './mail.mjs';
 
-export const DEFAULT_ON = ['analyzed', 'fix-proposed', 'fix-failed', 'reviewed', 'documented', 'doc-failed', 'failed'];
+export const DEFAULT_ON = ['analyzed', 'fix-proposed', 'fix-failed', 'reviewed', 'documented', 'doc-failed', 'failed', 'jira-down'];
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const clip = (s, n) => (String(s).length > n ? `${String(s).slice(0, n - 1)}…` : String(s));
@@ -18,7 +18,7 @@ const clip = (s, n) => (String(s).length > n ? `${String(s).slice(0, n - 1)}…`
  */
 export function composeUpdate(ev, { title, url } = {}) {
   const key = ev.key;
-  const name = title ? `${key} · ${title}` : key;
+  let name = title ? `${key} · ${title}` : key;
   const s = [];
   let subject;
   let lead;
@@ -84,6 +84,12 @@ export function composeUpdate(ev, { title, url } = {}) {
     case 'failed':
       subject = `[${key}] Analysis failed${title ? ` · ${title}` : ''}`;
       lead = 'The agent could not analyze this ticket; nothing was posted to Jira. "Run again" on the dashboard retries it.';
+      s.push({ h: 'Reason', p: ev.text });
+      break;
+    case 'jira-down': // one per outage, not per poll (jira-health.mjs); not about one ticket
+      name = 'Ticket Intelligence agent';
+      subject = 'Jira unavailable · the agent is paused';
+      lead = 'The agent cannot use Jira, so no new tickets are analyzed, and Insights, Ask and Create in Jira wait. It continues on its own when Jira answers again.';
       s.push({ h: 'Reason', p: ev.text });
       break;
     default:
@@ -170,11 +176,11 @@ export function attachMailUpdates({ events, policy, cfg, browseUrl, settings = m
   let chain = Promise.resolve();
 
   events.subscribe((ev) => {
-    if (!ev.key) return;
+    if (!ev.key && ev.type !== 'jira-down') return;
     if ((ev.type === 'queued' || ev.type === 'picked') && ev.text) titles.set(ev.key, ev.text);
     if (ev.type === 'analyzed' && ev.result?.title) titles.set(ev.key, ev.result.title);
     if (!on.has(ev.type)) return;
-    const msg = composeUpdate(ev, { title: titles.get(ev.key), url: browseUrl(ev.key) });
+    const msg = composeUpdate(ev, ev.key ? { title: titles.get(ev.key), url: browseUrl(ev.key) } : {});
     if (!msg) return;
     chain = chain.then(async () => {
       try {
