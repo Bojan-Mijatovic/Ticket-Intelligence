@@ -178,6 +178,8 @@ A `[BE][FE]` title keeps the browser harness. No Angular dev server is warmed fo
 
 **A change request that replaces earlier behaviour** (e.g. DEM-33 "dark red" after DEM-32 "dark blue" on the same page) makes the earlier ticket's test fail after a correct fix, and the fix may not modify tests. The analysis therefore names the tickets it deliberately replaces (`supersedes`). With `allowSupersededTestUpdates: true` in `policy.json`, the fix may update **only** those tickets' tests (`e2e/tests/<THAT-KEY>.spec.ts`), never its own test or anything else under `e2e/`, and must also change application code; the watcher checks this. The PR and the Jira comment say "replaces earlier behaviour" with the updated tests, and the AI reviewer is told to check that the ticket really asks for it.
 
+The fix also gets the **known issues** of the code it changes: the knowledge entries of the files the analysis names and of its prior art and related tickets (root cause, fix, "Prevent recurrence"), and is told not to bring a documented cause back. The AI review gets them for the files of the diff and checks the same.
+
 The agent may edit files only inside its worktree and cannot run git commands that change history or remotes; every check is re-run by the watcher, so a pull request exists only when the evidence is real. Nothing is merged automatically (`mergeFix: off`).
 
 ```

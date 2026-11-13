@@ -9,6 +9,8 @@ export const REQUIRED = ['Type', 'Symptom', 'Search terms', 'Root cause', 'Fix']
 // The parser is shared with the analyze-ticket skill (it reads the knowledge base for the analysis too).
 export { anchorOf, parseKnowledgeFile } from '../../.claude/skills/analyze-ticket/scripts/lib/knowledge-file.mjs';
 import { parseKnowledgeFile } from '../../.claude/skills/analyze-ticket/scripts/lib/knowledge-file.mjs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 // Statements about the state of a pull request or a branch: true when written, wrong a week later.
 const TIME_BOUND = /\b(not (yet )?merged|may not be merged|is not merged|not been merged|still (open|in review)|as of \d{4}-\d{2}-\d{2}|draft (pull request|PR)\b)/i;
@@ -73,3 +75,44 @@ export function lintKnowledge(files, { commitExists = () => true, projects = nul
 
 /** The findings as a list for a person or for the agent. */
 export const describeFindings = (findings) => findings.map((f) => `- ${f.file}${f.key ? ` · ${f.key}` : ''}: ${f.message}`).join('\n');
+
+/**
+ * The known issues of a piece of code (K13), for the fix and the review: the entries of `keys` (the ticket's prior
+ * art, its related tickets) and the entries that cite one of `files`. Read from `dir`/docs/knowledge (a checkout of
+ * main). Returns a short text block, or '' when there is nothing.
+ */
+export function knowledgeFor({ dir, files = [], keys = [], max = 4, docsPath = 'docs/knowledge' }) {
+  let names = [];
+  try {
+    names = readdirSync(join(dir, docsPath)).filter((f) => f.endsWith('.md') && f !== 'README.md');
+  } catch {
+    return '';
+  }
+  const bases = new Set(files.map((f) => String(f).split('\\').join('/').replace(/:\d+.*$/, '').split('/').pop()).filter(Boolean));
+  const wanted = new Set(keys.filter(Boolean).map((k) => String(k).toUpperCase()));
+  const hits = [];
+  for (const name of names) {
+    let text = '';
+    try {
+      text = readFileSync(join(dir, docsPath, name), 'utf8');
+    } catch {
+      continue;
+    }
+    for (const e of parseKnowledgeFile(text, `${docsPath}/${name}`).entries.filter((x) => !x.reference)) {
+      const cites = [...bases].filter((b) => e.text.includes(b));
+      if (!wanted.has(e.key) && !cites.length) continue;
+      hits.push({ e, rank: (wanted.has(e.key) ? 2 : 0) + cites.length });
+    }
+  }
+  if (!hits.length) return '';
+  const cut = (s, n = 300) => (String(s ?? '').length > n ? `${String(s).slice(0, n)}…` : String(s ?? ''));
+  return [
+    'Known issues of this code (the project knowledge base, docs/knowledge on main):',
+    ...hits.sort((a, b) => b.rank - a.rank).slice(0, max).map(({ e }) => [
+      `- ${e.key}: ${e.title} (${e.file}#${e.anchor})`,
+      e.fields['Root cause'] ? `  Root cause: ${cut(e.fields['Root cause'])}` : null,
+      e.fields.Fix ? `  Fix: ${cut(e.fields.Fix)}` : null,
+      e.fields['Prevent recurrence'] ? `  Prevent recurrence: ${cut(e.fields['Prevent recurrence'])}` : null,
+    ].filter(Boolean).join('\n')),
+  ].join('\n');
+}

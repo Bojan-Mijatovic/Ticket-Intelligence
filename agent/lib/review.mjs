@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runClaude } from './analyze.mjs';
 import { analysisCheckout } from './workspace.mjs';
+import { knowledgeFor } from './knowledge.mjs';
 
 const RISKS = ['low', 'medium', 'high'];
 const VERDICTS = ['looks-good', 'needs-changes'];
@@ -77,7 +78,10 @@ export function normalizeReview(r) {
   };
 }
 
-function reviewPrompt({ key, title, ticket, analysis, fix, diff, truncated }) {
+/** The files a unified diff changes (new paths). */
+export const diffFiles = (diff) => [...new Set([...String(diff).matchAll(/^\+\+\+ b\/(.+)$/gm)].map((m) => m[1].trim()))];
+
+function reviewPrompt({ key, title, ticket, analysis, fix, diff, truncated, knowledge = '' }) {
   const checks = fix?.checks;
   return `You are running unattended as the REVIEWER of a pull request that another AI agent opened. Nobody will answer questions.
 The current directory is the application on origin/main, i.e. the code BEFORE this pull request. Read files there for context.
@@ -100,7 +104,10 @@ Review it like a careful senior developer. Check:
 2. Scope: does it change anything the ticket does not need (other components, refactoring, formatting, config)?
 3. Test validity: does the regression test assert the behaviour the ticket asks for, from the user's point of view? Would it catch the bug coming back?
 4. Regressions: shared components, services or styles used by other pages; read their other users on main.
-5. Style: matches the surrounding code.
+5. Style: matches the surrounding code.${knowledge ? `
+6. Known issues: does the change bring back a documented root cause below, or go against a "Prevent recurrence" note? Cite the entry (its key) when it does.
+
+${knowledge}` : ''}
 Only report real problems. A good minimal fix gets verdict "looks-good" with few or no findings; do not invent issues.
 For a finding on a changed line, use the path from the diff and the line number in the NEW version of the file.
 
@@ -168,9 +175,11 @@ export async function reviewPullRequest({ key, repoDir, stateDir, cfg, events, j
     const ticket = jira ? (await jira.getIssue(key).catch(() => null))?.description : null;
 
     const cwd = analysisCheckout({ repoDir, stateDir, name: 'review-repo' });
+    // The known issues of the changed files and of the ticket's prior art (K13), from the knowledge base on main.
+    const knowledge = knowledgeFor({ dir: cwd, files: diffFiles(fullDiff), keys: [analysis?.priorArt?.key, ...(analysis?.relatedTickets ?? []).map((t) => t.key)] });
     const out = await runClaude({
       cwd,
-      prompt: reviewPrompt({ key, title: target.title ?? analysis?.title ?? key, ticket, analysis, fix, diff, truncated }),
+      prompt: reviewPrompt({ key, title: target.title ?? analysis?.title ?? key, ticket, analysis, fix, diff, truncated, knowledge }),
       cfg,
       tools: ['Read', 'Grep', 'Glob'], // allow-list: nothing else exists in this run
       disallowedTools: READ_ONLY,

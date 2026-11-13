@@ -220,6 +220,7 @@ Phase 0 sets the baseline. Phases 1–4 then change **one lever at a time**, re-
 **K13. Knowledge used by the fix and the review** · 0.5 d · F12
 - The fix prompt gets the matching entries (K9) of the components it touches, with their **Prevent recurrence** notes. The review prompt gets them too and checks that the change does not bring back a documented cause.
 - **Acceptance:** for a scenario touching `dates.ts` after `birth-date` is documented, the review mentions the documented pitfall when the change uses `toISOString()`.
+- **Done 2026-11-13** (FR-58): `knowledgeFor()` in `agent/lib/knowledge.mjs` (entries of the given tickets and entries citing the files, at most 4, with root cause, fix and prevention), used by `fix.mjs` (files of the analysis, its prior art and related tickets; a progress step names them) and `review.mjs` (files of the diff; check 6 "Known issues"). Tests in `agent/test/knowledge.test.mjs`. Checked with the DEM-42 PR instead of the birth-date case (that bug is not documented: it was never fixed): `review-one.mjs DEM-42 --dry-run` → "This follows the DEM-5 'Prevent recurrence' note", low risk, $0.20.
 
 **K14. From recurring entries to project conventions** · 0.5 d · F12
 - When two or more entries share a root cause (the lint and the recurrence links show it), the documentation run proposes a line for a **Known pitfalls** section of the app's `CLAUDE.md` / `.github/copilot-instructions.md`, in the same documentation PR, for a person to accept.

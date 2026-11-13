@@ -77,3 +77,36 @@ test('personal data: no false alarm on dates, amounts, codes and lab values', ()
 test('commit hashes: with a digit and a letter, not a CSS colour, not a plain word', () => {
   assert.deepEqual(hashesIn('fix a427822 and 155c5c1, colour #0d2c54ff, the word deadbeef, 2026111'), ['a427822', '155c5c1']);
 });
+
+test('known issues of a piece of code (K13): entries of the given tickets and entries citing the files', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { knowledgeFor } = await import('../lib/knowledge.mjs');
+  const { diffFiles } = await import('../lib/review.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'kf-'));
+  mkdirSync(join(dir, 'docs', 'knowledge'), { recursive: true });
+  writeFileSync(join(dir, 'docs', 'knowledge', 'agenda-search.md'), `# Agenda search
+
+## Known issues
+
+### DEM-5: PULISCI does not clear the Struttura selection
+- **Type**: bug
+- **Root cause**: reset() kept selectedStructureIds (**confirmed**: 3c2ab1d)
+- **Fix**: \`frontend/src/app/features/agenda/state/agenda-search.store.ts\`: reset() clears it
+- **Prevent recurrence**: every way of clearing the field must go through the store
+
+### DEM-22: Autocomplete is case sensitive
+- **Type**: bug
+- **Fix**: \`StructureRepository.java\`: lower()
+`);
+  const byFile = knowledgeFor({ dir, files: ['frontend/src/app/features/agenda/state/agenda-search.store.ts:17'] });
+  assert.match(byFile, /^Known issues of this code/);
+  assert.match(byFile, /- DEM-5: PULISCI does not clear the Struttura selection \(docs\/knowledge\/agenda-search\.md#dem-5-/);
+  assert.match(byFile, /Prevent recurrence: every way of clearing the field must go through the store/);
+  assert.doesNotMatch(byFile, /DEM-22/);
+  assert.match(knowledgeFor({ dir, files: [], keys: ['dem-22'] }), /DEM-22: Autocomplete is case sensitive/);
+  assert.equal(knowledgeFor({ dir, files: ['other.ts'] }), '');
+  assert.equal(knowledgeFor({ dir: join(dir, 'nowhere'), files: ['x.ts'] }), '');
+  assert.deepEqual(diffFiles('diff --git a/x b/x\n--- a/frontend/a.ts\n+++ b/frontend/a.ts\n@@\n+++ b/e2e/tests/DEM-42.spec.ts\n'), ['frontend/a.ts', 'e2e/tests/DEM-42.spec.ts']);
+});
