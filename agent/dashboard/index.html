@@ -407,7 +407,7 @@ function h(tag, attrs = {}, ...kids) {
 const initials = (name = '?') => name.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
 const ago = (iso) => { if (!iso) return '–'; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`; };
 const KNOWN_TEXT = { documented: 'documented', duplicate: 'duplicate of', 'in-progress': 'fix in progress', 'fixed-on-main': 'fixed on main by', regression: 'regression of', 'solved-before': 'solved before as' };
-const ICON = { 'prior-art': '⟲', mailed: '✉', 'mail-failed': '✖', resolved: '☑', documenting: '📝', documented: '📚', 'docs-merged': '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', bisecting: '⑂', bisected: '🎯', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺', reviewing: '👀', reviewed: '🧐', 'review-skipped': '–' };
+const ICON = { 'prior-art': '⟲', mailed: '✉', 'mail-failed': '✖', resolved: '☑', documenting: '📝', documented: '📚', 'docs-merged': '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', bisecting: '⑂', bisected: '🎯', guard: '🛡', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺', reviewing: '👀', reviewed: '🧐', 'review-skipped': '–' };
 
 const tickets = new Map();
 const teams = [];
@@ -491,7 +491,7 @@ function apply(ev) {
     case 'reviewed': t.review = { stage: 'done', ...ev.review, url: ev.url }; break;
     case 'review-skipped': t.review = { stage: 'skipped', error: ev.text }; break;
   }
-  if (['picked', 'analyzing', 'progress', 'cross-project', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'prior-art', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'docs-merged', 'warmed', 'workspace', 'reproducing', 'reproduced', 'bisecting', 'bisected', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-skipped', 'reviewing', 'reviewed', 'review-skipped', 'mailed', 'mail-failed'].includes(ev.type)) {
+  if (['picked', 'analyzing', 'progress', 'cross-project', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'prior-art', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'docs-merged', 'warmed', 'workspace', 'reproducing', 'reproduced', 'bisecting', 'bisected', 'guard', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-skipped', 'reviewing', 'reviewed', 'review-skipped', 'mailed', 'mail-failed'].includes(ev.type)) {
     t.steps.push({ at: ev.at, type: ev.type, text: ev.step ?? ev.text });
   }
 }
@@ -678,7 +678,7 @@ function render() {
 function renderStatus() {
   const pill = $('#state');
   if (!live) { pill.className = 'pill off'; $('#state-text').textContent = 'disconnected'; return; }
-  if (status?.processing) { pill.className = 'pill busy'; $('#state-text').textContent = `${{ review: 'reviewing', document: 'documenting' }[status.processing.kind] ?? 'analyzing'} ${status.processing.key}`; }
+  if (status?.processing) { pill.className = 'pill busy'; $('#state-text').textContent = `${{ review: 'reviewing', document: 'documenting', guard: 'checking commit' }[status.processing.kind] ?? 'analyzing'} ${status.processing.key}`; }
   else if (status?.jira?.ok === false) { pill.className = 'pill warn'; $('#state-text').textContent = 'paused'; }
   else { pill.className = 'pill live'; $('#state-text').textContent = 'watching'; }
   // Jira health (agent/lib/jira-health.mjs): red when Jira cannot be used, amber for a warning (a project now empty).

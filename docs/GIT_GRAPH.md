@@ -54,7 +54,14 @@ Components ↔ tickets ↔ files ↔ people ↔ knowledge entries; apps ↔ apps
 
 Each item states what it does, why, how much of it is plain code, the autonomy level (L0–L3 as in AUTONOMY_AND_NEXT) and how it is measured. Code finds the facts; the model only judges or explains them; a person still merges.
 
-**A1. Regression guard on every commit to `main`** · 1 d · L2
+**A1. Regression guard on every commit to `main`** · 1 d · L2 · **Done 2026-11-13** (FR-76, [agent/README.md](../agent/README.md#regression-guard-on-main)). Built as described below, with these differences:
+- A changed regression test runs in its version from before the commit, because "adjusting" a failing test is how a regression gets past CI.
+- Only changes inside the cited test count. Adding a test to a shared test class does not, which cut the false alerts in the backtest from 17 to 0.
+- An alert needs a failing test. The optional small model is not built: so far the tests decide, and a small local model may take that place later.
+- The owner notice is a Jira comment on the bug's ticket and on the commit's ticket, plus a GitHub comment on the commit.
+
+Proven with the pilot (the VAX-13 regression was alerted 2 minutes after its push) and on 135 commits of history.
+
 When a new commit lands on `main`, code blames the lines it changes or deletes, in its parent. If some of those lines were written by a **bug fix**, the agent says so before anyone reports anything: "this commit changes lines the fix of DEM-5 added". It names the knowledge entry and its "Prevent recurrence" note, and runs that bug's regression test (KB1). An optional small model, without tools, judges from the diff and the entry whether the change undoes the fix. Output: a comment on the PR it came from, and a notice to the component's owner. *Why:* today a regression is found only when a user reports it; K21's regression case (d) is the one prior-art case we could not test. Measured: alerts, alerts a person confirms, regressions caught before a ticket.
 
 **A2. Automatic bisect with the reproduction test** · 1.5 d · L2 · **Done 2026-11-13** (FR-74, [agent/README.md](../agent/README.md#which-change-broke-it-bisect)). Built as described below, with three differences. It walks main's first-parent line with its own binary search instead of `git bisect run`, so it can apply time limits, report each step and be unit-tested. Every run tries the last commit before the suspect window as a good point, even when the analysis names nothing, which costs one extra test run. A test that fails another way than on main also counts as "skip". It was proven on planted breaks in scratch copies: MediLab (JUnit, 23 commits, 6 runs, 157 s) and MediAgenda (Playwright, 11 commits, 5 runs, 226 s) each named the planted commit exactly. No real ticket has gone through it yet.

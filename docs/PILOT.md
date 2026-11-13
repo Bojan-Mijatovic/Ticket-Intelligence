@@ -16,6 +16,8 @@ Every case has an **answer key**: the commit that broke the code, the file, and 
 | 1 to 3 hours later | a user reports the symptom in Jira as a `[BE]` or `[FE]` bug, quoting a patient the way real tickets do (name, fiscal code, sometimes birth date, phone, health card) | `demo/pilot.mjs` |
 | within minutes | analysis, "already known?", reproduction test, bisect, fix, draft PR, AI review: the agent does what it does for any ticket | the agent (watcher) |
 | later | merge or close the PR | a person |
+| at the next tick after the merge | the ticket moves to Done, as the team would close it once its fix is on `main`; the agent then documents it, and the entry names the fix's regression test | `demo/pilot.mjs` |
+| within 2 minutes of every push | the regression guard (A1) checks the commit: does it touch an earlier fix, do that fix's tests still pass | the agent (watcher) |
 | any time | each case scored against its answer key | `node demo/pilot.mjs status` |
 
 One case is in flight at a time: the next change is pushed only after the previous bug was reported. A Windows scheduled task (`TicketIntelligencePilot`) runs `demo/pilot.mjs tick` every 30 minutes, hidden. Each tick:
@@ -34,6 +36,7 @@ The task runs while this machine is on and the user is logged in.
 | culprit named | the analysis cites the breaking commit or its story |
 | owner | the proposed owner knows that code: its author, or the developer who made the change |
 | fix PR | a verified draft PR, and whether it changed the file the bug is in |
+| guard | for a regression case: the regression guard alerted on its commit before the ticket was reported; for the other cases, an alert is a false alarm |
 | bisect exact | the bisect names exactly the breaking commit |
 | time, cost | from the report to the analysis and to the PR; the model cost of the ticket |
 | identifiers masked | the patient data the ticket quoted is gone from the text the model reads |
@@ -64,15 +67,16 @@ The masking is measured on every ticket. On the first one (VAX-13) it masked the
 | card-booster-label | FE | one label for both tables; the booster loses its label on the card | the influenza booster shows as "Dose 2" |
 | late-today | FE | a comment on the late marker; a dose due today counts as late | a dose due today is marked "in ritardo" |
 | search-two-letters | BE | comments on the search limits; the minimum becomes 3 characters while the page says 2 | two letters find nobody (fixing either side is right) |
+| due-last-day-again | BE | **a regression of VAX-13**: half-open periods "as the SMS gateway counts them"; VAX-13's regression test is "adjusted" so CI passes | the patients due on Sunday are not in the week again (fixing the backend or the page is right) |
 | booster-anytime | BE | a comment on the interval rule; boosters skip the interval check | an influenza booster is accepted six months after the previous dose |
 | due-phone | BE | a note on the call list; the health card goes where the phone was | the phone column of Scadenze shows a 20-digit number |
 | vaccines-order | BE | the standard query for the catalog; the alphabetical order is lost | the vaccines are no longer in alphabetical order (low priority) |
 | lot-expiry-iso | FE | shorter lot labels; the expiry date loses its Italian format | the lot expiry shows as 2026-11-30 |
 | card-sex-raw | FE | a compact card header; the sex shows as its code | the header shows "F" instead of "Femmina" (low priority) |
 
-`node demo/pilot.mjs check` checks each case without pushing anything: it must apply to `main`, and the existing tests must miss it. All 12 passed this check on 2026-11-13. Twelve cases last about six working days, so the catalog has to keep growing.
+`node demo/pilot.mjs check` checks each case without pushing anything: it must apply to `main`, and the existing tests must miss it. All 13 passed this check on 2026-11-13. Thirteen cases last about six working days, so the catalog has to keep growing.
 
-A used case can come back later as a **regression** once its fix is merged. Regressions that the fix's own test catches never reach `main`, because the planter runs the tests first, as CI would. So the regression cases will be the ones that slip past that test: the bug comes back through another path, or the developer "adjusts" the failing test. They come with A1 (the regression guard), which should flag them before the ticket.
+A **regression case** (`regressionOf`) brings back a bug whose fix is merged. Regressions that the fix's own test catches never reach `main`, because the planter runs the tests first, as CI would. So a regression case slips past that test: the bug comes back through another path, or the developer "adjusts" the failing test. A regression case is written against the fix as merged, since the agent wrote that fix. The analysis should call the bug a regression, and the regression guard should alert on the commit before the ticket comes.
 
 ## Commands
 
@@ -91,7 +95,8 @@ The app itself: `node demo/run-mediagenda.mjs --project VAX` (backend :8084, fro
 
 | Case | Ticket | Result |
 |---|---|---|
-| due-last-day | VAX-13 | everything right. The analysis named the breaking commit (d2fe6eb, story VAX-12), the file and the owner. The bisect confirmed the commit in 18 s. The draft PR came 259 s after the ticket was picked: a one-condition fix and a regression test. AI review: low risk. $1.17. Masking: 2 of 3 identifiers (the name "Ferrara Iolanda" passed) |
+| due-last-day | VAX-13 | everything right. The analysis named the breaking commit (d2fe6eb, story VAX-12), the file and the owner. The bisect confirmed the commit in 18 s. The draft PR came 259 s after the ticket was picked: a one-condition fix and a regression test. AI review: low risk. $1.17. Masking: 2 of 3 identifiers (the name "Ferrara Iolanda" passed). A person merged the PR (#3), and the pilot then closed the ticket |
+| due-last-day-again | (VAX-15 story, ticket due later) | the regression guard alerted 2 minutes after the push. The commit changed 2 lines of VAX-13's fix and its regression test, and that test as it was before failed on the commit. The alert was posted on the commit (GitHub) and on VAX-15 and VAX-13 (Jira) |
 
 The first case found a defect in the bisect, now fixed. For a regression, the analysis gave the breaking commit as `priorArt.commit`, the field meant for the earlier fix, and the bisect plan dropped that commit's parent. Both readings are now covered.
 

@@ -15,6 +15,8 @@
 //             it(iso) → "20/11/2026", day: the report day (ISO) }; patient() and person() record the identifiers
 //             the ticket quotes, for the redaction score
 //   answer    { files: [path], owners: [name] }: a file the analysis must name, the people who know the code
+//   regressionOf  (optional) the case whose fix this one undoes: the analysis should say "regression", and the
+//             regression guard (A1) should flag the commit before the ticket is reported
 //
 // Cases are taken in this order; a case that no longer applies to main (its code changed) is skipped.
 
@@ -27,6 +29,7 @@ const SCHEDULE = `${BE}/schedule/Schedule.java`;
 const DATES = `${FE}/shared/utils/dates.ts`;
 const CARD = `${FE}/features/patients/patient-card.component.ts`;
 const SEARCH = `${FE}/features/patients/patient-search.component.ts`;
+const VAX13_TEST = 'backend/src/test/java/com/medivax/regression/Vax13RegressionTest.java';
 
 const SIGN = '\n\nSegnalato da Anna Lombardi (coordinatrice infermieristica).';
 
@@ -66,6 +69,28 @@ export const CASES = [
       };
     },
     answer: { files: [DOSES], owners: ['Federica Gallo', 'Irene Fabbri'] },
+  },
+  {
+    // A regression of due-last-day, written against its fix as merged (VAX-13, PR #3): the backend moves to half-open
+    // periods and "adjusts" the fix's regression test, so CI passes; the frontend still sends Sunday as the end.
+    // The regression guard (A1) should flag the commit before the ticket comes.
+    id: 'due-last-day-again',
+    regressionOf: 'due-last-day',
+    side: 'BE',
+    author: 'irene',
+    story: { summary: '[BE] - Scadenze: half-open periods, as the SMS gateway counts them', description: 'The SMS gateway asks for periods [from, to). Align the due list, so both read the same periods.' },
+    subject: 'half-open due periods, as the SMS gateway expects',
+    edits: [
+      { file: DUE, from: '    /** The next doses due from `from` to `to`, both included, the earliest first. */', to: '    /** The next doses due from `from` (included) to `to` (excluded), the earliest first: periods are half-open, as the SMS gateway counts them. */' },
+      { file: DUE, from: '                // VAX-13: `to` is included too (Sunday of the week)\n                if (!n.dueOn().isBefore(from) && !n.dueOn().isAfter(to)) {', to: '                if (!n.dueOn().isBefore(from) && n.dueOn().isBefore(to)) {' },
+      { file: VAX13_TEST, from: '        List<DueRow> week = due.due(MONDAY, SUNDAY);', to: '        List<DueRow> week = due.due(MONDAY, SUNDAY.plusDays(1)); // periods are half-open: [from, to)' },
+      { file: VAX13_TEST, from: '\n        // A one-day range (from == to) is a valid range and must list the doses due on that day.\n        assertThat(due.due(SUNDAY, SUNDAY))\n                .as("doses due on %s alone (from == to)", SUNDAY)\n                .extracting(DueRow::patientId)\n                .contains(FERRARA_IOLANDA);\n', to: '' },
+    ],
+    ticket: (h) => ({
+      summary: '[BE] - Scadenze: the patients due on Sunday are not in the week again',
+      description: `Scadenze for the week from 21/12 to 27/12 does not list ${h.patient(15, { phone: true })}: his second Herpes zoster dose is due on Sunday ${h.it('2026-12-27')}, as his card shows. We are preparing the Christmas calls from this list.${SIGN}`,
+    }),
+    answer: { files: [DUE, `${FE}/features/due/due.component.ts`], owners: ['Federica Gallo', 'Irene Fabbri'] },
   },
   {
     id: 'week-sunday',

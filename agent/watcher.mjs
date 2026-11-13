@@ -37,6 +37,8 @@ import { readBlameOrigins, recordAccuracy, scoreAccuracy } from './lib/accuracy.
 import { laneLayout } from './lib/graph-lanes.mjs';
 import { readReplays } from './lib/replay.mjs';
 import { impactOf } from './lib/impact.mjs';
+import { guardCommit } from './lib/regression-guard.mjs';
+import { createRedactor } from '../.claude/skills/analyze-ticket/scripts/lib/redact.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const all = loadProjects(HERE);
@@ -298,20 +300,131 @@ async function drain() {
   // again calls drain().
   if (status.processing || !status.queue.length || status.jira.ok === false) return;
   const issue = status.queue.shift();
-  status.processing = { key: issue.key, kind: issue.kind, since: new Date().toISOString() };
+  status.processing = { key: issue.key ?? `${issue.project} ${String(issue.sha).slice(0, 7)}`, kind: issue.kind, since: new Date().toISOString() };
   pushStatus();
-  const p = all.ofTicket(issue.key);
-  if (issue.kind === 'document') await documentTicket(issue, p);
-  else if (issue.kind === 'review') await reviewPullRequest({ key: issue.key, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, events, jira });
+  if (issue.kind === 'guard') await runGuard(issue);
   else {
-    await processTicket({
-      issue, cfg: p.cfg, policy, jira, events, repoDir: p.repoDir, stateDir: p.stateDir, project: { key: p.key, name: p.name },
-      peers: (warn) => peerCheckouts(p, all, warn), followUp: (job) => status.queue.push(job),
-    });
+    const p = all.ofTicket(issue.key);
+    if (issue.kind === 'document') await documentTicket(issue, p);
+    else if (issue.kind === 'review') await reviewPullRequest({ key: issue.key, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, events, jira });
+    else {
+      await processTicket({
+        issue, cfg: p.cfg, policy, jira, events, repoDir: p.repoDir, stateDir: p.stateDir, project: { key: p.key, name: p.name },
+        peers: (warn) => peerCheckouts(p, all, warn), followUp: (job) => status.queue.push(job),
+      });
+    }
   }
   status.processing = null;
   pushStatus();
   drain();
+}
+
+// ---------------------------------------------------------------- regression guard (A1)
+// Every new commit on a watched project's main is checked for the earlier bug fixes it touches, and their regression
+// tests run on it (lib/regression-guard.mjs, policy regressionGuard). The first look at a project only records where
+// its main is. A guard runs in the queue like any job, so its tests never overlap a fix's.
+
+const GUARD_SECONDS = Number(cfg.guardSeconds ?? 120);
+const AGENT_DIR = HERE;
+const guardFile = (p) => join(p.stateDir, 'guard.json');
+const resolvedBugs = new Map(); // project key → { at, keys }: the project's resolved bugs in Jira, 10 minutes
+async function fixKeysOf(p) {
+  const hit = resolvedBugs.get(p.key);
+  if (hit && Date.now() - hit.at < 600_000) return hit.keys;
+  let keys = new Set();
+  try {
+    keys = new Set((await jira.search(`project = ${p.key} AND issuetype = Bug AND statusCategory = Done`, 200)).map((i) => i.key));
+  } catch {
+    /* Jira unavailable: the documented bugs (docs/knowledge) still count */
+  }
+  resolvedBugs.set(p.key, { at: Date.now(), keys });
+  return keys;
+}
+
+let checkingMains = false;
+async function checkMains() {
+  if (checkingMains || policy.actions.regressionGuard !== 'auto') return;
+  checkingMains = true;
+  try {
+    for (const p of all.projects.filter((x) => WATCHED.includes(x.key))) {
+      const git = (args) => execFileSync('git', args, { cwd: p.repoDir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60_000 }).trim();
+      let head;
+      try {
+        git(['fetch', '-q', 'origin', 'main']);
+        head = git(['rev-parse', 'origin/main']);
+      } catch {
+        continue; // no git remote (SVN) or offline
+      }
+      let seen = null;
+      try {
+        seen = JSON.parse(readFileSync(guardFile(p), 'utf8')).head;
+      } catch {
+        /* first look */
+      }
+      writeFileSync(guardFile(p), JSON.stringify({ head, at: new Date().toISOString() }));
+      if (!seen || seen === head) continue;
+      const shas = git(['rev-list', '--first-parent', '--reverse', `${seen}..${head}`]).split('\n').filter(Boolean).slice(-20);
+      for (const sha of shas) status.queue.push({ kind: 'guard', project: p.key, sha, key: null });
+    }
+  } catch (e) {
+    events.emit('error', { text: `regression guard: ${e.message.split('\n')[0]}` });
+  } finally {
+    checkingMains = false;
+    pushStatus();
+    drain();
+  }
+}
+
+async function runGuard({ project, sha }) {
+  const p = all.byKey(project);
+  try {
+    const g = await guardCommit({
+      repoDir: p.repoDir, workDir: join(p.stateDir, 'guard-work'), sha, prefixes: [p.key], fixKeys: await fixKeysOf(p),
+      toolsDir: cfg.toolsDir ? join(AGENT_DIR, cfg.toolsDir) : null,
+    });
+    const slug = githubSlugOf(p.repoDir);
+    const url = slug ? `https://github.com/${slug}/commit/${g.sha}` : null;
+    const fixes = g.fixes.map(({ key, lines, files, testsChanged, entry }) => ({ key, lines, files, testsChanged, entry }));
+    // A clear commit is recorded without a ticket (no card on the dashboard); a note or an alert shows on its ticket.
+    events.emit('guard', { ...(g.verdict !== 'clear' && g.key ? { key: g.key } : {}), project: p.key, commit: g.sha, short: g.short, verdict: g.verdict, fixes, tests: g.tests?.totals ?? null, text: `regression guard: ${g.text}`, url });
+    if (g.verdict === 'alert') await reportGuard(p, g, slug);
+  } catch (e) {
+    events.emit('error', { text: `regression guard of ${project} ${String(sha).slice(0, 7)}: ${e.message.split('\n')[0]}` });
+  }
+}
+
+const githubSlugOf = (repoDir) => {
+  try {
+    return execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: repoDir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().match(/github\.com[/:]([^/]+)\/([^/.\s]+)/)?.slice(1, 3).join('/') ?? null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * An alert goes where people look: a comment on the commit (GitHub) and on the tickets involved (Jira). A failing
+ * test's message can quote data (a patient's name, a fiscal code), so the text is masked first, like model input.
+ */
+async function reportGuard(p, g, slug) {
+  const mask = createRedactor({ allow: teamOf(all.projects) });
+  g = { ...g, text: mask.text(g.text) };
+  const lines = [`**Regression guard** (plain code, no AI): ${g.text}`, '', ...g.fixes.map((f) => `- ${f.key}${f.entry ? ` (known issue: \`${f.entry}\`)` : ''}: ${f.lines} line(s) of its fix${f.testsChanged.length ? `; its regression test changed: ${f.testsChanged.map((x) => `\`${x}\``).join(', ')}` : ''}`), '', '_A person decides whether the change is intended. The guard does not change the code._'];
+  if (slug) {
+    try {
+      execFileSync('gh', ['api', '-X', 'POST', `repos/${slug}/commits/${g.sha}/comments`, '-f', `body=${lines.join('\n')}`], { stdio: 'ignore', timeout: 30_000 });
+    } catch (e) {
+      events.emit('error', { text: `regression guard: GitHub comment on ${g.short} skipped: ${e.message.split('\n')[0]}` });
+    }
+  }
+  if (policy.actions.postInternalComment !== 'auto') return;
+  const body = `(robot) *Regression guard* — commit {{${g.short}}} may bring back a fixed bug.\n${g.text}\n${slug ? `[The commit|https://github.com/${slug}/commit/${g.sha}]\n` : ''}_Plain code, no AI: the lines it changes were blamed, and the regression tests of those bugs ran on it. A person decides._`;
+  for (const key of [...new Set([g.key, ...g.fixes.map((f) => f.key)].filter(Boolean))]) {
+    try {
+      await jira.comment(key, body);
+    } catch (e) {
+      events.emit('error', { key, text: `regression guard: Jira comment skipped: ${e.message.split('\n')[0]}` });
+    }
+  }
 }
 
 // ---------------------------------------------------------------- insights
@@ -754,3 +867,5 @@ for (const w of first.warnings) console.log(`Jira warning: ${w}`);
 if (first.ok) await recoverStuckTickets().catch((e) => events.emit('error', { text: `recovery failed: ${e.message}` }));
 await poll();
 setInterval(poll, cfg.pollSeconds * 1000);
+await checkMains();
+setInterval(checkMains, GUARD_SECONDS * 1000);

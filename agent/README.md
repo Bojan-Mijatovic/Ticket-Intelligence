@@ -65,6 +65,7 @@ The command-line tools take the project from the ticket key (`LAB-7` → MediLab
 | `node agent/ask.mjs "question"` | ask the knowledge base (sourced answer or "not found") | no |
 | `node agent/accuracy.mjs` | how often the agent was right, per project (`--project DEM`, `--rows`, `--json`) | no |
 | `node agent/knowledge-tests.mjs` | run the regression tests of every known-issue entry on main; a failing one means the issue may be back (`--project LAB`, `--only LAB-9`) | no |
+| `node agent/guard-one.mjs --project VAX <commit>` | the regression guard on one commit (`--all` every commit of main, `--no-tests` structure only); the watcher runs it on every new commit by itself | no |
 | `node agent/bisect-one.mjs --project LAB --test <file> --as <path> --good <ref>` | find the commit that broke a test (the fix run does this on its own; `--key LAB-30` takes the good points from a saved analysis, `--repo` a scratch copy) | no |
 | `node agent/impact.mjs` | the management week for the whole suite: what the agent did, cost, hours saved, what waits (`--weeks 4`, `--json`) | no |
 | `node agent/replay.mjs --project DEM` | replay resolved bugs a person fixed as they came in, and compare with the real fix (dry run; `--yes`, `--limit`, `--only`, `--max-cost`) | no |
@@ -419,6 +420,28 @@ Proven on 2026-11-13 with planted breaks in scratch copies (no AI):
 
 - **MediLab, JUnit.** Five commits were added on top of main; the third (`LAB-33: read the sex as the registry spells it`) put back the bug of LAB-8. The test was the LAB-8 test, written as a new class, as the Fixer would write it, and LAB-8's fix was the good point. Bisect named exactly that commit: 23 commits, 6 test runs (main, the good point, 4 steps), 157 s.
 - **MediAgenda, Playwright.** Four commits were added on top of main; the second (`DEM-51: a calmer slate colour for the page tokens`) replaced DEM-33's dark red with slate. The test was DEM-33's browser test, renamed, and DEM-33's fix was the good point. Bisect named exactly that commit: 11 commits, 5 test runs, 226 s. The first `ng serve` took 149 s; the others took about 20 s with the Angular cache.
+
+## Regression guard on main
+
+KB1 tells you when a known issue is back once someone runs its tests. The guard (A1, `lib/regression-guard.mjs`) asks the question on every commit, before any ticket. The watcher looks at each watched `main` every `guardSeconds` (agent.config.json, default 120). Each new commit becomes a guard job in the queue, so its tests never overlap a fix's. The first look at a project only records where `main` is. Plain code, no AI:
+
+1. **Blame.** The lines the commit changes or deletes, and for a pure addition the lines around it, are blamed in its parent. This is the same blame as Insights → where bugs come from. A line written by the commit of a fixed bug counts for that bug. A fixed bug is a documented one (docs/knowledge) or a resolved Jira bug.
+2. **Tests.** The regression tests of those bugs run on the commit, in a worktree of its own (`<state>/guard-work`). The tests come from the entry's Test line or, without an entry, from the tests the bug's commits added (KB1).
+3. **A changed test runs as it was.** When the commit changes the lines of such a test, that test runs in its version from **before** the commit. A developer who "adjusts" a failing test is how a regression gets past CI. Only the cited test's own lines count: adding a test to a shared test class does not.
+
+The verdict:
+
+- **alert:** a test fails;
+- **note:** the commit touches a fix or its test, and the tests pass;
+- **clear:** it touches no fix.
+
+An alert is posted on the commit (a GitHub commit comment) and on the commit's ticket and the bug's ticket (Jira). Its text is masked first, because a failing assertion can quote data. Notes and alerts appear in the ticket's lane on the Graph tab; a clear commit is recorded without a ticket. The guard never changes code. Policy: `regressionGuard: auto | off`.
+
+Checked on 2026-11-13:
+
+- **The pilot.** The planted regression of VAX-13 brought the Sunday bug back and "adjusted" `Vax13RegressionTest` so CI passed. It was alerted 2 minutes after the push, and the ticket was due about two hours later. The test as it was before the commit failed on it.
+- **Backtest.** On the 135 commits of the five apps: 128 clear, 5 notes and 2 alerts. Both alerts were deliberate changes that replaced what an earlier fix protected: DEM-33 (dark red instead of DEM-32's blue) and LAB-18 (mg/dL instead of LAB-15's µmol/L). A person should confirm such a change, and the alert asks for exactly that.
+- **The first version** counted any change to a test file. Because test classes are shared, that gave 17 false alerts on the same history.
 
 ## Duplicates and known problems
 

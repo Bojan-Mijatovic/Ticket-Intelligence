@@ -33,6 +33,7 @@
   "baseline": { "analysisMinutes": 45, "reproduceMinutes": 60, "fixMinutes": 180, "docsMinutes": 30 },
   "fixTimeoutMinutes": 15,
   "bisectMinutes": 12,
+  "guardSeconds": 120,
   "toolsDir": "../tools",
   "insights": {
     "months": 10,

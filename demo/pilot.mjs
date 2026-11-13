@@ -175,13 +175,36 @@ async function report(run) {
   return key;
 }
 
+/**
+ * What the team does after a merge: a reported case whose fix is on main (a commit "<KEY>: …" that is not its
+ * documentation) moves to Done in Jira. The agent then documents it, and the entry gets the fix's regression test.
+ */
+async function resolveMerged() {
+  const state = load();
+  const open = state.runs.filter((r) => r.status === 'reported' && r.ticket);
+  if (!open.length) return;
+  const g = (a) => git(a, project.repoDir);
+  g(['fetch', '-q', 'origin', 'main']);
+  let j = null;
+  for (const r of open) {
+    const fix = g(['log', 'origin/main', '-E', `--grep=^${r.ticket}:`, '--format=%h%x1f%s']).split('\n').filter(Boolean).map((l) => l.split('\x1f')).find(([, s]) => !/: document /.test(s));
+    if (!fix) continue;
+    j ??= await jira();
+    await j.done(r.ticket);
+    Object.assign(r, { status: 'resolved', resolvedAt: new Date().toISOString(), fixCommit: fix[0] });
+    log(`resolve ${r.id}: ${r.ticket} moved to Done (its fix ${fix[0]} is on main, as the team would close it)`);
+  }
+  save(state);
+}
+
 function score() {
   const state = load();
   const events = readEvents(join(AGENT, 'state'));
-  const scores = state.runs.filter((r) => r.ticket).map((r) => {
-    const file = join(project.stateDir, 'work', r.ticket, 'result.json');
-    const result = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
-    return { ...scoreRun(r, caseOf(r.case).answer, events, result), redaction: r.redaction ? { masked: r.redaction.masked, quoted: r.redaction.quoted } : null };
+  // Every pushed case: the regression guard judges the commit before any ticket exists.
+  const scores = state.runs.filter((r) => r.sha).map((r) => {
+    const file = r.ticket ? join(project.stateDir, 'work', r.ticket, 'result.json') : null;
+    const result = file && existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
+    return { ...scoreRun(r, caseOf(r.case).answer, events, result), regression: Boolean(caseOf(r.case).regressionOf), redaction: r.redaction ? { masked: r.redaction.masked, quoted: r.redaction.quoted } : null };
   });
   const redaction = state.runs.filter((r) => r.redaction).reduce((s, r) => ({ masked: s.masked + r.redaction.masked, quoted: s.quoted + r.redaction.quoted }), { masked: 0, quoted: 0 });
   const out = { at: new Date().toISOString(), project: project.key, summary: { ...summarize(scores), redaction }, scores };
@@ -229,6 +252,7 @@ if (cmd === 'check') {
   writeFileSync(lock, String(Date.now()));
   try {
     await ensureWatcher();
+    await resolveMerged();
     const state = load();
     const a = nextActions({ runs: state.runs, cases: CASES, now: new Date(), cfg: PILOT });
     for (const run of a.report) await report(run);
@@ -256,17 +280,18 @@ if (cmd === 'check') {
   const s = out.summary;
   console.log(`Pilot on ${project.name} (${project.key}) · ${PILOT.perDay} case(s) a working day from ${PILOT.hours.join(':00, ')}:00 · catalog ${CASES.length} cases`);
   for (const r of state.runs) {
-    const sc = out.scores.find((x) => x.ticket === r.ticket);
+    const sc = out.scores.find((x) => x.case === r.case && (x.ticket ?? null) === (r.ticket ?? null));
     const parts = [r.status.padEnd(8), r.story ?? '', r.short ?? '', r.ticket ?? ''];
     if (r.status === 'failed') parts.push(r.why);
     if (sc) {
-      parts.push(sc.analysed ? `files ${sc.files?.hit ? 'hit' : 'miss'} · culprit ${sc.culpritNamed ? 'named' : 'not named'} · owner ${sc.owner?.hit ? 'hit' : `miss (${sc.owner?.proposed})`}` : 'not analysed yet');
+      if (r.ticket) parts.push(sc.analysed ? `files ${sc.files?.hit ? 'hit' : 'miss'} · culprit ${sc.culpritNamed ? 'named' : 'not named'} · owner ${sc.owner?.hit ? 'hit' : `miss (${sc.owner?.proposed})`}` : 'not analysed yet');
       if (sc.fix) parts.push(`fix ${sc.fix.outcome}${sc.fix.why ? ` (${sc.fix.why})` : ''}`);
       if (sc.bisect) parts.push(`bisect ${sc.bisect.exact ? 'exact' : sc.bisect.status}`);
+      if (sc.guard) parts.push(`guard ${sc.guard.verdict}${sc.guard.verdict !== 'clear' ? ` ${sc.guard.beforeReport ? 'before' : 'after'} the ticket` : ''}`);
       if (sc.redaction) parts.push(`masked ${sc.redaction.masked}/${sc.redaction.quoted}`);
     }
     console.log(`  ${r.case.padEnd(20)} ${parts.filter(Boolean).join(' · ')}`);
   }
-  console.log(`\nAnalysed ${s.analysed}/${s.cases} · files ${pct(s.files)} · culprit named ${pct(s.culpritNamed)} · owner ${pct(s.owner)} · fix PR ${pct(s.fixPr)} · bisect exact ${pct(s.bisectExact)} · identifiers masked ${s.redaction.quoted ? `${Math.round((100 * s.redaction.masked) / s.redaction.quoted)}% (${s.redaction.masked}/${s.redaction.quoted})` : '–'} · $${s.costUsd}`);
+  console.log(`\nAnalysed ${s.analysed}/${s.cases} · files ${pct(s.files)} · culprit named ${pct(s.culpritNamed)} · owner ${pct(s.owner)} · fix PR ${pct(s.fixPr)} · bisect exact ${pct(s.bisectExact)} · guard: regressions caught before the ticket ${pct(s.guardCaught)}, false alarms ${pct(s.guardFalseAlarms)} · identifiers masked ${s.redaction.quoted ? `${Math.round((100 * s.redaction.masked) / s.redaction.quoted)}% (${s.redaction.masked}/${s.redaction.quoted})` : '–'} · $${s.costUsd}`);
   console.log(`Next: ${nextActions({ runs: state.runs, cases: CASES, now: new Date(), cfg: PILOT }).why}`);
 }

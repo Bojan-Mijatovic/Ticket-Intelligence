@@ -111,7 +111,8 @@ export function linkDeps(repoDir, path) {
   for (const dep of LINKED_DEPS) {
     const target = join(repoDir, dep);
     const link = join(path, dep);
-    if (existsSync(target) && !existsSync(link)) symlinkSync(target, link, 'junction');
+    // An older commit may not have the folder yet (e2e/ came later in MediLab): nothing to link there.
+    if (existsSync(target) && !existsSync(link) && existsSync(dirname(link))) symlinkSync(target, link, 'junction');
   }
 }
 

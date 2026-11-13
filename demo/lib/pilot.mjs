@@ -126,11 +126,11 @@ const fold = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toL
  * @param {object|null} result  the analysis (state/work/<KEY>/result.json), or the one in the 'analyzed' event
  */
 export function scoreRun(run, answer, events, result = null) {
-  const mine = events.filter((e) => e.key === run.ticket).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  const mine = run.ticket ? events.filter((e) => e.key === run.ticket).sort((a, b) => Date.parse(a.at) - Date.parse(b.at)) : [];
   const analyzed = mine.find((e) => e.type === 'analyzed');
   const r = result ?? analyzed?.result ?? null;
   const minutes = (e) => (e ? Math.round((Date.parse(e.at) - Date.parse(run.reportedAt)) / 60_000) : null);
-  const out = { ticket: run.ticket, case: run.case, analysed: Boolean(r), minutesToAnalysis: minutes(analyzed) };
+  const out = { ticket: run.ticket ?? null, case: run.case, reported: Boolean(run.ticket), analysed: Boolean(r), minutesToAnalysis: minutes(analyzed) };
   if (r) {
     const files = compareFiles(codeFiles(Array.isArray(r.files) ? r.files.map(String) : []), answer.files);
     const text = `${r.likelyCause ?? ''}\n${r.jiraComment ?? ''}\n${r.proposedFix ?? ''}`;
@@ -144,6 +144,9 @@ export function scoreRun(run, answer, events, result = null) {
   out.fix = fix ? { outcome: { 'fix-proposed': 'pr', 'fix-failed': 'stopped', 'fix-skipped': 'not tried' }[fix.type], url: fix.url ?? null, why: fix.type === 'fix-proposed' ? null : String(fix.text ?? '').slice(0, 160), minutes: minutes(fix), filesHit: fix.files ? answer.files.some((f) => fix.files.includes(f)) : null } : null;
   const b = [...mine].reverse().find((e) => e.type === 'bisected')?.bisect;
   out.bisect = b ? { status: b.status, culprit: b.culprit?.short ?? null, exact: Boolean(b.culprit?.sha && run.sha && b.culprit.sha === run.sha), seconds: Math.round((b.durationMs ?? 0) / 1000) } : null;
+  // The regression guard (A1) on the case's commit: found by the commit, not the ticket (it comes before the ticket).
+  const guard = events.find((e) => e.type === 'guard' && run.sha && e.commit === run.sha);
+  out.guard = guard ? { verdict: guard.verdict, beforeReport: !run.reportedAt || Date.parse(guard.at) < Date.parse(run.reportedAt), minutesAfterPush: run.plantedAt ? Math.round((Date.parse(guard.at) - Date.parse(run.plantedAt)) / 60_000) : null } : null;
   out.review = mine.find((e) => e.type === 'reviewed')?.review?.risk ?? null;
   out.costUsd = Math.round(mine.reduce((s, e) => s + (e.meta?.costUsd ?? 0), 0) * 100) / 100;
   return out;
@@ -156,13 +159,16 @@ export function summarize(scores) {
   const fixes = scores.filter((s) => s.fix);
   const bisects = scores.filter((s) => s.bisect);
   return {
-    cases: scores.length,
+    cases: scores.filter((s) => s.reported !== false).length,
     analysed: analysed.length,
     files: of(analysed, (s) => s.files?.hit),
     culpritNamed: of(analysed, (s) => s.culpritNamed),
     owner: of(analysed, (s) => s.owner?.hit),
     fixPr: of(fixes, (s) => s.fix.outcome === 'pr'),
     bisectExact: of(bisects, (s) => s.bisect.exact),
+    // A1: regressions flagged before their ticket; alerts on changes that bring no regression back.
+    guardCaught: of(scores.filter((s) => s.regression), (s) => s.guard?.verdict === 'alert' && s.guard.beforeReport),
+    guardFalseAlarms: of(scores.filter((s) => !s.regression && s.guard), (s) => s.guard.verdict === 'alert'),
     costUsd: Math.round(scores.reduce((s, x) => s + (x.costUsd ?? 0), 0) * 100) / 100,
   };
 }
