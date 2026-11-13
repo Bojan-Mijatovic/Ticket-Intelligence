@@ -8,6 +8,9 @@ To see how the agent moves from one project to another, the demo has four applic
 | **MediLab** | LAB | laboratory: test requests, tubes, results with ranges by sex, reports | :8081 | :4201 | MediAgenda patients |
 | **MediFarma** | FAR | hospital pharmacy: prescriptions, renal and interaction checks, dispensing by lot | :8082 | :4202 | MediAgenda patients, MediLab creatinine |
 | **MediBill** | BIL | co-pay billing: daily import of visits and tests, exemptions, receipts | :8083 | :4203 | MediAgenda bookings and patients, MediLab reported requests |
+| **MediVax** (pilot) | VAX | vaccination centre: patients, vaccine catalog and lots, doses, next doses due | :8084 | :4204 | (none: standalone) |
+
+MediVax is the **pilot** ([PILOT.md](PILOT.md)). It is not linked to the others. Its patients are synthetic, and every working day `demo/pilot.mjs` pushes changes with a hidden bug and reports the bug in Jira, so the agent's accuracy is measured on cases with a known answer.
 
 ```
                  patients                      creatinine (validated, with unit)

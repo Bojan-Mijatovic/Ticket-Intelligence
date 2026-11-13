@@ -32,7 +32,8 @@ Everything is **read-only** until you approve. The only write actions are the Ji
 | [docs/COPILOT_TEST.md](docs/COPILOT_TEST.md) | test plan for GitHub Copilot on company projects |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | post-POC plan: approval from Teams, Mission Control, night shift, AI reviewer, hotspots, ask, reports, reply on merge |
 | [docs/AGENT_TRAINING.md](docs/AGENT_TRAINING.md) | how the agent is improved: levers, scenarios with a known answer (`demo/scenarios.json`), scoring (`demo/score-run.mjs`) |
-| [docs/SUITE.md](docs/SUITE.md) | the four linked demo apps (MediAgenda, MediLab, MediFarma, MediBill): ports, APIs between them, people, cross-project demo tickets |
+| [docs/SUITE.md](docs/SUITE.md) | the four linked demo apps (MediAgenda, MediLab, MediFarma, MediBill): ports, APIs between them, people, cross-project demo tickets; and MediVax, the pilot |
+| [docs/PILOT.md](docs/PILOT.md) | the pilot: MediVax with synthetic patients, a hidden bug and its report every working day, scored against an answer key |
 
 ## Installation (once)
 

@@ -1,0 +1,87 @@
+{
+  "_note": "MediVax Jira history, seeded with: node demo/seed-jira.mjs --app medivax. Keys CUP_VAX-5xx are placeholders, mapped to the real keys in demo/jira-keys.json. Oldest first. The pilot's tickets come later, from demo/pilot.mjs.",
+  "project": "VAX",
+  "links": [
+    ["CUP_VAX-510", "CUP_VAX-502"],
+    ["CUP_VAX-511", "CUP_VAX-505"]
+  ],
+  "issues": [
+    {
+      "key": "CUP_VAX-501", "issueType": "Task", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "MediVax: application skeleton (backend, frontend, browser tests)",
+      "description": "The vaccination centre gets its own application, like the rest of the suite: Spring Boot backend on 8084, Angular frontend on 4204, Playwright tests with the API mocked.",
+      "reporter": { "id": "u-bojan", "name": "Bojan Mijatović" }, "assignee": { "id": "u-bojan", "name": "Bojan Mijatović" },
+      "comments": [{ "author": { "id": "u-bojan", "name": "Bojan Mijatović" }, "body": "Skeleton on main: same error shape as the other apps (ApiError), H2 in memory, Flyway." }]
+    },
+    {
+      "key": "CUP_VAX-502", "issueType": "Story", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE] - Anagrafica pazienti: search by surname or fiscal code",
+      "description": "The nurses look a patient up by surname or by the first characters of the fiscal code. At least 2 characters, at most 50 results.",
+      "reporter": { "id": "u-anna", "name": "Anna Lombardi" }, "assignee": { "id": "u-irene", "name": "Irene Fabbri" },
+      "comments": [{ "author": { "id": "u-irene", "name": "Irene Fabbri" }, "body": "GET /api/patients?q=…, Flyway V1 with the centre's patients (synthetic data for the test environments)." }]
+    },
+    {
+      "key": "CUP_VAX-503", "issueType": "Story", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[FE] - Pazienti: search page and patient list",
+      "description": "Search page with the list: name, fiscal code, birth date, age, sex. A click opens the vaccination card (CUP_VAX-506).",
+      "reporter": { "id": "u-anna", "name": "Anna Lombardi" }, "assignee": { "id": "u-tommaso", "name": "Tommaso Bruno" },
+      "comments": [{ "author": { "id": "u-tommaso", "name": "Tommaso Bruno" }, "body": "Done, with the browser tests on the mocked API (e2e/tests/patients.smoke.spec.ts)." }]
+    },
+    {
+      "key": "CUP_VAX-504", "issueType": "Story", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE] - Catalogo vaccini e lotti",
+      "description": "The catalog: doses of the series, days between doses, age range, booster. The lots in the fridge with their expiry and the doses left.",
+      "reporter": { "id": "u-anna", "name": "Anna Lombardi" }, "assignee": { "id": "u-irene", "name": "Irene Fabbri" },
+      "comments": [{ "author": { "id": "u-irene", "name": "Irene Fabbri" }, "body": "Flyway V2 (seven vaccines of the regional calendar) and V3 (lots). GET /api/vaccines, GET /api/lots?vaccine=." }]
+    },
+    {
+      "key": "CUP_VAX-505", "issueType": "Story", "priority": "High", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE] - Registrazione dose: lot, age and interval checks",
+      "description": "Recording a dose checks what the nurse checks today on paper: the lot is of that vaccine, not expired and not empty; the patient is in the age range; the dose is not before its interval. The card shows the next dose due.",
+      "reporter": { "id": "u-anna", "name": "Anna Lombardi" }, "assignee": { "id": "u-federica", "name": "Federica Gallo" },
+      "comments": [{ "author": { "id": "u-federica", "name": "Federica Gallo" }, "body": "DoseService + Schedule (next dose: intervalDays after the last, booster boosterMonths after the series). POST /api/doses, GET /api/patients/{id}/card." }]
+    },
+    {
+      "key": "CUP_VAX-506", "issueType": "Story", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[FE] - Scheda paziente: doses given, next doses, record a dose",
+      "description": "The card of a patient with the doses given, the next doses (late ones marked), and the form to record a dose (vaccine, lot, date).",
+      "reporter": { "id": "u-anna", "name": "Anna Lombardi" }, "assignee": { "id": "u-tommaso", "name": "Tommaso Bruno" },
+      "comments": [{ "author": { "id": "u-tommaso", "name": "Tommaso Bruno" }, "body": "Done; the backend's messages are shown as they come (e.g. 'not before 20/11/2026')." }]
+    },
+    {
+      "key": "CUP_VAX-507", "issueType": "Story", "priority": "Low", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[FE] - Vaccini: catalog page",
+      "description": "A read-only page with the catalog: interval in days, age range in months or years, booster.",
+      "reporter": { "id": "u-anna", "name": "Anna Lombardi" }, "assignee": { "id": "u-tommaso", "name": "Tommaso Bruno" },
+      "comments": []
+    },
+    {
+      "key": "CUP_VAX-508", "issueType": "Story", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[BE] - Scadenze: doses due in a period",
+      "description": "Every Monday the centre calls the patients whose next dose is due that week. The backend lists the next doses due between two days, both included.",
+      "reporter": { "id": "u-anna", "name": "Anna Lombardi" }, "assignee": { "id": "u-federica", "name": "Federica Gallo" },
+      "comments": [{ "author": { "id": "u-federica", "name": "Federica Gallo" }, "body": "GET /api/due?from=&to= (DueService, same rule as the card)." }]
+    },
+    {
+      "key": "CUP_VAX-509", "issueType": "Story", "priority": "Medium", "resolution": "Done", "environments": ["SVILUPPO"],
+      "summary": "[FE] - Scadenze: the week's call list",
+      "description": "The week from Monday to Sunday, with previous and next week, and the patient's phone to call.",
+      "reporter": { "id": "u-anna", "name": "Anna Lombardi" }, "assignee": { "id": "u-tommaso", "name": "Tommaso Bruno" },
+      "comments": []
+    },
+    {
+      "key": "CUP_VAX-510", "issueType": "Bug", "priority": "Medium", "resolution": "Done", "environments": ["COLLAUDO"],
+      "summary": "[BE] - Pazienti: \"rossi\" does not find Rossi",
+      "description": "Searching in lower case finds nothing: 'rossi' gives no result, 'Rossi' does. The same with the fiscal code typed in lower case.",
+      "reporter": { "id": "u-anna", "name": "Anna Lombardi" }, "assignee": { "id": "u-irene", "name": "Irene Fabbri" },
+      "comments": [{ "author": { "id": "u-irene", "name": "Irene Fabbri" }, "body": "The repository method was case-sensitive; now StartingWithIgnoreCase on both fields. Test added (theSearchIgnoresCase)." }]
+    },
+    {
+      "key": "CUP_VAX-511", "issueType": "Bug", "priority": "High", "resolution": "Done", "environments": ["PRODUZIONE"],
+      "summary": "[BE] - Registrazione dose: a 26-year-old is refused HPV before the birthday",
+      "description": "A patient born in June 2000 came in March 2026 for the second HPV dose and the dose was refused: 'given up to 26 years, the patient is 26'. He is 25 until June.",
+      "reporter": { "id": "u-anna", "name": "Anna Lombardi" }, "assignee": { "id": "u-federica", "name": "Federica Gallo" },
+      "comments": [{ "author": { "id": "u-federica", "name": "Federica Gallo" }, "body": "Ages.years subtracted the years only, so the age went up on 1 January. Now Period.between(...).getYears(). Test added (theAgeGoesUpOnTheBirthday)." }]
+    }
+  ]
+}

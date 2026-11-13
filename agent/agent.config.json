@@ -1,7 +1,7 @@
 {
   "pollSeconds": 30,
   "_staff": "People of the team who write no code (testers, product owners). The redaction of personal data (R-02) keeps every git author and Jira user readable, and these names too; any other 'Name Surname' in ticket text is masked before a model reads it. Check with: node agent/redaction-audit.mjs --project <KEY>.",
-  "staff": ["Elena Conti"],
+  "staff": ["Elena Conti", "Anna Lombardi"],
   "settleMinutes": 1,
   "lookbackHours": 72,
   "maxParallel": 1,
@@ -124,6 +124,26 @@
           { "name": "Report incassi", "paths": ["frontend/src/app/features/reports/", "backend/src/main/java/com/medibill/report/"] },
           { "name": "Integrazioni (MediAgenda, MediLab)", "paths": ["backend/src/main/java/com/medibill/integration/"] },
           { "name": "Shared (forms, money, layout)", "paths": ["frontend/src/app/shared/", "frontend/src/app/core/", "frontend/src/styles.scss", "backend/src/main/java/com/medibill/common/"] }
+        ]
+      }
+    },
+    {
+      "key": "VAX",
+      "name": "MediVax",
+      "description": "Vaccination centre (pilot): patients, vaccine catalog and lots, doses, next doses due. Synthetic patients; new tickets every working day (docs/PILOT.md)",
+      "repo": "../demo/medivax",
+      "app": { "frontend": 4204, "backend": 8084, "home": "/pazienti" },
+      "backendTestDir": "backend/src/test/java/com/medivax/regression",
+      "askExamples": ["When is the next dose of a series due?", "Until which day can a lot be used?", "Which bugs did the patient search have, and why?", "Who knows the dose rules best?"],
+      "_pilot": "The pilot (demo/pilot.mjs tick, every 30 min): on working days, perDay changes with a hidden bug are pushed to main at the given hours, and the bug is reported in Jira reportAfterMinutes later. Scores against the answer key: node demo/pilot.mjs status.",
+      "pilot": { "perDay": 2, "hours": [10, 15], "reportAfterMinutes": [60, 180] },
+      "insights": {
+        "components": [
+          { "name": "Pazienti", "paths": ["frontend/src/app/features/patients/patient-search", "backend/src/main/java/com/medivax/patient/"] },
+          { "name": "Scheda e dosi", "paths": ["frontend/src/app/features/patients/", "backend/src/main/java/com/medivax/dose/"] },
+          { "name": "Scadenze", "paths": ["frontend/src/app/features/due/", "backend/src/main/java/com/medivax/schedule/"] },
+          { "name": "Vaccini e lotti", "paths": ["frontend/src/app/features/vaccines/", "backend/src/main/java/com/medivax/vaccine/", "backend/src/main/java/com/medivax/lot/"] },
+          { "name": "Shared (dates, labels, layout)", "paths": ["frontend/src/app/shared/", "frontend/src/app/core/", "frontend/src/styles.scss", "backend/src/main/java/com/medivax/common/"] }
         ]
       }
     }

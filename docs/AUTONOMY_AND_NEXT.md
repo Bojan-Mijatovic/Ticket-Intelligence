@@ -170,9 +170,9 @@ About **25 working days** without the deferred items, in three blocks: **measure
 
 ## 6. What needs a decision
 
-1. **The pilot project** (no patient data, as R-02 allows): AI1 and the night shift need real tickets to mean something.
+1. **The pilot project** (no patient data, as R-02 allows): AI1 and the night shift need real tickets to mean something. *Started 2026-11-13 as a demo pilot ([PILOT.md](PILOT.md)): MediVax, a fifth app with synthetic patients, gets two changes with a hidden bug and two bug reports every working day, scored against an answer key. A real project is still needed for the bugs we did not design.*
 2. **A Teams webhook now, a Teams bot later** (WF2, WF3 digest): not needed while both are deferred.
 3. **The thresholds of the trust ladder** (AG2): how many runs, which acceptance rate, per action.
 4. **The night-shift budget** (AI3, WF3): not needed while WF3 is deferred; a daily budget per action (AI3) still is.
-5. **R-02**: DPO approval and the AI service ([REDACTION.md](REDACTION.md)).
+5. **R-02**: DPO approval and the AI service ([REDACTION.md](REDACTION.md)). *The pilot does without it: its patients are synthetic (fiscal codes fail the official check by construction). It measures the masking on every ticket, which is the evidence for the DPO. Real patient data still needs the approval.*
 6. **A team machine for the dashboard, with sign-in** (G1, WF5): developers look every day and management weekly, and today the dashboard answers only on the machine it runs on.
