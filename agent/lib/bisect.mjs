@@ -87,12 +87,15 @@ export function planGoodPoints({ analysis, created = null, windowDays = 14, git,
     out.set(sha, { sha, why, date: git(['show', '-s', '--format=%cI', sha]) });
   };
   const prior = analysis?.priorArt;
-  const earlierFix = prior?.kind === 'regression' && prior.commit ? tryGit(git, ['rev-parse', '--verify', '--quiet', `${prior.commit}^{commit}`]) : null;
-  if (earlierFix) add(earlierFix, `the earlier fix of ${prior.key ?? 'the same problem'} (${earlierFix.slice(0, 7)})`);
-  for (const h of namedCommits(analysis)) {
+  // For a regression, priorArt.commit is meant to be the earlier fix, but an analysis may give the commit that broke
+  // it instead (VAX-13 did). Both readings are covered: the commit itself (passes if it is the fix; known bad if it is
+  // the breaker) and its parent (passes if it is the breaker). Newest first, so a real earlier fix is tried before
+  // its parent and the parent then costs nothing.
+  const priorSha = prior?.kind === 'regression' && prior.commit ? tryGit(git, ['rev-parse', '--verify', '--quiet', `${prior.commit}^{commit}`]) : null;
+  if (priorSha) add(priorSha, `the earlier fix of ${prior.key ?? 'the same problem'} (${priorSha.slice(0, 7)})`);
+  for (const h of new Set([...namedCommits(analysis), ...(priorSha ? [priorSha.slice(0, 7)] : [])])) {
     const sha = tryGit(git, ['rev-parse', '--verify', '--quiet', `${h}^{commit}`]);
-    // Before the earlier fix the bug was there anyway: that commit is a good point itself, not its parent.
-    if (sha && sha !== earlierFix) add(`${sha}^`, `the commit before ${h.slice(0, 7)}, which the analysis names`);
+    if (sha) add(`${sha}^`, `the commit before ${h.slice(0, 7)}, which the analysis names`);
   }
   if (created && !Number.isNaN(Date.parse(created))) {
     const before = new Date(Date.parse(created) - windowDays * 864e5).toISOString();

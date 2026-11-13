@@ -88,8 +88,12 @@ test('good points: the earlier fix of a regression, the commit before a named on
     assert.deepEqual(c.map((x) => x.sha), [shas[6], shas[1], shas[0]]);
     assert.match(c[0].why, /before .* which the analysis names/);
     assert.match(c[1].why, /earlier fix of LAB-2/);
-    assert.match(c[2].why, /14-day suspect window/);
+    assert.match(planGoodPoints({ analysis: {}, created: '2026-10-25T00:00:00Z', windowDays: 14, git, bad })[0].why, /14-day suspect window/);
     assert.deepEqual(planGoodPoints({ analysis: {}, created: null, git, bad }), [], 'nothing to go on');
+    // VAX-13: the analysis gave the commit that broke it as priorArt.commit; its parent is still the good point.
+    const breaker = planGoodPoints({ analysis: { priorArt: { kind: 'regression', key: 'LAB-2', commit: shas[6].slice(0, 7) } }, created: null, git, bad });
+    assert.deepEqual(breaker.map((x) => x.sha), [shas[6], shas[5]]);
+    assert.match(breaker[1].why, /the commit before .{7}, which the analysis names/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
