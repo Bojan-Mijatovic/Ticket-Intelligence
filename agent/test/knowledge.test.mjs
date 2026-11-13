@@ -64,7 +64,7 @@ test('lint: each rule', () => {
 });
 
 test('lint: only the given tickets get the entry rules; the file rules apply to all', () => {
-  const text = `${GOOD.replace('- **Type**: bug\n', '')}\nMarino Paolo MRNPLA61S03C351V, nato il 03/11/1961, mario.rossi@example.it, tel. 333 1234567\n`;
+  const text = `${GOOD.replace('- **Type**: bug\n', '')}\nMarino Paolo MRNPLA61S03C351V, nato il 03/11/1961, mario.rossi@gmail.com, tel. 333 1234567\n`;
   const found = lintKnowledge([{ file: 'f.md', text }], { keys: ['LAB-99'] });
   assert.deepEqual(found.map((f) => f.message.split(':')[0]).sort(), ['birth date', 'e-mail address', 'fiscal code', 'phone number']);
 });

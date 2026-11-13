@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { createJira } from './lib/jira-actions.mjs';
 import { createJiraHealth } from './lib/jira-health.mjs';
 import { askQuestion } from './lib/ask.mjs';
-import { cliProject, loadProjects, peerCheckouts } from './lib/projects.mjs';
+import { cliProject, loadProjects, peerCheckouts, teamOf } from './lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -21,6 +21,7 @@ if (!question) {
 const all = loadProjects(HERE);
 const p = cliProject(all);
 const jira = createJira();
+jira.allowTeam(teamOf(all.projects));
 // Without valid credentials Jira answers with no tickets instead of an error: the answer would be a wrong "not found".
 const health = await createJiraHealth({ jira, projects: [p.key] }).check();
 if (health.ok === false) {

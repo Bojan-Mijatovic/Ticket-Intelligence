@@ -206,6 +206,9 @@ export function openSvn(dir) {
     /** Not compared on SVN (a branch diff is a server round trip per branch): no fix-in-progress detection there. */
     changedFiles: () => [],
 
+    /** SVN logins are not names: the team for the redaction comes from Jira and the config (redaction.staff). */
+    authors: () => [],
+
     branches() {
       const xml = svn('ls', '--xml', `${reposRoot}/branches`);
       return [...xml.matchAll(/<entry\s+kind="dir">\s*<name>([^<]+)<\/name>[\s\S]*?<author>([^<]*)<\/author>\s*<date>([^<]+)<\/date>/g)].map(([, name, author, date]) => ({

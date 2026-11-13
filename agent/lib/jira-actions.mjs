@@ -7,9 +7,14 @@ import { join } from 'node:path';
 
 const SKILL = [join(homedir(), '.claude', 'skills', 'analyze-ticket'), join(process.cwd(), '.claude', 'skills', 'analyze-ticket')].find((p) => existsSync(p));
 const { loadConfig } = await import(new URL(`file:///${join(SKILL, 'scripts', 'lib', 'config.mjs').replace(/\\/g, '/')}`));
+import { createRedactor, redactionEnabled } from '../../.claude/skills/analyze-ticket/scripts/lib/redact.mjs';
 
 export function createJira() {
   const cfg = loadConfig();
+  // R-02: the ticket text this client returns for a model (getIssue, getIssueFull) is masked; summaries returned by
+  // search() feed plain-code pages and stay as they are. The team (allowTeam, configured staff) stays readable.
+  const redactor = createRedactor({ enabled: redactionEnabled(cfg), allow: cfg.redaction?.staff ?? [] });
+  const masked = (s) => redactor.text(s);
   if (cfg.mock || !cfg.baseUrl) throw new Error('The agent needs a real Jira: set JIRA_MOCK=0 and JIRA_BASE_URL in the analyze-ticket .env');
   const auth = process.env.JIRA_PAT
     ? `Bearer ${process.env.JIRA_PAT}`
@@ -36,6 +41,12 @@ export function createJira() {
   return {
     baseUrl: cfg.baseUrl,
     browseUrl: (key) => `${cfg.baseUrl}/browse/${key}`,
+
+    /** Names of the team that the redaction keeps (git authors, Jira users); see redact.mjs. */
+    allowTeam: (names) => redactor.allow(names),
+    redaction: () => ({ enabled: redactor.enabled, masked: redactor.stats() }),
+    /** Masks personal data in a text the agent is about to give a model (R-02). */
+    redact: masked,
 
     /** The account the credentials belong to; 401 when Jira rejects them (jira-health.mjs). */
     async myself() {
@@ -88,17 +99,27 @@ export function createJira() {
 
     async getIssue(key) {
       const i = await api('GET', `/rest/api/2/issue/${encodeURIComponent(key)}?fields=summary,description,labels,priority,status`);
-      return { key: i.key, summary: i.fields.summary, description: i.fields.description ?? '', labels: i.fields.labels ?? [], priority: i.fields.priority?.name ?? null, status: i.fields.status?.name };
+      return { key: i.key, summary: masked(i.fields.summary), description: masked(i.fields.description ?? ''), labels: i.fields.labels ?? [], priority: i.fields.priority?.name ?? null, status: i.fields.status?.name };
     },
 
     /** One ticket with what a reader needs: type, dates, description, the last comments and the linked tickets. */
-    async getIssueFull(key, { maxComments = 5, maxChars = 1500 } = {}) {
+    /**
+     * @param {boolean} [o.raw]  the text as it is, NOT for a model: only for the local redaction audit
+     *   (agent/redaction-audit.mjs), which shows a person what the masking would change
+     */
+    async getIssueFull(key, { maxComments = 5, maxChars = 1500, raw = false } = {}) {
       const i = await api('GET', `/rest/api/2/issue/${encodeURIComponent(key)}?fields=summary,description,status,issuetype,created,resolutiondate,assignee,reporter,comment,issuelinks`);
       const f = i.fields;
-      const cut = (s, n) => (String(s ?? '').length > n ? `${String(s).slice(0, n)}…` : String(s ?? ''));
+      // The people of the ticket are the team: their names stay; the text is masked (R-02).
+      redactor.allow([f.assignee?.displayName, f.reporter?.displayName, ...(f.comment?.comments ?? []).map((c) => c.author?.displayName)]);
+      const mask = raw ? (s) => String(s ?? '') : masked;
+      const cut = (s, n) => {
+        const t = mask(String(s ?? ''));
+        return t.length > n ? `${t.slice(0, n)}…` : t;
+      };
       return {
         key: i.key,
-        summary: f.summary,
+        summary: mask(f.summary),
         type: f.issuetype?.name ?? null,
         status: f.status?.name ?? null,
         created: f.created,

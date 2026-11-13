@@ -33,13 +33,16 @@ if (args.includes('--list')) {
   process.exit(0);
 }
 
-/** Short hash → ticket keys in the commit subject, from the project's main. */
-function commitKeys(repoDir) {
+/** Short hash → ticket keys in the commit subject, from the project's main and its linked apps' (K11). */
+function commitKeys(repoDir, peerDirs = []) {
   const out = new Map();
-  const log = execFileSync('git', ['log', 'origin/main', '--format=%h %s'], { cwd: repoDir, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-  for (const line of log.split('\n').filter(Boolean)) out.set(line.slice(0, 7), line.slice(8).match(/\b[A-Z][A-Z0-9_]+-\d+\b/g) ?? []);
+  for (const dir of [repoDir, ...peerDirs]) {
+    const log = execFileSync('git', ['log', 'origin/main', '--format=%h %s'], { cwd: dir, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    for (const line of log.split('\n').filter(Boolean)) if (!out.has(line.slice(0, 7))) out.set(line.slice(0, 7), line.slice(8).match(/\b[A-Z][A-Z0-9_]+-\d+\b/g) ?? []);
+  }
   return out;
 }
+const peerDirsOf = (p) => p.linked.map((k) => all.byKey(k)?.repoDir).filter(Boolean);
 
 function print(project, rows) {
   console.log(`\n${project}`);
@@ -60,7 +63,7 @@ if (opt('--rescore')) {
   const saved = readJson(opt('--rescore'), null);
   if (!saved) throw new Error(`no such file: ${opt('--rescore')}`);
   for (const [p, rows] of Object.entries(saved.projects)) {
-    const commits = commitKeys(all.byKey(p).repoDir);
+    const commits = commitKeys(all.byKey(p).repoDir, peerDirsOf(all.byKey(p)));
     const qs = new Map((SETS[p] ?? []).map((q) => [q.id, q]));
     print(p, rows.filter((r) => qs.has(r.q.id)).map((r) => ({ ...r, q: qs.get(r.q.id), score: scoreAnswer(qs.get(r.q.id), r.answer, { commits, map }) })));
   }
@@ -77,6 +80,8 @@ const { createJira } = await import('../agent/lib/jira-actions.mjs');
 const { createJiraHealth } = await import('../agent/lib/jira-health.mjs');
 const { askQuestion } = await import('../agent/lib/ask.mjs');
 const jira = createJira();
+const { teamOf } = await import('../agent/lib/projects.mjs');
+jira.allowTeam(teamOf(all.projects));
 const health = await createJiraHealth({ jira, projects: chosen }).check();
 if (health.ok === false) {
   console.error(`Jira unavailable: ${health.error}`);
@@ -91,7 +96,7 @@ for (const key of chosen) {
     console.error(`no project or no questions for ${key}`);
     continue;
   }
-  const commits = commitKeys(p.repoDir);
+  const commits = commitKeys(p.repoDir, peerDirsOf(p));
   const logDir = join(p.stateDir, 'ask-eval');
   mkdirSync(logDir, { recursive: true });
   const rows = [];

@@ -15,7 +15,8 @@ export function scoreAnswer(q, answer, { commits = new Map(), map = (k) => k } =
   const files = [];
   for (const s of answer.sources ?? []) {
     if (s.type === 'ticket') cited.add(String(s.ref).toUpperCase());
-    if (s.type === 'commit') for (const k of commits.get(String(s.ref).slice(0, 7)) ?? []) cited.add(k);
+    // A commit of a linked app is cited as "DEM:2af6918" (K11): its keys come from that app's history.
+    if (s.type === 'commit') for (const k of commits.get(String(s.ref).replace(/^[A-Z][A-Z0-9_]+:/, '').slice(0, 7)) ?? []) cited.add(k);
     if (s.type === 'file' || s.type === 'knowledge') files.push(String(s.ref).replace(/\\/g, '/'));
   }
   const expect = (q.expect ?? []).map(map);

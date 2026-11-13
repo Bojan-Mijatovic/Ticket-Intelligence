@@ -5,6 +5,7 @@
 // A project entry overrides the top-level settings (insights, backendTestDir, …). An old config with only
 // "project" and "repo" is read as a single project.
 
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { analysisCheckout } from './workspace.mjs';
@@ -72,6 +73,24 @@ export function peerCheckouts(project, all, warn = () => {}, { name = 'peer-repo
     }
   }
   return out;
+}
+
+/**
+ * The team of the projects: everyone in their git histories. The redaction (R-02) keeps these names readable, so the
+ * analysis still sees who knows the code. A repository that cannot be read adds nobody.
+ */
+export function teamOf(projects) {
+  const names = new Set();
+  for (const p of projects) {
+    // People of the team who write no code (testers, product owners): agent.config.json "staff".
+    for (const n of p.cfg?.staff ?? []) names.add(n);
+    try {
+      for (const n of execFileSync('git', ['log', '--all', '--format=%an%n%cn'], { cwd: p.repoDir, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }).split('\n')) if (n.trim()) names.add(n.trim());
+    } catch {
+      /* no repository yet */
+    }
+  }
+  return [...names];
 }
 
 /**

@@ -79,6 +79,9 @@ export function openGit(dir) {
       return { stat, patch: lines.slice(0, maxLines).join('\n') + (lines.length > maxLines ? `\n… [+${lines.length - maxLines} lines]` : '') };
     },
 
+    /** Everyone who wrote or committed in the history: the team, kept visible by the redaction (R-02). */
+    authors: () => [...new Set(git(['log', '--all', '--format=%an%n%cn']).split(/\r?\n/).map((s) => s.trim()).filter(Boolean))],
+
     /** Files a branch changes compared with the base it forked from (`base...branch`). */
     changedFiles: (branch, base) => git(['diff', '--name-only', `${base}...${branch}`]).split(/\r?\n/).filter(Boolean),
 

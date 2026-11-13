@@ -202,7 +202,12 @@ function invokeClaude({ cwd, prompt, cfg, addDirs = [], disallowedTools = [], to
  */
 export function skillEnv(cfg, extra = {}) {
   const components = cfg.insights?.components ?? [];
-  const env = { ...extra, ...(components.length ? { TICKET_INTEL_COMPONENTS: JSON.stringify(components.map(({ name, paths }) => ({ name, paths }))) } : {}) };
+  const env = {
+    ...extra,
+    ...(components.length ? { TICKET_INTEL_COMPONENTS: JSON.stringify(components.map(({ name, paths }) => ({ name, paths }))) } : {}),
+    // The team that writes no code, kept readable by the skill's redaction (R-02); git authors it finds itself.
+    ...(cfg.staff?.length ? { TICKET_INTEL_STAFF: cfg.staff.join(',') } : {}),
+  };
   return Object.keys(env).length ? env : null;
 }
 

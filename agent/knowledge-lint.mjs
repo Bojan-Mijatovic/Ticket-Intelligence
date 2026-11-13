@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { lintKnowledge, parseKnowledgeFile } from './lib/knowledge.mjs';
-import { cliProject, loadProjects } from './lib/projects.mjs';
+import { cliProject, loadProjects, teamOf } from './lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -43,7 +43,7 @@ const entries = files.flatMap((f) => (f.file.endsWith('README.md') ? [] : parseK
 const full = entries.filter((e) => !e.reference);
 console.log(`${new Set(full.map((e) => e.key)).size} documented ticket(s), ${full.length} full entr${full.length === 1 ? 'y' : 'ies'}, ${entries.length - full.length} reference(s)`);
 
-const findings = lintKnowledge(files, { commitExists, projects: all.projects.map((x) => x.key) });
+const findings = lintKnowledge(files, { commitExists, projects: all.projects.map((x) => x.key), team: teamOf(all.projects) });
 if (!findings.length) {
   console.log('No findings.');
   process.exit(0);

@@ -11,18 +11,21 @@ export { anchorOf, parseKnowledgeFile } from '../../.claude/skills/analyze-ticke
 import { parseKnowledgeFile } from '../../.claude/skills/analyze-ticket/scripts/lib/knowledge-file.mjs';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createRedactor, IDENTIFIER_RULES, isToolEmail } from '../../.claude/skills/analyze-ticket/scripts/lib/redact.mjs';
 
 // Statements about the state of a pull request or a branch: true when written, wrong a week later.
 const TIME_BOUND = /\b(not (yet )?merged|may not be merged|is not merged|not been merged|still (open|in review)|as of \d{4}-\d{2}-\d{2}|draft (pull request|PR)\b)/i;
 
 /** Patient (or other personal) data that must never be in the repository. */
-const PERSONAL = [
-  ['fiscal code', /\b[A-Z]{6}\d{2}[A-EHLMPRST]\d{2}[A-Z]\d{3}[A-Z]\b/],
-  ['e-mail address', /[\w.+-]+@[\w-]+\.[\w.-]*[a-z]{2,}/i],
-  ['phone number', /(?<![\w,.\-/])(?:\+39[ .-]?)?(?:3\d{2}|0\d{1,3})[ .-]?\d{6,8}(?![\d,.])/],
-  ['IBAN', /\b[A-Z]{2}\d{2}[A-Z]\d{10}[0-9A-Z]{12}\b/],
-  ['birth date', /\b(nato|nata|born|data di nascita|date of birth|birth date)\b[^.\n]{0,20}?\b\d{1,2}[/.-]\d{1,2}[/.-](19|20)\d{2}\b/i],
-];
+// The same identifier rules as the redaction (one source of truth, redact.mjs): the lint reports what the redaction
+// would mask. A tool address (noreply, example.com) is not a person's.
+const LABEL = { FISCAL_CODE: 'fiscal code', IBAN: 'IBAN', HEALTH_CARD: 'health card number', EMAIL: 'e-mail address', PHONE: 'phone number', BIRTH_DATE: 'birth date' };
+const PERSONAL = IDENTIFIER_RULES.map(([kind, re]) => {
+  const all = new RegExp(re.source, `${re.flags}g`);
+  // A matcher with the RegExp interface the checks below use: test() and match() through String.prototype.match.
+  const first = (text) => [...String(text).matchAll(all)].map((m) => m[0]).find((v) => kind !== 'EMAIL' || !isToolEmail(v)) ?? null;
+  return [LABEL[kind] ?? kind, { test: (t) => first(t) !== null, [Symbol.match]: (t) => (first(t) === null ? null : [first(t)]) }];
+});
 
 /** Commit hashes cited in a text: 7–40 hex characters with a digit and a letter, not a CSS colour (#…). */
 export const hashesIn = (text) => [...new Set([...String(text).matchAll(/(?<![#\w])[0-9a-f]{7,40}(?![\w])/g)].map((m) => m[0]).filter((h) => /\d/.test(h) && /[a-f]/.test(h)))];
@@ -35,12 +38,23 @@ export const hashesIn = (text) => [...new Set([...String(text).matchAll(/(?<![#\
  * @param {string[]} [o.projects]  the Jira project keys a ticket key may have (others are fixture or typo keys)
  * @param {string[]} [o.keys]      check the entry rules only for these tickets (a documentation run checks its own);
  *                                 the file rules (people, personal data) always apply
+ * @param {string[]} [o.team]      the team (git authors, staff): with it, a person's name that is not the team's is
+ *                                 personal data too (R-02's name rule, redact.mjs)
  * @returns {{ file: string, key: string | null, rule: string, message: string }[]}
  */
-export function lintKnowledge(files, { commitExists = () => true, projects = null, keys = null } = {}) {
+export function lintKnowledge(files, { commitExists = () => true, projects = null, keys = null, team = null } = {}) {
   const out = [];
   const add = (file, key, rule, message) => out.push({ file, key, rule, message });
   for (const { file, text } of files) {
+    if (team) {
+      // Names of people outside the team, found the same way as the redaction finds them.
+      const r = createRedactor({ allow: team });
+      r.text(text);
+      if ((r.stats().PERSON ?? 0) > 0) {
+        const names = [...new Set([...String(text).matchAll(/(?<![\p{L}\p{M}])(\p{Lu}[\p{Ll}\p{M}'’]{1,20})[ \t]+(\p{Lu}[\p{Ll}\p{M}'’]{1,20})(?![\p{L}\p{M}])/gu)].map((x) => x[0]).filter((n) => createRedactor({ allow: team }).text(n) !== n))];
+        add(file, null, 'personal-data', `a person's name outside the team: ${names.slice(0, 3).join(', ')} (write "a patient" or "the operator"; add a team member to agent.config.json "staff")`);
+      }
+    }
     if (/(^|\/)README\.md$/.test(file)) {
       for (const [name, re] of PERSONAL) if (re.test(text)) add(file, null, 'personal-data', `${name}: ${text.match(re)[0]}`);
       continue;

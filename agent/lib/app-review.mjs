@@ -12,6 +12,8 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { runClaude } from './analyze.mjs';
 import { analysisCheckout } from './workspace.mjs';
+import { teamOf } from './projects.mjs';
+import { createRedactor, redactionEnabled } from '../../.claude/skills/analyze-ticket/scripts/lib/redact.mjs';
 
 const READ_ONLY = ['Bash', 'PowerShell', 'Edit', 'Write', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Task', 'Skill'];
 export const SCORE_AREAS = ['Reliability', 'Test safety net', 'Design and structure', 'Maintainability', 'Knowledge spread'];
@@ -144,6 +146,9 @@ export const reviewFile = (stateDir) => join(stateDir, 'insights', 'review.json'
 export async function writeReview({ insights, project, onProgress = () => {} }) {
   const { repoDir, stateDir, cfg } = project;
   const facts = reviewFacts(insights, { ...project, relations: cfg.relations });
+  // R-02: ticket summaries are people's words and may name a patient; masked before the model reads them.
+  const redactor = createRedactor({ enabled: redactionEnabled({}), allow: teamOf([project]) });
+  facts.tickets = facts.tickets.map((t) => ({ ...t, summary: redactor.text(t.summary) }));
   const dir = join(stateDir, 'insights');
   mkdirSync(dir, { recursive: true });
   const factsFile = join(dir, 'review-facts.json');

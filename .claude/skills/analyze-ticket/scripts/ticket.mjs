@@ -11,6 +11,18 @@ import { keywords, trimText, stem, stemSet, codeClues } from './lib/text.mjs';
 import { computeSignals, rankRelated, scorePeople } from './lib/analysis.mjs';
 import { codeContext } from './lib/code.mjs';
 import { knownProblems } from './lib/known.mjs';
+import { createRedactor, peopleOfIssue, redactIssue, redactionEnabled } from './lib/redact.mjs';
+
+/** The team of the repository (git authors), kept visible by the redaction; [] outside a repository or on SVN. */
+function teamOfRepo(opts) {
+  // Plus the team that writes no code, given by the agent (agent.config.json "staff") or the environment.
+  const staff = String(process.env.TICKET_INTEL_STAFF ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  try {
+    return [...staff, ...(openRepo(typeof opts.repo === 'string' ? opts.repo : process.cwd())?.authors?.() ?? [])];
+  } catch {
+    return staff;
+  }
+}
 import { openRepo } from './lib/vcs/index.mjs';
 
 const USAGE = `Usage: node ticket.mjs <command> [args]
@@ -193,6 +205,11 @@ async function analyze(source, cfg, ref, opts) {
     if (e.status === 404 && title) return selection(`${key} was not found (or is not visible to this account); searched by title instead.`);
     throw e;
   }
+  // R-02: personal data is masked before anything reaches the model; the team (git authors, Jira users, configured
+  // staff) stays readable. Everything below works on the masked text.
+  const redactor = createRedactor({ enabled: redactionEnabled(cfg), allow: [...(cfg.redaction?.staff ?? []), ...teamOfRepo(opts), ...peopleOfIssue(target)] });
+  target = redactIssue(target, redactor);
+  const redactImages = redactor.enabled && cfg.redaction?.attachments === 'skip';
   const titleCheck = title ? checkTitle(title, target.summary) : null;
   if (titleCheck && !titleCheck.matches) {
     warnings.push(`The given title does not match ${key}'s summary ("${target.summary}"). The key may be wrong — confirm with the user.`);
@@ -209,7 +226,8 @@ async function analyze(source, cfg, ref, opts) {
     .filter((c) => c.length <= 40 && !kws.includes(c.toLowerCase()))
     .slice(0, 6);
 
-  const attachments = await downloadImages(source, target, opts['attachments-dir'], warnings);
+  if (redactImages && target.attachments?.length) warnings.push(`${target.attachments.length} attachment(s) not downloaded (redaction.attachments: skip): screenshots may show patient data.`);
+  const attachments = redactImages ? [] : await downloadImages(source, target, opts['attachments-dir'], warnings);
 
   const ctx = { target, envs, envOverride, keywords: kws, clues };
   const queries = buildCandidateQueries(cfg, ctx);
@@ -226,7 +244,9 @@ async function analyze(source, cfg, ref, opts) {
   const ranked = rankRelated(target, candidates, ctx).slice(0, maxRelated);
   const related = await mapLimit(ranked, 4, async (r) => {
     try {
-      return { ...r, issue: await source.getIssue(r.issue.key, warnings) };
+      const issue = await source.getIssue(r.issue.key, warnings);
+      redactor.allow(peopleOfIssue(issue));
+      return { ...r, issue: redactIssue(issue, redactor) };
     } catch (e) {
       warnings.push(`Could not load details of ${r.issue.key}: ${e.message}`);
       return r;
@@ -259,6 +279,18 @@ async function analyze(source, cfg, ref, opts) {
     }
   }
 
+  // R-02 also for what the repository says about the ticket: commit messages and knowledge entries were written by
+  // people and may name a patient (LAB-19's did). Code and diffs are left as they are; the repository itself must be
+  // kept free of personal data (REDACTION.md), and the analysis can read it anyway.
+  if (code && redactor.enabled) {
+    const m = (s) => redactor.text(s);
+    const commit = (c) => ({ ...c, subject: m(c.subject), body: m(c.body) });
+    code.ticketCommits = (code.ticketCommits ?? []).map(commit);
+    code.suspectCommits = (code.suspectCommits ?? []).map(commit);
+    code.components = (code.components ?? []).map((c) => ({ ...c, recentCommits: (c.recentCommits ?? []).map((r) => ({ ...r, subject: m(r.subject) })) }));
+    if (code.knowledgeDocs?.entries) code.knowledgeDocs.entries = code.knowledgeDocs.entries.map((e) => ({ ...e, title: m(e.title), symptom: m(e.symptom), rootCause: m(e.rootCause), fix: m(e.fix) }));
+  }
+
   return {
     source: source.kind,
     generatedAt: new Date().toISOString(),
@@ -277,6 +309,8 @@ async function analyze(source, cfg, ref, opts) {
     // Already known? (K20): the evidence in one place; the analysis decides the kind (SKILL.md step "Already known?").
     priorArt: knownProblems({ target, related: related.map(presentRelated), code }),
     people: scorePeople(target, related, cfg),
+    // R-02: what was masked ([PERSON_1], [FISCAL_CODE_1], …); counts only, never the values.
+    redaction: { enabled: redactor.enabled, masked: redactor.stats(), attachments: redactImages ? 'skipped' : 'downloaded' },
     warnings,
   };
 }
@@ -302,7 +336,8 @@ async function main() {
       const key = parseTicketRef(pos[0]);
       if (!key) throw new Error('fetch needs a ticket key or URL');
       const warnings = [];
-      const issue = await source.getIssue(key, warnings);
+      const raw = await source.getIssue(key, warnings);
+      const issue = redactIssue(raw, createRedactor({ enabled: redactionEnabled(cfg), allow: [...(cfg.redaction?.staff ?? []), ...teamOfRepo(opts), ...peopleOfIssue(raw)] }));
       result = { source: source.kind, issue: presentTarget(issue), signals: computeSignals(issue, cfg), warnings };
       break;
     }

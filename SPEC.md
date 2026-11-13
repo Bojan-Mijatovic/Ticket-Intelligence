@@ -190,7 +190,7 @@ Scores only order lists; every recommendation must cite tickets, commits or file
 | Writes | the analysis is read-only; the watcher is the only writer, limited by `policy.json`; SVN/git commits and pushes require explicit confirmation (also enforced in Claude Code permission settings) |
 | Prompt injection | ticket text, commit messages and code comments are treated as data, not instructions (stated in both skills); runs that read free text from people other than the ticket reporter (reviewer, Ask) get an allow-list of read tools (`--tools Read,Grep,Glob`); every run starts without MCP servers and without the tools that publish, schedule or message |
 | Dashboard | answers only requests from this machine (loopback); `dashboardAllowRemote: true` in `agent.config.json` opens it to the network |
-| Patient data | **open:** automatic redaction before analysis is not implemented; required before use on company tickets (R-02) |
+| Patient data | redaction before every model (`redact.mjs`): fiscal codes, IBANs, health cards, e-mails, phones, birth dates, and names outside the team are masked with consistent placeholders; screenshots can be skipped; `docs/knowledge` refuses personal data (lint); audit with `redaction-audit.mjs` ([docs/REDACTION.md](docs/REDACTION.md)). **Open:** DPO approval and an approved AI service before company tickets (R-02) |
 | Audit | every agent step and action in `events.jsonl`; per-run transcript and result in `state/work/<KEY>/` |
 
 ## 8. Non-functional requirements

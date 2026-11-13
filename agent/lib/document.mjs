@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runClaude, skillEnv } from './analyze.mjs';
 import { describeFindings, lintKnowledge } from './knowledge.mjs';
+import { teamOf } from './projects.mjs';
 import { createWorkspace } from './workspace.mjs';
 
 const AGENT_AUTHOR = ['-c', 'user.name=Ticket Intelligence Agent', '-c', 'user.email=ticket-intelligence-agent@users.noreply.github.com'];
@@ -64,7 +65,9 @@ function lintChanged(ws, key, cfg) {
       return false;
     }
   };
-  return lintKnowledge(files.map((f) => ({ file: f, text: readFileSync(join(ws.path, f), 'utf8') })), { keys: [key], projects: [cfg.project], commitExists });
+  // The team of this repository (git authors, agent.config.json "staff"): any other person's name is personal data.
+  const team = teamOf([{ repoDir: ws.path, cfg }]);
+  return lintKnowledge(files.map((f) => ({ file: f, text: readFileSync(join(ws.path, f), 'utf8') })), { keys: [key], projects: [cfg.project], commitExists, team });
 }
 
 const correction = (findings) => `The documentation you wrote does not pass the project's knowledge checks. Correct exactly these findings in the files (docs/knowledge/*.md only) and keep everything else as it is. Do not commit.

@@ -41,3 +41,8 @@ test('prior art: what a suggestion says today, and whether it is the expected ve
   assert.equal(priorArtOk({ verdicts: ['duplicate'], key: 'CUP_DEMO-2511' }, { verdict: 'duplicate', key: 'DEM-5' }, map), true);
   assert.equal(priorArtOk({ verdicts: ['new'] }, { verdict: 'new', key: null }), true);
 });
+
+test('ask eval: a linked app\'s commit (DEM:2af6918) counts for the keys in its subject (K11)', () => {
+  const s = scoreAnswer({ found: true, expect: ['DEM-17'] }, { found: true, sources: [{ type: 'commit', ref: 'DEM:2af6918' }] }, { commits: new Map([['2af6918', ['DEM-17']]]) });
+  assert.equal(s.pass, true);
+});

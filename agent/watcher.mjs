@@ -31,7 +31,7 @@ import { suiteInsights } from './lib/suite.mjs';
 import { askQuestion } from './lib/ask.mjs';
 import { recordedAsks, recordedRuns } from './lib/tour.mjs';
 import { attachMailUpdates } from './lib/mail-updates.mjs';
-import { loadProjects, peerCheckouts } from './lib/projects.mjs';
+import { loadProjects, peerCheckouts, teamOf } from './lib/projects.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const all = loadProjects(HERE);
@@ -96,6 +96,7 @@ if (previous?.pid && previous.pid !== process.pid && alive(previous.pid)) {
 
 const events = createEventLog(join(rootState, 'events.jsonl'));
 const jira = createJira();
+jira.allowTeam(teamOf(all.projects)); // R-02: the team's names stay readable in the masked ticket text
 const mail = attachMailUpdates({ events, policy, cfg, browseUrl: (key) => jira.browseUrl(key) });
 
 const agentLabels = Object.values(cfg.labels);

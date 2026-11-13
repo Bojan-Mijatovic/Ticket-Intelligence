@@ -1,5 +1,7 @@
 {
   "pollSeconds": 30,
+  "_staff": "People of the team who write no code (testers, product owners). The redaction of personal data (R-02) keeps every git author and Jira user readable, and these names too; any other 'Name Surname' in ticket text is masked before a model reads it. Check with: node agent/redaction-audit.mjs --project <KEY>.",
+  "staff": ["Elena Conti"],
   "settleMinutes": 1,
   "lookbackHours": 72,
   "maxParallel": 1,
