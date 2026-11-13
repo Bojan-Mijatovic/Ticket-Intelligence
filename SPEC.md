@@ -109,6 +109,7 @@ Ticket Intelligence gives every Jira ticket a fast, evidence-based first analysi
 | ID | Requirement | Status |
 |---|---|---|
 | FR-50 | Write the cause/fix entry to `docs/knowledge/<component>.md` and update the index; confirmed facts vs. assumptions are labelled; each entry has a Type and Search terms (error text, screen and route, user words in the ticket's language and English) and no PR or branch state | Implemented |
+| FR-59 | Knowledge refresh: entries citing commits not on main get the ticket's commit on main ("Merged into main as …") through one draft PR; entries citing files gone from main are listed as stale (`agent/knowledge-refresh.mjs`; K7) | Implemented |
 | FR-58 | The fix and the AI review get the knowledge entries of the code they touch (files of the analysis or the diff, the prior art and related tickets): root cause, fix, "Prevent recurrence"; a documented cause must not come back (`knowledgeFor`; K13) | Implemented |
 | FR-56 | Ask over the suite: a project's linked apps are searched in Jira, their history and code (read-only checkouts) are read, their files cited as `KEY:path` and checked there (K11) | Implemented |
 | FR-57 | Ask feedback and knowledge gaps: 👍/👎 with a note per answer; gaps = "not found" and 👎 questions grouped by words; coverage of resolved bugs by knowledge entries per component; a gap asked twice is a suggested ticket (K12) | Implemented |

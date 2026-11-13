@@ -350,6 +350,15 @@ node agent/knowledge-migrate.mjs --project DEM          # dry run: where every e
 node agent/knowledge-migrate.mjs --project DEM --yes    # branch docs/migrate-<time>, one commit, draft PR
 ```
 
+**Entries stay true.** An entry written while the fix was still on its branch cites commits that are gone after a squash merge; a file it cites may be renamed later. Without AI:
+
+```
+node agent/knowledge-refresh.mjs --project DEM          # dry run: entries to update, stale entries
+node agent/knowledge-refresh.mjs --project DEM --yes    # "Merged into main as <commit>" on their Fix line, one draft PR
+```
+
+The commit on main is the ticket's own (its subject starts with the key; a documentation commit is not one). An entry citing a file that no longer exists on main (a path may be shortened from the front) is listed as stale for a person to update.
+
 **Knowledge lint.** Before a documentation branch is pushed, plain code checks the entries the run wrote (`lib/knowledge.mjs`): **Type**, **Symptom**, **Search terms** (at least 3), **Root cause** labelled confirmed or assumed, and **Fix** are there; every cited commit exists; no statement about the state of a PR or branch ("not merged yet", "draft PR #14", "as of <date>"); no fixture keys (`CUP_…`); "People who know it" lists people, not the agent; and no personal data anywhere in the file (fiscal codes, e-mail addresses, phone numbers, IBANs, birth dates). With findings, the agent corrects them once in the same session; if they remain, nothing is pushed and the ticket gets `ai-doc-failed` with the findings. The same rules on what is already written:
 
 ```

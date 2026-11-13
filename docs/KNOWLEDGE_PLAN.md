@@ -179,6 +179,7 @@ Phase 0 sets the baseline. Phases 1–4 then change **one lever at a time**, re-
 - When a fix PR is merged (`merge-fix.mjs`, or the poll seeing it merged) and its ticket has an entry, the entry's **Fix** line is updated by code (merge commit added); no AI run.
 - `knowledge-lint` also lists entries whose key files no longer exist on `main` → Insights "stale entries".
 - **Acceptance:** after merging a fix the entry names the merge commit; a renamed file shows the entry as stale.
+- **Done 2026-11-13** (FR-59), as a command rather than a hook on every merge: `agent/lib/knowledge-refresh.mjs` (`planRefresh`) and `agent/knowledge-refresh.mjs` (dry run; `--yes` = one draft PR on `docs/refresh-<time>`, kept by `reset-demo`). Tests: `agent/test/knowledge-refresh.test.mjs` (the merge commit added, nothing when named or absent, a missing file → stale). The first dry run on the suite found two false alarms in my own code, both fixed: the "commit on main" of DEM-32 was DEM-40's (it names DEM-32 in its body; now only a commit whose subject starts with the key counts), and LAB-23 looked stale because its entry cites `shared/utils/numbers.ts` (a path shortened from the front now matches). After that: all four projects clean. The dashboard does not show stale entries yet; the command is meant for the night shift (ROADMAP #3).
 
 ### Phase 3: better retrieval
 

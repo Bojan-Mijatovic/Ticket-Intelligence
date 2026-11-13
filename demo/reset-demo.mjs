@@ -34,7 +34,7 @@ const APPLY = process.argv.includes('--yes');
 // Documentation branches are kept unless --drop-docs: the knowledge base is meant to grow across rehearsals (F23 of
 // docs/KNOWLEDGE_PLAN.md: resets used to close 7 of 9 documentation PRs of MediAgenda).
 const DROP_DOCS = process.argv.includes('--drop-docs');
-const DOCS_BRANCH = /^docs\/([A-Z][A-Z0-9_]+-\d+|(backfill|migrate)-[\w.-]+)$/;
+const DOCS_BRANCH = /^docs\/([A-Z][A-Z0-9_]+-\d+|(backfill|migrate|refresh)-[\w.-]+)$/;
 const FIX_BRANCH = /^[A-Z][A-Z0-9_]+-\d+$/;
 const AGENT_BRANCH = { test: (b) => FIX_BRANCH.test(b) || (DROP_DOCS && DOCS_BRANCH.test(b)) };
 // Tickets made by hand in Jira to delete as well: --also DEM-11,DEM-12 (checked before anything is changed).
