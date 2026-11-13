@@ -9,6 +9,8 @@ import { componentRules, namedComponentOf, namedComponentOfFiles, slugOf } from 
 import { parseKnowledgeFile } from './knowledge-file.mjs';
 
 const DAY = 864e5;
+// An AI agent as author or co-author (the Ticket Intelligence agent, Claude, Copilot): its commits are not a person's.
+const AGENT_AUTHOR = /ticket[ -]intelligence[ -]agent|noreply@anthropic\.com|\bclaude\b|copilot/i;
 
 const REPO_DEFAULTS = {
   docsPath: 'docs/knowledge',
@@ -198,7 +200,15 @@ export function codeContext({ vcs, target, related, envs }) {
   const presentComponent = (c) => {
     const history = vcs.logByPaths([c.path], { since, limit: 200 }).map(alias);
     const authors = new Map();
+    let agentCommits = 0;
     for (const h of history) {
+      // An AI agent's work is not a person's: its own commits, and squash merges of its pull requests, which git
+      // credits to whoever clicked Merge (the agent is only a co-author). Counting them made the person who merged
+      // the "owner" of code they never wrote (LAB-25, DEM-43 scenarios, 2026-11-13).
+      if (AGENT_AUTHOR.test(h.author) || AGENT_AUTHOR.test(String(h.body ?? '').match(/^Co-Authored-By:.*$/gim)?.join('\n') ?? '')) {
+        agentCommits += 1;
+        continue;
+      }
       const a = authors.get(h.author) ?? { name: h.author, commits: 0, lastCommit: h.date, keys: new Set() };
       a.commits += 1;
       if (Date.parse(h.date) > Date.parse(a.lastCommit)) a.lastCommit = h.date;
@@ -216,6 +226,7 @@ export function codeContext({ vcs, target, related, envs }) {
       relatedTickets: [...c.keys],
       files: [...c.files.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([f]) => f),
       authors: [...authors.values()].sort((a, b) => b.commits - a.commits).slice(0, 6).map((a) => ({ ...a, keys: [...a.keys] })),
+      agentCommits, // commits of an AI agent (its own or squash-merged), left out of the authors
       recentCommits: history.slice(0, 8).map(({ short, date, author, subject, files: f }) => ({ short, date, author, subject, files: f.slice(0, 8) })),
       componentReadme: ['README.md', 'readme.md'].map((r) => `${c.path}/${r}`).find((p) => c.path !== '(root)' && existsSync(join(repo, p))) ?? null,
       // With named components, a path outside all of them (tests, build files) has no knowledge file of its own.

@@ -44,3 +44,13 @@ test('no automatic fix when it is already known as a duplicate, in progress or f
   assert.equal(fixBlocker({ issue, result: r('none'), policy }), null);
   assert.equal(fixBlocker({ issue, result: r('fixed-on-main'), policy: { ...policy, proposeFixWhen: { ...policy.proposeFixWhen, skipKnown: [] } } }), null);
 });
+
+test('two reports naming each other: only the newer one is held back as the duplicate (DEM-42/DEM-43)', () => {
+  const policy = { actions: { proposeFix: 'auto' }, proposeFixWhen: { minConfidence: 'high', titleTags: ['FE'], skipDuplicates: true } };
+  const older = { key: 'DEM-42', summary: '[FE] - Agenda: Struttura' };
+  const newer = { key: 'DEM-43', summary: '[FE] - Agenda: Struttura again' };
+  assert.equal(fixBlocker({ issue: older, result: { confidence: 'high', duplicateOf: { key: 'DEM-43' }, priorArt: { kind: 'solved-before', key: 'DEM-5' } }, policy }), null);
+  assert.equal(fixBlocker({ issue: newer, result: { confidence: 'high', duplicateOf: { key: 'DEM-42' }, priorArt: { kind: 'duplicate', key: 'DEM-42' } }, policy }), 'possible duplicate of DEM-42');
+  assert.equal(fixBlocker({ issue: older, result: { confidence: 'high', priorArt: { kind: 'duplicate', key: 'DEM-43' } }, policy }), null);
+  assert.equal(fixBlocker({ issue: newer, result: { confidence: 'high', priorArt: { kind: 'duplicate', key: 'LAB-3' } }, policy }), 'already known: duplicate of LAB-3');
+});

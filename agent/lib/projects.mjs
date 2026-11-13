@@ -61,12 +61,12 @@ export function loadProjects(agentDir) {
  * ({ key, name, dir, relation }). Each one lives in the linked project's state folder (peer-repo), apart from that
  * project's own analysis checkout. A linked repository that cannot be checked out is left out (with a warning).
  */
-export function peerCheckouts(project, all, warn = () => {}) {
+export function peerCheckouts(project, all, warn = () => {}, { name = 'peer-repo' } = {}) {
   const out = [];
   for (const key of project.linked) {
     const peer = all.byKey(key);
     try {
-      out.push({ key, name: peer.name, dir: analysisCheckout({ repoDir: peer.repoDir, stateDir: peer.stateDir, name: 'peer-repo' }).replace(/\\/g, '/'), relation: project.cfg.relations?.[key] ?? '' });
+      out.push({ key, name: peer.name, dir: analysisCheckout({ repoDir: peer.repoDir, stateDir: peer.stateDir, name }).replace(/\\/g, '/'), relation: project.cfg.relations?.[key] ?? '' });
     } catch (e) {
       warn(`linked project ${key} left out: ${e.message}`);
     }

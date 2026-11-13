@@ -10,7 +10,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createEventLog } from './lib/events.mjs';
@@ -20,6 +20,7 @@ import { documentResolved } from './lib/document.mjs';
 import { createDocsPrs } from './lib/docs-prs.mjs';
 import { repoKnowledge } from './lib/doc-candidates.mjs';
 import { loadPriorArtSources } from './lib/prior-art.mjs';
+import { knowledgeGaps, readAsks } from './lib/gaps.mjs';
 import { processTicket } from './lib/pipeline.mjs';
 import { currentBranch, previewBranch } from './lib/preview.mjs';
 import { reviewPullRequest } from './lib/review.mjs';
@@ -326,7 +327,7 @@ function priorArtSourcesOf(p, refresh = false) {
   return sources;
 }
 const suggestionsOf = (p, data, review, refresh = false) =>
-  suggestTickets({ insights: data, review, rules: p.cfg.insights?.components ?? [], created: readCreated(p.stateDir), project: p.key, priorArtSources: priorArtSourcesOf(p, refresh) });
+  suggestTickets({ insights: data, review, rules: p.cfg.insights?.components ?? [], created: readCreated(p.stateDir), project: p.key, priorArtSources: priorArtSourcesOf(p, refresh), gaps: knowledgeGaps(readAsks(p.stateDir)) });
 async function insightsCached(p, refresh = false) {
   const hit = insightsCache.get(p.key);
   if (!refresh && hit && Date.now() - hit.at < 120_000) return hit.data;
@@ -450,7 +451,9 @@ const server = createServer(async (req, res) => {
       const data = await insightsCached(p, refresh);
       const review = readReview(p, data);
       const suggestions = suggestionsOf(p, data, review, refresh);
-      return json(res, 200, { ...data, project: p.key, recommendations: readRecommendations(p.stateDir, data), review, reviewing: reviewing === p.key, suggestions, createTicket: policy.actions.createTicket ?? 'draft' });
+      // Knowledge gaps (K12): questions without a good answer; the coverage per component is put together on the page.
+      const gaps = knowledgeGaps(readAsks(p.stateDir));
+      return json(res, 200, { ...data, gaps, project: p.key, recommendations: readRecommendations(p.stateDir, data), review, reviewing: reviewing === p.key, suggestions, createTicket: policy.actions.createTicket ?? 'draft' });
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     }
@@ -598,6 +601,20 @@ const server = createServer(async (req, res) => {
       mergingDocs = false;
     }
   }
+  // Feedback on an Ask answer (K12): 👍 / 👎 and an optional note, kept locally; it feeds the knowledge gaps.
+  if (req.method === 'POST' && path === '/api/ask/feedback') {
+    try {
+      const body = await readBody(req);
+      const p = readyProject(body);
+      const vote = body.vote === 'up' || body.vote === 'down' ? body.vote : null;
+      if (!vote || !body.answerAt) throw badRequest('vote (up or down) and answerAt are needed');
+      const entry = { at: new Date().toISOString(), answerAt: String(body.answerAt), question: String(body.question ?? '').slice(0, 500), vote, note: String(body.note ?? '').trim().slice(0, 500) };
+      appendFileSync(join(p.stateDir, 'ask-feedback.jsonl'), `${JSON.stringify(entry)}\n`);
+      return json(res, 200, { ok: true });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    }
+  }
   // Ask the knowledge base of one project (FR-65): one question at a time; progress goes to the dashboard stream.
   if (req.method === 'POST' && path === '/api/ask') {
     if (asking) return json(res, 409, { ok: false, error: 'another question is being answered; try again in a minute' });
@@ -606,7 +623,9 @@ const server = createServer(async (req, res) => {
     try {
       const p = readyProject(body);
       await health.require(); // otherwise "not in the knowledge base" when Jira only could not be searched
-      const answer = await askQuestion({ question: body.question, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira, project: { key: p.key, name: p.name }, onProgress: (step) => broadcast({ type: 'ask-progress', id: body.id, step }) });
+      // The linked apps too (K11): read-only checkouts of their main, apart from the analysis' (ask-peer-repo).
+      const peers = peerCheckouts(p, all, (text) => broadcast({ type: 'ask-progress', id: body.id, step: `warning: ${text}` }), { name: 'ask-peer-repo' });
+      const answer = await askQuestion({ question: body.question, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira, project: { key: p.key, name: p.name }, peers, onProgress: (step) => broadcast({ type: 'ask-progress', id: body.id, step }) });
       return json(res, 200, { ok: true, project: p.key, ...answer });
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });

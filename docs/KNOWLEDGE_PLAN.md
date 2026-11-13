@@ -100,7 +100,8 @@ B. REPORTED BY A PERSON (Jira → watcher → analysis)
 | Recurrence recognized | eval scenario (K1): a repeat of a documented bug in other words; the analysis cites the entry | not measured | the entry is cited in the scenario run |
 | Cost per question | `asks.jsonl` | $0.07–0.37 | ≤ $0.25 average |
 | Jira outage noticed | time from the first 401 to a visible warning | never (F16) | ≤ one poll (30 s) |
-| Prior-art verdict | eval (K21): correct verdict on known cases | suggestions 3/4 (2026-11-12) → **4/4** after K17/K19 (2026-11-13); reported tickets not run yet | ≥ 90 %, and no "duplicate" on a genuinely new problem |
+| Prior-art verdict | eval (K21): correct verdict on known cases | suggestions 3/4 (2026-11-12) → **4/4** after K17/K19; reported tickets **4/4 verdicts right** (DEM-42, DEM-43, LAB-25, DEM-44; 2026-11-13), no false duplicate on the new problem | ≥ 90 %, and no "duplicate" on a genuinely new problem |
+| Ask over the suite | eval cross-app questions | 1/2 → **2/2** after K11 | the cause in a linked app found |
 | Duplicate tickets created | `ai-suggested` tickets later resolved as Duplicate, or with "already fixed" in the resolution comment | not measured | 0 |
 
 ## 4. Plan
@@ -205,6 +206,7 @@ Phase 0 sets the baseline. Phases 1–4 then change **one lever at a time**, re-
 **K11. Ask over the suite** · 1 d · F10
 - Ask on a project with `linked` projects also gets their knowledge entries, their git log and their read-only checkouts (`peerCheckouts` already exists); with **All projects** selected, all projects. Sources from another project are written `KEY:path` and checked in that project's checkout.
 - **Acceptance:** the cross-app eval question finds the MediAgenda cause.
+- **Done 2026-11-13** (FR-56): `collect()` searches `project in (own, linked)`, writes `git-log-<KEY>.txt` per linked app; the run gets read-only checkouts of the linked apps (`ask-peer-repo`, apart from the analysis'); `checkSources()` checks `KEY:path` files and linked commits there, with links to the right repository; the watcher, `ask.mjs` and `score-ask.mjs` pass the linked apps. "All projects" is not a mode of Ask yet: a question is still asked in one project, which reads its linked apps. Eval: LAB 8/8, FAR 3/3, **BIL 3/3 (was 2/3)**: the MediBill question now finds DEM-17.
 
 ### Phase 4: the loop closes
 
@@ -213,6 +215,7 @@ Phase 0 sets the baseline. Phases 1–4 then change **one lever at a time**, re-
 - Insights → **Knowledge gaps**: questions answered "not found" or 👎, grouped by component and terms; plus components with bugs but no entries (coverage per component).
 - `suggestions.mjs`: a gap that recurs (≥ 2 questions) becomes a suggested Task "Document …" with the questions as its description, through the existing `createTicket` flow (draft, a person creates it).
 - **Acceptance:** two "not found" questions about the same component produce one suggestion.
+- **Done 2026-11-13** (FR-57): `agent/lib/gaps.mjs` (`knowledgeGaps`, `coverageByComponent`), `POST /api/ask/feedback` (local `ask-feedback.jsonl`), 👍/👎 with a note under each answer, **Insights → Knowledge gaps** (groups of questions, and the coverage per component built on the page from the Insights components and the entries on main), and a `knowledge-gap` suggestion for a group of two or more (its summary stays stable as questions are added). Tests: `agent/test/gaps.test.mjs`. Grouped by shared search words rather than by component: a question rarely names its component. Live: MediAgenda shows one open question (the SAP export) and 12/12 resolved bugs documented across its five components.
 
 **K13. Knowledge used by the fix and the review** · 0.5 d · F12
 - The fix prompt gets the matching entries (K9) of the components it touches, with their **Prevent recurrence** notes. The review prompt gets them too and checks that the change does not bring back a documented cause.
@@ -290,6 +293,8 @@ new item: a suggestion (Insights)  or  a ticket a person reported
 - **Acceptance:** the K21 scenarios.
 - **Built 2026-11-13** (FR-55): the skill's `lib/known.mjs` (`knownProblems`), `code.mjs` adds `knowledgeDocs.entries` (entries of the ticket, of related tickets from relevance 0.3, or with several words in common) and `otherFixBranches` (git: other tickets' remote branches that change the top components; SVN: not compared), the bundle's `priorArt`; SKILL.md step **Already known?** (7 kinds in a fixed order) and a report line; the agent's `priorArt` field, `normalizePriorArt`, `fixBlocker` with `policy.proposeFixWhen.skipKnown`, the `prior-art` event, the card, the email and Insights' recurrence. The knowledge-file parser moved into the skill (`lib/knowledge-file.mjs`) so the analysis and the agent read entries the same way. Tests: `agent/test/known.test.mjs`.
   - **Calibrated on LAB-24, LAB-19, DEM-22, DEM-25, BIL-12:** matching entries by words first pulled half the knowledge base ("with", "from", "request"); now an entry needs 3 words in common and a fifth of its own words, related tickets count from relevance 0.3, and at most 6 entries are passed.
+  - **Scenarios (2026-11-13, K21 b/c/e and the K1 recurrence check):** DEM-43 duplicate of DEM-42 ✓; LAB-25 fixed-on-main LAB-23 with the release caveat ✓, no fix; DEM-44 none ✓, fixed (PR #29, review low risk); DEM-42 solved-before DEM-5 citing `agenda-search.md#dem-5-…` ✓ (the recurrence is recognized through the knowledge base). **Found:** two reports 1.5 s apart named each other duplicates and neither got a fix. Fixed in `fixBlocker`: a duplicate holds the fix back only when it points at an older ticket (same project: lower number) (`isOlder`, tested).
+  - **Scored (`score-run.mjs --all`):** 27/29, then **29/29** after two fixes found by the run: the duplicate rule above, and the owner (the analysis took the person who squash-merged the agent's fix PRs for the code's expert; agent-written commits are now left out of the component authors). DEM-42 was fixed after the rerun (PR #30, review low risk).
   - **Live dry run (`analyze-one.mjs LAB-24`, no Jira write, 32 s, $0.20):** `priorArt.kind: none`, with the reason "LAB-11 and LAB-23 are in the same area but have different symptoms"; the origin traced to LAB-7. A true negative, no false duplicate. The positive cases need the scenario tickets (K21 b, c, e), which create Jira tickets: they wait for a go.
 
 **K21. Eval for prior art** · 0.5 d · F15

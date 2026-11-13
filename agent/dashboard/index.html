@@ -257,6 +257,9 @@
       <span class="meta" id="ins-docs-state"></span><button class="small" id="ins-docs-refresh">Refresh</button></div>
     <div class="hint" style="margin:-4px 0 8px" id="ins-docs-hint">What the agent documented when tickets were resolved. The analysis and Ask read only what is merged into main.</div>
     <div class="panel ins-list" id="ins-docs"></div>
+    <h2 style="margin-top:20px">Knowledge gaps</h2>
+    <div class="hint" style="margin:-4px 0 8px">What is missing: questions Ask could not answer or whose answer was marked wrong (grouped by their words; two or more become a suggested ticket), and per component the resolved bugs without a knowledge entry.</div>
+    <div class="panel ins-list" id="ins-gaps"></div>
     <h2 style="margin-top:20px">Risk files</h2>
     <div class="hint" style="margin:-4px 0 8px">Where the next bug is most likely: fixed by several bugs, changed often, big, and without a test of its own.</div>
     <div class="panel ins-list" id="ins-risk"></div>
@@ -805,6 +808,7 @@ function renderReview(d) {
 const SOURCE = {
   'review-finding': 'AI review: finding', 'review-refactor': 'AI review: refactor', 'review-growth': 'AI review: growth',
   'shared-check': 'copy in another app', 'risk-test': 'risk file without a test', 'bus-factor': 'knowledge map',
+  'knowledge-gap': 'Ask: questions without an answer',
 };
 let openSuggestion = null; // the id of the suggestion whose editor is open
 /** One key per name whatever the accents, case and separators (as the agent's personKey). */
@@ -819,6 +823,33 @@ function assignableUsers(project) {
     }).catch((e) => { assignableByProject.delete(project); throw e; }));
   }
   return assignableByProject.get(project);
+}
+
+// ---------------------------------------------------------------- knowledge gaps (K12)
+/** Questions without an answer, and the coverage per component (Insights components × entries on main). */
+function renderGaps() {
+  const d = insightsData;
+  if (!d) return;
+  const box = $('#ins-gaps');
+  const gaps = d.gaps ?? [];
+  const documented = knowledgeData?.project === d.project ? knowledgeData.onMain?.keys ?? null : null;
+  const done = new Set((d.tickets ?? []).filter((t) => /bug/i.test(t.type ?? '') && /done|closed|resolved/i.test(t.status ?? '')).map((t) => t.key));
+  const coverage = documented ? d.components.map((c) => {
+    const resolved = (c.bugKeys ?? []).filter((k) => done.has(k));
+    return { name: c.name, resolved, missing: resolved.filter((k) => !documented.includes(k)) };
+  }).filter((c) => c.resolved.length) : null;
+  box.replaceChildren(
+    gaps.length ? table(['Questions', 'About', 'Asked'].map((x) => h('th', {}, x)), gaps.slice(0, 8).map((g) => h('tr', {},
+      h('td', {}, h('b', {}, String(g.count))),
+      h('td', {}, h('div', {}, g.terms.join(', ')), h('div', { class: 't-sub' }, g.questions.slice(0, 3).map((q) => `"${q.question}"${q.why === 'marked as wrong' ? ' (marked wrong)' : ''}`).join(' · '))),
+      h('td', { class: 't-sub' }, ago(g.questions.at(-1).at)))))
+      : h('div', { class: 'empty' }, 'No open questions: everything asked here was answered (or nothing was asked yet).'),
+    coverage ? h('div', { style: 'margin-top:10px' }, h('div', { class: 't-sub', style: 'margin-bottom:4px' }, 'Resolved bugs documented in the knowledge base, per component'),
+      table(['Component', 'Documented', 'Without an entry'].map((x) => h('th', {}, x)), coverage.map((c) => h('tr', {},
+        h('td', {}, c.name, ' ', knowledgeLink(c.name)),
+        h('td', {}, `${c.resolved.length - c.missing.length} / ${c.resolved.length}`),
+        h('td', {}, c.missing.length ? c.missing.flatMap((k) => [jiraLink(k), ' ']) : h('span', { class: 't-sub' }, '–'))))))
+      : h('div', { class: 't-sub', style: 'margin-top:8px' }, 'Coverage per component: waiting for the knowledge base (above).'));
 }
 
 // ---------------------------------------------------------------- knowledge base (K2): documentation PRs to merge
@@ -842,8 +873,9 @@ async function loadKnowledge(refresh = false) {
     const d = await res.json();
     if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
     if (focus()?.key === p.key) {
-      knowledgeData = d;
+      knowledgeData = { ...d, project: p.key };
       renderKnowledgeBase(d, p);
+      renderGaps();
     }
   } catch (e) {
     if (focus()?.key === p.key) { $('#ins-docs').replaceChildren(h('pre', { class: 'err' }, `Knowledge base: ${e.message}`)); $('#ins-docs-state').textContent = ''; }
@@ -1342,6 +1374,7 @@ function renderInsights(d) {
   renderStats(d);
   renderTrend(d);
   renderKnowledge(d);
+  renderGaps();
   renderPeople(d);
 }
 
@@ -1407,7 +1440,26 @@ function renderAnswers() {
         s.url ? h('a', { href: s.url, target: '_blank' }, s.type === 'ticket' ? s.ref : h('code', {}, s.ref)) : h('code', {}, s.ref), s.inJira === false ? h('span', { class: 't-sub' }, ' (only in the git history)') : null, s.why ? ` · ${s.why}` : '')))) : null,
       a.closest?.length ? h('div', { class: 't-sub' }, 'Closest tickets: ', a.closest.flatMap((c) => [jiraLink(c.key), ' '])) : null,
       a.dropped ? h('div', { class: 't-sub' }, `${a.dropped} cited source(s) were not found in the data and were left out.`) : null,
+      feedbackRow(a),
     ])));
+}
+
+/** 👍 / 👎 under an answer (K12): a 👎 or a "not found" becomes a knowledge gap on the Insights tab. */
+function feedbackRow(a) {
+  if (!a.at || !a.project) return null;
+  const send = async (vote) => {
+    const note = vote === 'down' ? prompt('What is wrong or missing? (optional; e.g. the right answer, or where it is)') : '';
+    if (note === null) return;
+    try {
+      await post('/api/ask/feedback', { project: a.project, answerAt: a.at, question: a.question, vote, note });
+      a.vote = vote;
+      renderAnswers();
+    } catch (e) { alert(`Not saved: ${e.message}`); }
+  };
+  return h('div', { class: 't-sub', style: 'margin-top:6px' },
+    a.vote ? `Thanks: marked ${a.vote === 'up' ? 'right 👍' : 'wrong 👎'}.` : ['Was this right? ',
+      h('button', { class: 'small', onclick: () => send('up') }, '👍'), ' ',
+      h('button', { class: 'small', onclick: () => send('down') }, '👎')]);
 }
 
 async function ask() {

@@ -67,7 +67,7 @@ Keep facts (with ticket keys, commit hashes and file paths) separate from your i
 Say which kind in the report (**Already known?** line), with the ticket key, commit, branch or entry, and the evidence. Never call something a duplicate on words alone.
 
 **People**
-9. Combine Jira `people` (evidence across tickets) with `components[].authors` (who changed the relevant code and under which tickets). Someone who both fixed a related ticket and authored the relevant code is the strongest candidate. Recommend only people with evidence. The ticket's reporter is never a candidate. If the current assignee isn't the best fit, recommend pulling the expert in, and don't frame it as a reassignment.
+9. Combine Jira `people` (evidence across tickets) with `components[].authors` (who changed the relevant code and under which tickets). Commits written by an AI agent (also when squash-merged by a person) are left out of `authors` and counted in `agentCommits`: whoever merged them did not write that code, so they are not its expert because of it; a person who only resolved or merged an agent's ticket in Jira is not either. Someone who both fixed a related ticket and authored the relevant code is the strongest candidate. Recommend only people with evidence. The ticket's reporter is never a candidate. If the current assignee isn't the best fit, recommend pulling the expert in, and don't frame it as a reassignment.
 
 ## 3. Decide next steps
 

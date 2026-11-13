@@ -53,7 +53,7 @@ function print(project, rows) {
   return s;
 }
 
-const { loadProjects } = await import('../agent/lib/projects.mjs');
+const { loadProjects, peerCheckouts } = await import('../agent/lib/projects.mjs');
 const all = loadProjects(AGENT);
 
 if (opt('--rescore')) {
@@ -100,7 +100,7 @@ for (const key of chosen) {
     let answer;
     let error = null;
     try {
-      answer = await askQuestion({ question: q.question, repoDir: p.repoDir, stateDir: p.stateDir, logDir, cfg: p.cfg, jira, project: { key: p.key, name: p.name } });
+      answer = await askQuestion({ question: q.question, repoDir: p.repoDir, stateDir: p.stateDir, logDir, cfg: p.cfg, jira, project: { key: p.key, name: p.name }, peers: peerCheckouts(p, all, () => {}, { name: 'ask-peer-repo' }) });
     } catch (e) {
       error = e.message.slice(0, 200);
       answer = { found: null, answer: '', sources: [], dropped: 0, meta: {} };

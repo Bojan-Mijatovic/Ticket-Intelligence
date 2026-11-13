@@ -74,7 +74,7 @@ const refsIn = (...texts) => [...new Set(texts.flat().join(' ').match(/\b[A-Z][A
  * files); `created`: id → { key } of the suggestions already created. Suggestions whose summary matches an existing
  * ticket are left out.
  */
-export function suggestTickets({ insights, review = null, rules = [], created = {}, project, priorArtSources = null }) {
+export function suggestTickets({ insights, review = null, rules = [], created = {}, project, priorArtSources = null, gaps = [] }) {
   const out = [];
   const add = (s) => out.push({ ...s, id: idOf(s.source, s.summary), created: null });
   const componentOfFiles = (files) => files.map((f) => componentOf(f, rules)).find(Boolean) ?? null;
@@ -163,6 +163,23 @@ export function suggestTickets({ insights, review = null, rules = [], created = 
           ['What to do', 'Pair on the next ticket of this component, review each other\'s changes in it, and write down what is not obvious in docs/knowledge/.'],
         ],
         person, sources: c.bugKeys, origin: 'Insights, knowledge map',
+      }),
+    });
+  }
+
+  // A question that keeps coming back without an answer (K12): somebody should find it out and write it down.
+  for (const g of gaps.filter((x) => x.count >= 2)) {
+    add({
+      source: 'knowledge-gap', type: 'Task', priority: 'Low', component: null, files: [], person: null,
+      // The summary stays the same as more questions come (the suggestion's id is made from it).
+      summary: summaryOf('', null, `Document: ${g.terms.join(', ')} (questions without an answer)`),
+      description: describe({
+        sections: [
+          ['Why', `Ask could not answer these ${g.count} questions${g.questions.some((q) => q.why === 'marked as wrong') ? ', or its answer was marked wrong' : ''}:`],
+          ['Questions', g.questions.slice(0, 8).map((q) => `"${q.question}" (${String(q.at).slice(0, 10)}, ${q.why}${q.note ? `: ${q.note}` : ''})`)],
+          ['What to do', 'Find the answer (a ticket, the code, a person). If it is a problem that was fixed, make sure its ticket is documented (docs/knowledge); if it is how something works, write it where Ask reads it (the ticket, the knowledge base, the code). If the feature does not exist, say so in a ticket comment.'],
+        ],
+        person: null, sources: [], origin: 'Ask, questions without an answer',
       }),
     });
   }

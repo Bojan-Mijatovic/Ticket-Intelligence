@@ -64,3 +64,22 @@ test('collect: every failed source becomes a warning, never an empty "nothing fo
   assert.match(data.warnings[0].text, /Jira search \(by the words of the question\) failed: GET .* 400: bad JQL/);
   assert.match(data.warnings[1].text, /1 ticket\(s\) could not be read from Jira: DEM-6/);
 });
+
+test('sources of a linked app (K11): "KEY:path" files in its checkout, its commits, its tickets', () => {
+  const own = mkdtempSync(join(tmpdir(), 'ask-own-'));
+  const peerDir = mkdtempSync(join(tmpdir(), 'ask-peer-'));
+  mkdirSync(join(peerDir, 'backend'), { recursive: true });
+  writeFileSync(join(peerDir, 'backend', 'Booking.java'), '');
+  const links = { ticket: (k) => `J/${k}`, commit: (h, peer = null) => `G/${peer ?? 'own'}/${h}`, file: (p, peer = null) => `F/${peer ?? 'own'}/${p}` };
+  const kept = checkSources(
+    [
+      { type: 'file', ref: 'DEM:backend/Booking.java', why: 'cause' },
+      { type: 'file', ref: 'DEM:backend/Missing.java', why: 'invented' },
+      { type: 'file', ref: 'backend/Booking.java', why: 'not in this app' },
+      { type: 'commit', ref: '2af6918', why: 'cancellation' },
+      { type: 'ticket', ref: 'DEM-17', why: 'cancellation story' },
+    ],
+    { tickets: ['DEM-17'], analyses: [], log: '', peerLogs: { DEM: '\n2af6918 2026-09-08 Luca Bianchi | DEM-17: cancel a booking' }, repoDir: own, peers: [{ key: 'DEM', name: 'MediAgenda', dir: peerDir }], links },
+  );
+  assert.deepEqual(kept.map((s) => [s.ref, s.url]), [['DEM:backend/Booking.java', 'F/DEM/backend/Booking.java'], ['DEM:2af6918', 'G/DEM/2af6918'], ['DEM-17', 'J/DEM-17']]);
+});

@@ -91,6 +91,9 @@ Results:
 | Date | Eval | Result | Note |
 |---|---|---|---|
 | 2026-11-12 | prior art, suggestions | 3/4 | baseline. The decimal-comma suggestion shows "created LAB-23" but not that LAB-23 fixed it (a427822); the two genuinely new suggestions stay new (no false duplicate) |
+| 2026-11-13 | Ask, LAB / FAR / BIL | 14/14 | after K11 (Ask reads the linked apps): the cross-app MediBill question now finds DEM-17 in MediAgenda; 0 invented; ~$0.05 and 5–10 s more per question in apps with linked apps |
+| 2026-11-13 | prior art, reported tickets (K20) | 3/3 + 1 | DEM-43 (`struttura-again`) → duplicate of DEM-42 ✓; LAB-25 (`lab-decimal-again`) → fixed-on-main LAB-23 (a427822), no fix, reply "fixed, comes with the next release" ✓; DEM-44 (`annullate-filter`) → none, fixed, draft PR, review low risk ✓. DEM-42 (`struttura`) → solved-before DEM-5, citing its knowledge entry (the recurrence check of K1 ✓), but it named DEM-43 (created 1.5 s later) a duplicate and was not fixed: both reports blocked each other. Fixed: a duplicate stops the fix only when it points at an older ticket |
+| 2026-11-13 | scenarios `struttura`, `struttura-again`, `lab-decimal-again`, `annullate-filter` | 27/29 → **29/29** | first run: the owner was wrong on DEM-43 and LAB-25 (the person who squash-merged the agent's fix PRs, credited by git, was taken for the code's expert). Lever: `code.mjs` leaves commits written by an AI agent (author or co-author) out of `authors` (`agentCommits`), and the skill says so. Re-analyzed (dry): both 7/7 and 8/8. DEM-42 7/7 after the duplicate rule (fix, PR #30, review low risk) |
 | 2026-11-13 | prior art, suggestions | 4/4 | after K17/K19: "fixed by LAB-23" found (the fix commit a427822 came after the AI review, in the suggestion's file, about the same thing); no false duplicate |
 | 2026-11-12 | Ask, DEM | 10/10 | baseline; 0 invented sources; avg 15 s, $0.21 |
 | 2026-11-12 | Ask, LAB | 8/8 | baseline; 0 invented; avg 16 s, $0.16 |

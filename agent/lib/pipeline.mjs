@@ -54,12 +54,27 @@ export function fixBlocker({ issue, result, policy }) {
       return `title has no ${wanted.map((t) => `[${t}]`).join('/')} tag${folders.length ? ` and the analysis does not place the change only in ${folders.join(' or ')}` : ''}`;
     }
   }
-  if (when.skipDuplicates && result.duplicateOf?.key) return `possible duplicate of ${result.duplicateOf.key}`;
+  // A duplicate stops the fix only when it points at an OLDER ticket: two reports of the same problem a minute apart
+  // named each other, and neither was fixed (DEM-42/DEM-43, 2026-11-13). The older one is the original.
+  const olderThanThis = (other) => isOlder(String(other ?? ''), issue.key);
+  if (when.skipDuplicates && result.duplicateOf?.key && olderThanThis(result.duplicateOf.key)) return `possible duplicate of ${result.duplicateOf.key}`;
   // Already known (K20): no automatic fix for a duplicate, a fix in progress elsewhere, or a problem fixed on main.
   const known = normalizePriorArt(result);
   const skipKnown = when.skipKnown ?? ['duplicate', 'in-progress', 'fixed-on-main'];
+  if (known.kind === 'duplicate' && !olderThanThis(known.key)) return null;
   if (skipKnown.includes(known.kind)) return `already known: ${PRIOR_ART_TEXT[known.kind]}${known.key ? ` ${known.key}` : ''}${known.branch ? ` (${known.branch})` : ''}`;
   return null;
+}
+
+/**
+ * Whether ticket `a` is older than ticket `b`: in the same project by number (Jira numbers in creation order); in
+ * another project it is treated as older (that report came first, or the fix belongs there).
+ */
+export function isOlder(a, b) {
+  const [pa, na] = String(a).toUpperCase().split('-');
+  const [pb, nb] = String(b).toUpperCase().split('-');
+  if (!na || !nb) return true;
+  return pa !== pb || Number(na) < Number(nb);
 }
 
 export const PRIOR_ART_TEXT = { documented: 'documented', duplicate: 'duplicate of', 'in-progress': 'fix in progress', 'fixed-on-main': 'fixed on main by', regression: 'regression of', 'solved-before': 'solved before as' };
