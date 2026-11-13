@@ -100,8 +100,8 @@ export function createJira() {
     },
 
     async getIssue(key) {
-      const i = await api('GET', `/rest/api/2/issue/${encodeURIComponent(key)}?fields=summary,description,labels,priority,status`);
-      return { key: i.key, summary: masked(i.fields.summary), description: masked(i.fields.description ?? ''), labels: i.fields.labels ?? [], priority: i.fields.priority?.name ?? null, status: i.fields.status?.name };
+      const i = await api('GET', `/rest/api/2/issue/${encodeURIComponent(key)}?fields=summary,description,labels,priority,status,created`);
+      return { key: i.key, summary: masked(i.fields.summary), description: masked(i.fields.description ?? ''), labels: i.fields.labels ?? [], priority: i.fields.priority?.name ?? null, status: i.fields.status?.name, created: i.fields.created ?? null };
     },
 
     /** One ticket with what a reader needs: type, dates, description, the last comments and the linked tickets. */

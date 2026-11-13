@@ -5,6 +5,7 @@
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { bisectJira, bisectMd } from './bisect.mjs';
 
 function githubSlug(remoteUrl) {
   const m = String(remoteUrl).match(/github\.com[/:]([^/]+)\/([^/.]+)(\.git)?$/);
@@ -35,7 +36,7 @@ ${analysis.summary}
 
 ### Root cause
 ${analysis.likelyCause}
-
+${bisectMd(result.bisect)}
 ### Change
 ${result.fix.description}
 
@@ -72,7 +73,7 @@ h3. Pull request
 h3. Reproduction
 ${result.side === 'backend' ? `A backend test ({{${result.test.file}}}) written from the ticket fails on the current code:` : "A browser test written from the ticket's steps fails on the current code:"}
 {noformat}${String(result.test.firstError ?? result.test.failure ?? '').slice(0, 900)}{noformat}
-
+${bisectJira(result.bisect) ? `\n${bisectJira(result.bisect)}\n` : ''}
 h3. Fix
 ${result.fix.description}
 Files: ${result.fix.files.map((f) => `{{${f}}}`).join(', ')}

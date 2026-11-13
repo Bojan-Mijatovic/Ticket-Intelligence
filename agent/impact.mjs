@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { createJira } from './lib/jira-actions.mjs';
 import { createJiraHealth } from './lib/jira-health.mjs';
 import { loadGraph, readSuitePullRequests } from './lib/git-graph.mjs';
-import { scoreAccuracy } from './lib/accuracy.mjs';
+import { readBlameOrigins, scoreAccuracy } from './lib/accuracy.mjs';
 import { readReplays } from './lib/replay.mjs';
 import { impactOf } from './lib/impact.mjs';
 import { loadProjects } from './lib/projects.mjs';
@@ -30,7 +30,7 @@ const suitePrs = readSuitePullRequests(projects);
 const apps = [];
 for (const p of projects) {
   const graph = await loadGraph({ project: p, eventsDir: join(HERE, 'state'), jira: health.ok === false ? null : jira, suitePrs });
-  apps.push({ project: p.key, name: p.name, graph, accuracy: scoreAccuracy(graph, { rules: p.cfg.insights?.components ?? [], replays: readReplays(p.stateDir) }) });
+  apps.push({ project: p.key, name: p.name, graph, accuracy: scoreAccuracy(graph, { rules: p.cfg.insights?.components ?? [], replays: readReplays(p.stateDir), origins: readBlameOrigins(p.stateDir) }) });
 }
 const im = impactOf(apps, { baseline: all.global.baseline, weeks });
 if (args.includes('--json')) {

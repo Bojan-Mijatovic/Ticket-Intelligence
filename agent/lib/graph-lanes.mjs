@@ -14,6 +14,7 @@ const STEP = {
   'prior-art': { tone: 'warn', label: (s) => s.text },
   'fix-skipped': { tone: 'muted', label: (s) => s.text.replace(/^no automatic fix:/i, 'No automatic fix:') },
   reproduced: { tone: 'bad', label: () => 'Test written: it fails before the fix' },
+  bisected: { tone: (text) => (/broken by \S/.test(text) ? 'warn' : 'muted'), label: (s) => s.text.replace(/^bisect: /, 'Bisect: ') },
   verified: { tone: 'ok', label: () => 'Fix verified: the test and all checks pass' },
   pr: { tone: 'info', label: (s) => `Draft PR${prNo(s.url) ? ` #${prNo(s.url)}` : ''} opened` },
   'fix-failed': { tone: 'bad', label: (s) => `Fix stopped: ${s.text}` },

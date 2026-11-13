@@ -91,7 +91,8 @@ function maven(toolsDir) {
  * compile has no report at all, so "failed on an assertion" and "did not compile" can be told apart.
  */
 export function surefireResults(reportsDir, onlyClass = null) {
-  const out = { tests: 0, failed: 0, classes: [], firstError: null };
+  // firstKind: "failure" (an assertion) or "error" (an exception), as surefire records the first failed test.
+  const out = { tests: 0, failed: 0, classes: [], firstError: null, firstKind: null };
   if (!existsSync(reportsDir)) return out;
   for (const f of readdirSync(reportsDir).filter((n) => /^TEST-.+\.xml$/.test(n))) {
     const name = f.slice(5, -4);
@@ -108,6 +109,7 @@ export function surefireResults(reportsDir, onlyClass = null) {
       const message = m?.[2]?.match(/\smessage="([^"]*)"/)?.[1];
       const decode = (s) => String(s ?? '').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#10;/g, '\n').replace(/&amp;/g, '&');
       out.firstError = tail(`${decode(message)}\n${decode(m?.[3])}`, 12);
+      out.firstKind = m?.[1] ?? null;
     }
   }
   return out;
@@ -164,5 +166,5 @@ export async function runBackendTest(ws, toolsDir, testClass) {
   rmSync(reports, { recursive: true, force: true });
   const r = await run(mvn, ['-q', '-B', 'test', `-Dtest=${testClass}`, '-Dsurefire.failIfNoSpecifiedTests=false'], { cwd: join(ws.path, 'backend'), env });
   const s = surefireResults(reports, testClass);
-  return { compiled: s.classes.length > 0, tests: s.tests, failed: s.failed, firstError: s.firstError ?? (s.classes.length ? null : tail(r.out, 12)), durationMs: r.durationMs };
+  return { compiled: s.classes.length > 0, tests: s.tests, failed: s.failed, firstError: s.firstError ?? (s.classes.length ? null : tail(r.out, 12)), firstKind: s.firstKind, durationMs: r.durationMs };
 }

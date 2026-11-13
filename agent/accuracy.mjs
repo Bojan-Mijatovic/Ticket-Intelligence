@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { createJira } from './lib/jira-actions.mjs';
 import { createJiraHealth } from './lib/jira-health.mjs';
 import { loadGraph, readSuitePullRequests } from './lib/git-graph.mjs';
-import { recordAccuracy, scoreAccuracy } from './lib/accuracy.mjs';
+import { readBlameOrigins, recordAccuracy, scoreAccuracy } from './lib/accuracy.mjs';
 import { readReplays } from './lib/replay.mjs';
 import { cliProject, loadProjects } from './lib/projects.mjs';
 
@@ -36,7 +36,7 @@ const suitePrs = readSuitePullRequests(all.projects.filter((p) => existsSync(p.r
 
 for (const p of projects) {
   const graph = await loadGraph({ project: p, eventsDir: join(HERE, 'state'), jira: jiraOk ? jira : null, suitePrs });
-  const acc = scoreAccuracy(graph, { rules: p.cfg.insights?.components ?? [], replays: readReplays(p.stateDir) });
+  const acc = scoreAccuracy(graph, { rules: p.cfg.insights?.components ?? [], replays: readReplays(p.stateDir), origins: readBlameOrigins(p.stateDir) });
   recordAccuracy(p.stateDir, acc);
   out.push(acc);
   if (args.includes('--json')) continue;
@@ -55,6 +55,10 @@ for (const p of projects) {
   }
   console.log(`  Fix           ${acc.fix.tried} tried: ${acc.fix.pr} draft PR, ${acc.fix.failed} stopped (${acc.fix.skipped} tickets not eligible) · PRs: ${acc.fix['merged-unchanged']} merged unchanged, ${acc.fix['merged-changed']} merged with changes, ${acc.fix.rejected} rejected, ${acc.fix.withdrawn} withdrawn, ${acc.fix.open} open`);
   console.log(`                accepted unchanged ${pct(acc.fix.acceptedUnchanged)} · accepted ${pct(acc.fix.accepted)}`);
+  if (acc.bisect.runs) {
+    const b = acc.bisect;
+    console.log(`  Bisect        ${b.runs} runs: ${b.found} found one commit, ${b.range} a range, ${b.older} older than the window, ${b.noGoodPoint} no good point${b.errors ? `, ${b.errors} errors` : ''} · ${num(b.avgSteps, 1)} test runs, ${num(b.avgSeconds, 0)} s on average · agrees with the blame origin after the fix ${pct(b.agreeWithBlame)}`);
+  }
   console.log(`  AI review     ${acc.review.reviews} reviews · agrees with the outcome ${pct(acc.review.agreement)}`);
   console.log(`  Documentation ${acc.docs.prs} PRs · accepted unchanged ${pct(acc.docs.acceptedUnchanged)} · ${acc.docs.rejected} rejected, ${acc.docs.withdrawn} withdrawn, ${acc.docs.open} open`);
   for (const c of [...acc.fix.closed, ...acc.docs.closed]) console.log(`  closed by a person: #${c.number} ${c.keys.join(', ')}${c.reason ? ` · "${c.reason}"` : ' · no reason given'}`);

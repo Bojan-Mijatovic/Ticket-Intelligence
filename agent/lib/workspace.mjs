@@ -85,6 +85,27 @@ export function analysisCheckout({ repoDir, stateDir, name = 'analysis-repo' }) 
   return path;
 }
 
+/**
+ * Removes a worktree and its linked node_modules junctions (unlinked first, so removing the worktree can never delete
+ * the shared node_modules).
+ */
+export function removeWorktree(repoDir, path) {
+  for (const dep of LINKED_DEPS) {
+    const link = join(path, dep);
+    try {
+      if (lstatSync(link).isSymbolicLink()) unlinkSync(link);
+    } catch {
+      /* not there */
+    }
+  }
+  try {
+    git(repoDir, ['worktree', 'remove', '--force', path]);
+  } catch {
+    rmSync(path, { recursive: true, force: true });
+    git(repoDir, ['worktree', 'prune']);
+  }
+}
+
 /** Links the clone's node_modules into a worktree (junctions on Windows), so its tests run without an install. */
 export function linkDeps(repoDir, path) {
   for (const dep of LINKED_DEPS) {
@@ -141,21 +162,7 @@ export function createWorkspace({ repoDir, key, stateDir, branch = key, name = '
       // A running dev server keeps files open (Windows): stop it before deleting the worktree.
       this.server?.stop();
       this.server = null;
-      // Unlink the junctions first, so removing the worktree can never delete the shared node_modules.
-      for (const dep of LINKED_DEPS) {
-        const link = join(path, dep);
-        try {
-          if (lstatSync(link).isSymbolicLink()) unlinkSync(link);
-        } catch {
-          /* not there */
-        }
-      }
-      try {
-        git(repoDir, ['worktree', 'remove', '--force', path]);
-      } catch {
-        rmSync(path, { recursive: true, force: true });
-        git(repoDir, ['worktree', 'prune']);
-      }
+      removeWorktree(repoDir, path);
     },
   };
 }

@@ -32,6 +32,7 @@
   "_baseline": "Impact (WF5): the minutes each step takes the team WITHOUT the agent. Team estimates, not measurements, and the Impact tab says so. Hours saved = these minus the measured time, for a ticket's first analysis in a week, merged fixes and merged documentation.",
   "baseline": { "analysisMinutes": 45, "reproduceMinutes": 60, "fixMinutes": 180, "docsMinutes": 30 },
   "fixTimeoutMinutes": 15,
+  "bisectMinutes": 12,
   "toolsDir": "../tools",
   "insights": {
     "months": 10,

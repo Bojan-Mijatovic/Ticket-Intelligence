@@ -171,7 +171,7 @@ export function readPullRequests(repoDir, { since = null, max = 500 } = {}) {
 }
 
 // The agent's steps shown on a ticket's lane, in the order they happen.
-const LANE = new Set(['picked', 'analyzed', 'commented', 'notified', 'duplicate', 'prior-art', 'fix-skipped', 'reproduced', 'verified', 'pr', 'fix-proposed', 'fix-failed', 'reviewed', 'resolved', 'documented', 'doc-failed', 'docs-merged', 'failed']);
+const LANE = new Set(['picked', 'analyzed', 'commented', 'notified', 'duplicate', 'prior-art', 'fix-skipped', 'reproduced', 'bisected', 'verified', 'pr', 'fix-proposed', 'fix-failed', 'reviewed', 'resolved', 'documented', 'doc-failed', 'docs-merged', 'failed']);
 
 /**
  * @param {object} p
@@ -228,7 +228,7 @@ export function buildGraph({ project, vcsKind, commits, events, prs = [], suiteC
 
   const byKey = new Map();
   const ticket = (key) => {
-    if (!byKey.has(key)) byKey.set(key, { key, summary: null, type: null, status: null, resolution: null, assignee: null, resolved: null, links: [], exists: jiraRead ? false : null, changes: [], docs: [], mentions: [], prs: [], analyses: [], fixAttempts: [], reviews: [], documented: [], steps: [] });
+    if (!byKey.has(key)) byKey.set(key, { key, summary: null, type: null, status: null, resolution: null, assignee: null, resolved: null, links: [], exists: jiraRead ? false : null, changes: [], docs: [], mentions: [], prs: [], analyses: [], fixAttempts: [], reviews: [], documented: [], bisects: [], steps: [] });
     return byKey.get(key);
   };
   for (const t of tickets.filter((x) => mine(x.key))) {
@@ -276,6 +276,9 @@ export function buildGraph({ project, vcsKind, commits, events, prs = [], suiteC
       t.reviews.push({ at: e.at, risk: e.review.risk ?? null, verdict: e.review.verdict ?? null, findings: (e.review.findings ?? []).length, pr: Number(String(e.url ?? '').match(/\/pull\/(\d+)/)?.[1]) || null, costUsd: e.meta?.costUsd ?? null });
     } else if (e.type === 'documented') {
       t.documented.push({ at: e.at, url: e.url ?? null, costUsd: e.meta?.costUsd ?? null });
+    } else if (e.type === 'bisected' && e.bisect) {
+      const b = e.bisect;
+      t.bisects.push({ at: e.at, status: b.status, culprit: b.culprit?.short ?? null, culpritTicket: b.culprit?.ticket ?? null, steps: (b.steps ?? []).length, durationMs: b.durationMs ?? null });
     }
     if (LANE.has(e.type)) t.steps.push({ at: e.at, type: e.type, text: String(e.text ?? '').slice(0, 200), url: e.url ?? null });
   }

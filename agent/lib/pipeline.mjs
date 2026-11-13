@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizePriorArt, runAnalysis } from './analyze.mjs';
 import { execFileSync } from 'node:child_process';
+import { bisectJira } from './bisect.mjs';
 import { reproduceAndFix } from './fix.mjs';
 import { analysisCheckout, createWorkspace, startDevServer } from './workspace.mjs';
 import { notifyOwner } from './notify.mjs';
@@ -153,7 +154,8 @@ async function maybeFix({ issue, result, cfg, policy, jira, events, repoDir, sta
     const toolsDir = cfg.toolsDir ? resolve(AGENT_DIR, cfg.toolsDir) : null;
     const allowSupersededTests = policy.proposeFixWhen?.allowSupersededTestUpdates === true;
     const side = fixSide({ issue, result, policy });
-    const fix = await reproduceAndFix({ issue: full, analysis: result, repoDir, stateDir, cfg, events, toolsDir, prepared: ws, allowSupersededTests, side });
+    const fix = await reproduceAndFix({ issue: full, analysis: result, repoDir, stateDir, cfg, events, toolsDir, prepared: ws, allowSupersededTests, side, bisect: policy.actions.bisect === 'auto' });
+    suggestOwnerFromBisect({ key, result, bisect: fix.bisect, policy, events });
     const pub = await publishFix({ key, analysis: result, result: fix, jira, events, stateDir });
     // What the reviewer (review.mjs) and agent/review-one.mjs need later, after the worktree is gone.
     const { ws: _ws, ...saved } = fix;
@@ -162,8 +164,32 @@ async function maybeFix({ issue, result, cfg, policy, jira, events, repoDir, sta
     return Boolean(pub.prUrl);
   } catch (e) {
     events.emit('fix-failed', { key, text: `${e.stage ? `${e.stage}: ` : ''}${e.message}`, checks: e.checks });
+    // The fix failed, but the commit that broke it is still evidence worth having on the ticket.
+    if (['found', 'range', 'older'].includes(e.bisect?.status)) {
+      suggestOwnerFromBisect({ key, result, bisect: e.bisect, policy, events });
+      if (policy.actions.postInternalComment === 'auto') {
+        try {
+          const c = await jira.comment(key, `(robot) *AI reproduction* — the automatic fix stopped (${e.stage ?? 'fix'}), but the reproduction test found this:\n\n${bisectJira(e.bisect)}`);
+          events.emit('commented', { key, text: 'bisect result posted to Jira', url: c.url });
+        } catch (err) {
+          events.emit('error', { key, text: `bisect comment skipped: ${err.message.split('\n')[0]}` });
+        }
+      }
+    }
     return false;
   }
+}
+
+/**
+ * A2: the person who made the change that broke it knows that change best. A draft assignee (policy assignOwner) when
+ * bisect found one commit by a person, not the agent, and it is not the owner the analysis already proposed.
+ */
+export function suggestOwnerFromBisect({ key, result, bisect, policy, events }) {
+  const c = bisect?.status === 'found' ? bisect.culprit : null;
+  if (!c || c.agent || !c.author || policy.actions.assignOwner !== 'draft') return false;
+  if (String(result?.owner?.name ?? '').trim().toLowerCase() === c.author.trim().toLowerCase()) return false;
+  events.emit('draft', { key, kind: 'assign', text: `Suggested assignee: ${c.author}`, why: `made the change that broke it, found by bisect: ${c.short} "${c.subject}"${c.ticket ? ` (${c.ticket})` : ''}` });
+  return true;
 }
 
 function composeComment(result, meta, policy) {

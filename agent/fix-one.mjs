@@ -36,7 +36,7 @@ if (blocker) console.warn(`note: the watcher would skip this ticket (${blocker})
 const started = Date.now();
 const side = fixSide({ issue, result: analysis, policy });
 console.log(`side: ${side}`);
-const fix = await reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg, events, toolsDir: resolve(HERE, cfg.toolsDir), allowSupersededTests: policy.proposeFixWhen?.allowSupersededTestUpdates === true, side });
+const fix = await reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg, events, toolsDir: resolve(HERE, cfg.toolsDir), allowSupersededTests: policy.proposeFixWhen?.allowSupersededTestUpdates === true, side, bisect: policy.actions.bisect === 'auto' });
 console.log(`\nbranch ${fix.branch}: test ${fix.test.commit}, fix ${fix.fix.commit} · ${fix.fix.files.join(', ')}`);
 console.log(`checks: ${JSON.stringify(fix.checks)}`);
 console.log(`evidence: ${JSON.stringify(fix.evidence)}`);

@@ -13,7 +13,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { componentOf, personKey } from './insights.mjs';
+import { componentOf, personKey, pickOrigin } from './insights.mjs';
 
 const TEST_FILE = /(^|\/)(e2e|tests?|__tests__)\/|\/src\/test\/|\.(spec|test)\.[cm]?[jt]sx?$|Tests?\.java$/i;
 const PEER_FILE = /^[A-Z][A-Z0-9_]+:/; // a file of a linked project ("DEM:backend/…"): another repository
@@ -118,11 +118,49 @@ export function reviewAgreement(verdict, outcome) {
 }
 
 /**
+ * The blame origin of each fixed bug (Insights → where bugs come from, G2): ticket → the full hash of the commit that
+ * wrote most of the lines its fix changed. Read from the Insights cache (<state>/insights/origins.json); empty until
+ * Insights has run.
+ */
+export function readBlameOrigins(stateDir) {
+  try {
+    const cache = JSON.parse(readFileSync(join(stateDir, 'insights', 'origins.json'), 'utf8'));
+    return new Map(Object.entries(cache).map(([key, v]) => [key, pickOrigin(v.tally ?? {})?.hash ?? null]).filter(([, h]) => h));
+  } catch {
+    return new Map();
+  }
+}
+
+/**
+ * Bisect (A2): runs, what they found, time per run, and whether the commit found agrees with the blame origin of the
+ * bug once a fix is on main. `origins`: readBlameOrigins().
+ */
+export function scoreBisects(graph, origins = new Map()) {
+  const runs = graph.tickets.flatMap((t) => (t.bisects ?? []).map((b) => ({ key: t.key, ...b })));
+  const count = (s) => runs.filter((r) => r.status === s).length;
+  // The last run per ticket that named one commit, compared with that ticket's blame origin.
+  const last = new Map(runs.filter((r) => r.status === 'found' && r.culprit).map((r) => [r.key, r]));
+  const compared = [...last.values()].filter((r) => origins.has(r.key)).map((r) => ({ key: r.key, culprit: r.culprit, origin: origins.get(r.key).slice(0, 7), agree: origins.get(r.key).startsWith(r.culprit) }));
+  return {
+    runs: runs.length,
+    found: count('found'),
+    range: count('range') + count('timeout'),
+    older: count('older'),
+    noGoodPoint: count('no-good-point'),
+    errors: count('error'),
+    avgSeconds: avg(runs.map((r) => r.durationMs).filter((x) => x != null && x > 0).map((ms) => ms / 1000)),
+    avgSteps: avg(runs.filter((r) => r.steps).map((r) => r.steps)),
+    agreeWithBlame: rate(compared.filter((c) => c.agree).length, compared.length),
+    compared,
+  };
+}
+
+/**
  * The accuracy of one project. Every number says what it is out of; `notes` say what could not be measured and why.
  * @param {object} graph   buildGraph()/loadGraph()
  * @param {{ rules?: object[] }} [o]  insights.components of the project (for the component check)
  */
-export function scoreAccuracy(graph, { rules = [], replays = [], now = new Date() } = {}) {
+export function scoreAccuracy(graph, { rules = [], replays = [], origins = new Map(), now = new Date() } = {}) {
   const rows = analysisRows(graph, { rules });
   const predictions = rows.filter((r) => !r.skipped);
   const withFiles = predictions.filter((r) => r.files);
@@ -198,6 +236,7 @@ export function scoreAccuracy(graph, { rules = [], replays = [], now = new Date(
     fix: { tried: attempts.filter((a) => a.outcome !== 'skipped').length, pr: attempts.filter((a) => a.outcome === 'pr').length, failed: attempts.filter((a) => a.outcome === 'failed').length, skipped: attempts.filter((a) => a.outcome === 'skipped').length, ...outcomes(fixPrs) },
     review: { reviews: reviewRows.length, agreement: rate(decidedReviews.filter((r) => r.agreement === 'agree').length, decidedReviews.length), costUsd: sum(reviewRows.map((r) => r.costUsd)) },
     docs: outcomes(agentPrs.filter((p) => p.kind === 'docs')),
+    bisect: scoreBisects(graph, origins),
     replay: replays.length ? summarizeReplays(replays) : null,
     rows,
     reviews: reviewRows,
@@ -245,6 +284,7 @@ export function snapshotOf(acc) {
     fixAcceptedUnchanged: r(acc.fix.acceptedUnchanged),
     reviewAgreement: r(acc.review.agreement),
     docsAcceptedUnchanged: r(acc.docs.acceptedUnchanged),
+    bisectAgreeWithBlame: r(acc.bisect?.agreeWithBlame),
     replayFiles: r(acc.replay?.files),
     replayOwner: r(acc.replay?.owner),
     costUsd: Math.round((acc.analysis.costUsd + acc.review.costUsd) * 100) / 100,

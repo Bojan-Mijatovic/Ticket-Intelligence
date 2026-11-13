@@ -12,6 +12,7 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runClaude } from './analyze.mjs';
+import { bisectForFix, bisectForPrompt, failureKind } from './bisect.mjs';
 import { createWorkspace } from './workspace.mjs';
 import { knowledgeFor } from './knowledge.mjs';
 import { runBackendTest, runBackendTests, runE2E, runFrontendBuild } from './verify.mjs';
@@ -86,12 +87,18 @@ Reply with ONLY one \`\`\`json block:
 /** The known issues of the code being fixed (K13): don't bring a documented cause back, follow its prevention notes. */
 const knowledgeRule = (knowledge) => (knowledge ? `\n${knowledge}\nDo not bring back a documented root cause, and follow a "Prevent recurrence" note where it applies to this change.\n` : '');
 
-function fixPrompt(issue, analysis, testEnv, javaHint, updatable = [], side = 'frontend', knowledge = '') {
+/** What the bisect proved (A2), when it found something. */
+const bisectRule = (bisect) => {
+  const t = bisectForPrompt(bisect);
+  return t ? `\n${t}\n` : '';
+};
+
+function fixPrompt(issue, analysis, testEnv, javaHint, updatable = [], side = 'frontend', knowledge = '', bisect = null) {
   if (side === 'backend') {
     return `You are running unattended: nobody will answer questions. The current directory is a git worktree of the application on branch ${issue.key}.
 
 ${ticketContext(issue, analysis)}
-${knowledgeRule(knowledge)}
+${knowledgeRule(knowledge)}${bisectRule(bisect)}
 TASK (phase 2 of 2, fix): the committed backend test reproduces the bug and fails. Implement the smallest correct fix in the application code (usually under backend/src/main/).
 - Follow the proposed fix unless you find a smaller correct one. Keep existing behaviour working.
 - Do NOT modify anything under backend/src/test/ or e2e/ (the watcher rejects it). Match the style of the surrounding code; a short comment referencing ${issue.key} only where it helps a reader.
@@ -110,7 +117,7 @@ ${updatable.map((t) => `    ${t.file} (${t.key}${t.why ? `: ${t.why}` : ''})`).j
   return `You are running unattended: nobody will answer questions. The current directory is a git worktree of the application on branch ${issue.key}.
 
 ${ticketContext(issue, analysis)}
-${knowledgeRule(knowledge)}
+${knowledgeRule(knowledge)}${bisectRule(bisect)}
 TASK (phase 2 of 2, fix): the committed test e2e/tests/${issue.key}.spec.ts reproduces the bug and fails. Implement the smallest correct fix in the application code.
 - Follow the proposed fix unless you find a smaller correct one. Keep existing behaviour working (the other buttons and flows of the same screen).
 ${e2eRule}
@@ -135,8 +142,9 @@ const fail = (stage, message, extra = {}) => Object.assign(new Error(message), {
 /**
  * @param {'frontend'|'backend'} [p.side]  frontend: a Playwright test with the mocked API reproduces the bug;
  *   backend: a JUnit test against the real code and H2 database (the mocked API cannot show a backend bug).
+ * @param {boolean} [p.bisect]  A2: after the reproduction, find the commit that broke it (policy.json bisect: auto)
  */
-export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg, events, toolsDir, prepared = null, allowSupersededTests = false, side = 'frontend' }) {
+export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg, events, toolsDir, prepared = null, allowSupersededTests = false, side = 'frontend', bisect: bisectOn = false }) {
   const key = issue.key;
   const backendSide = side === 'backend';
   const evidenceDir = join(stateDir, 'work', key, 'evidence');
@@ -162,6 +170,7 @@ export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg,
   };
   const ignored = (f) => f.startsWith('e2e/evidence/') || f.startsWith('e2e/test-results/') || f.startsWith('backend/target/');
   const isTest = (f) => f.startsWith('e2e/') || f.startsWith('backend/src/test/');
+  let bisect = null;
 
   try {
     // ---------------------------------------------------------------- phase 1: reproduce
@@ -182,7 +191,7 @@ export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg,
       const r = await runBackendTest(ws, toolsDir, beTest.className);
       if (!r.compiled) throw fail('reproduce', `the backend test did not compile or did not run: ${String(r.firstError ?? '').slice(0, 400)}`);
       if (r.failed < 1) throw fail('reproduce', 'the new backend test passes on the current code, so it does not reproduce the bug');
-      before = { failed: r.failed, firstError: r.firstError };
+      before = { failed: r.failed, firstError: r.firstError, firstKind: r.firstKind };
       evBefore = { text: keepText('test-before.txt', `${beTest.className} on the code BEFORE the fix: ${r.failed} of ${r.tests} failed\n\n${r.firstError}`) };
     } else {
       before = await runE2E(ws, [`tests/${key}.spec.ts`], { evidenceDir });
@@ -195,6 +204,15 @@ export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg,
     ws.git([...AGENT_AUTHOR, 'commit', '-q', '-m', `${key}: add regression test (fails before the fix)${TRAILER}`]);
     const testCommit = ws.git(['rev-parse', '--short', 'HEAD']);
 
+    // ---------------------------------------------------------------- A2: which commit broke it
+    // The test just written is the judge; plain code, before the fix is written, so the fix starts from the evidence.
+    if (bisectOn) {
+      bisect = await bisectForFix({
+        ws, repoDir, workDir: join(stateDir, 'work', key), key, side, testRel: specRel, testClass: beTest.className, analysis, created: issue.created ?? null,
+        toolsDir, minutes: cfg.bisectMinutes ?? 12, mainKind: backendSide ? before.firstKind ?? null : failureKind(before.firstError), events,
+      });
+    }
+
     // ---------------------------------------------------------------- phase 2: fix
     events.emit('fixing', { key, text: 'agent implements the fix' });
     const updatable = allowSupersededTests && !backendSide ? supersededTests(analysis, key, (f) => existsSync(join(ws.path, f))) : [];
@@ -202,7 +220,7 @@ export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg,
     // The known issues of the files the analysis names, and of its prior art and related tickets (K13).
     const knowledge = knowledgeFor({ dir: ws.path, files: analysis.files ?? [], keys: [analysis.priorArt?.key, ...(analysis.relatedTickets ?? []).map((t) => t.key)] });
     if (knowledge) events.emit('progress', { key, step: `known issues of this code given to the fix: ${(knowledge.match(/^- [A-Z][A-Z0-9_]+-\d+/gm) ?? []).map((l) => l.slice(2)).join(', ')}` });
-    const fix = await runClaude({ ...common, prompt: fixPrompt(issue, analysis, testEnv, javaHint, updatable, side, knowledge), transcriptFile: join(stateDir, 'work', key, 'transcript-fix.jsonl'), required: ['summary', 'description'], onProgress: progress });
+    const fix = await runClaude({ ...common, prompt: fixPrompt(issue, analysis, testEnv, javaHint, updatable, side, knowledge, bisect), transcriptFile: join(stateDir, 'work', key, 'transcript-fix.jsonl'), required: ['summary', 'description'], onProgress: progress });
 
     const changed2 = ws.changedFiles('HEAD').filter((f) => !ignored(f));
     if (!changed2.length) throw fail('fix', 'the agent did not change any file');
@@ -245,10 +263,12 @@ export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg,
       test: { file: specRel, commit: testCommit, failure: repro.result.failure, firstError: before.firstError, notes: repro.result.notes },
       fix: { commit: fixCommit, summary: fix.result.summary, description: fix.result.description, files: changed2, updatedTests },
       checks,
+      bisect,
       evidence: { before: evBefore.png ?? null, after: evAfter.png ?? null, beforeJson: evBefore.json ?? null, afterJson: evAfter.json ?? null, beforeText: evBefore.text ?? null, afterText: evAfter.text ?? null },
       meta: { durationMs: repro.meta.durationMs + fix.meta.durationMs, costUsd: repro.meta.costUsd + fix.meta.costUsd, model: fix.meta.model ?? null },
     };
   } catch (e) {
+    if (bisect) e.bisect = bisect; // what it found stays useful when the fix itself fails
     ws.remove();
     try {
       // The branch was never pushed; drop it so a later retry starts clean.
