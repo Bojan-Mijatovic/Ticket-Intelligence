@@ -38,6 +38,7 @@ So the graph is mostly a **view and a shared data model** over facts we have. Th
 ## 3. The graph itself (what people see)
 
 **GG0. One graph model, plain code** · 1 d
+**Done 2026-11-13** (FR-68), together with AI1. What was built differs from the description below in two ways: the model is computed on request (the watcher caches it for two minutes), not cached per repository head; and knowledge entries are not part of it yet. Tested with fixtures (`agent/test/git-graph.test.mjs`) and on the four apps, and the SVN history was read from the demo working copy.
 `agent/lib/git-graph.mjs` builds one model per project: nodes (commit, ticket, PR, branch, file, component, person, knowledge entry, app) and edges (`fixes`, `brought-in-by`, `touches`, `part-of`, `opened-for`, `reviewed`, `documented-in`, `copy-of`, `changes-with`). Sources: git on `origin/main` and `refs/pull/*`, `gh pr list`, the events, Jira, the knowledge entries. Cached per repository head, like the other Insights caches. Every view below and the agents of section 4 read it; **AI1** (continuous evaluation) needs exactly its `ticket → fix commit → files` edges. No AI.
 
 **G1. Ticket lanes: what the AI did in the code** · 1 d · reading (b)
@@ -84,24 +85,16 @@ Every edge of the graph depends on the ticket key in the commit subject. Code fi
 
 ## 6. Plan
 
-| # | Step | Why in this place | Effort |
-|---|---|---|---|
-| 1 | **GG0** graph model | everything below reads it; **AI1 needs the same edges**, so it is built together with AI1 | 1 d |
-| 2 | **G1** ticket lanes | the picture to show the CTO; no new data | 1 d |
-| 3 | **A2** automatic bisect | the strongest "on its own" step: proof instead of a guess; no model cost | 1.5 d |
-| 4 | **A1** regression guard | catches a regression before a ticket; uses KB1's tests | 1 d |
-| 5 | **A3** blast radius | better fixes and reviews; cheap | 1 d |
-| 6 | **G2** bug lineage | the data exists | 0.5 d |
-| 7 | **A4** branch care | needs real parallel work to pay off | 1 d |
-| 8 | **A5** port fixes to copies | suite-level; draft PRs in another app | 1 d |
-| 9 | **A6** releases, **A7** orphan commits, **G3** relationship graph | A6 waits for release tags; G3 = KB3 | 2.5 d |
-
-About **10.5 working days**. Steps 1–2 (2 d) give something to show. Steps 3–5 (3.5 d) are the autonomy.
-
-Fit with [AUTONOMY_AND_NEXT.md](AUTONOMY_AND_NEXT.md): step 1 goes **with AI1**, the first item there, at about +0.5 d over AI1 alone. G1 then comes before KB1, and A1 runs KB1's tests once they exist.
+These steps are part of the one plan in [AUTONOMY_AND_NEXT.md](AUTONOMY_AND_NEXT.md#5-recommended-order), which gives the order and the status. In short: **GG0** is built with AI1 (step 1 there), **G1** comes right after (step 2), then A2, A1 and A3, which are the autonomy. G2, A4–A7 and G3 come later. About 10.5 working days in all.
 
 ## 7. Questions for the CTO
 
-1. **Which picture?** (a) branches and commits, (b) what the AI did per ticket, (c) the relationships, or (d) code dependencies. A sketch of each makes this a one-minute answer.
-2. **Who looks at it, and how often?** Developers every day (then a view in the IDE matters), or the team lead and management weekly (then the dashboard).
-3. **The real repositories:** merge commits or squash? Release tags or release branches? GitHub, Bitbucket, Azure DevOps or SVN? This decides A4, A6 and how much of G1 comes from git and how much from PRs.
+1. **Which picture?** (a) branches and commits, (b) what the AI did per ticket, (c) the relationships, or (d) code dependencies. A sketch of each makes this a one-minute answer. *Open.* G1 is built to show both (a) and (b).
+2. **Who looks at it, and how often?** *Answered 2026-11-13: everyone. Developers every day; management weekly or more often.*
+3. **The real repositories:** merge commits or squash? Release tags or release branches? GitHub, Bitbucket, Azure DevOps or SVN? *Answered in part, 2026-11-13: **both git and SVN**. Merge or squash, and tags, are still open.*
+
+### What the answers change
+
+- **Two audiences, one model.** G1 gets a developer mode (one ticket or branch, every step, every day) and a management mode (the week: what the agent did, how often it was right, what it cost). The management mode is **WF5 (Impact)**, so WF5 moves up in the plan, right after G1.
+- **Developers every day** means the dashboard must be reachable by the team. Today it answers only on the machine it runs on (`dashboardAllowRemote` opens it, without sign-in), so this needs a team machine and sign-in (new decision in AUTONOMY_AND_NEXT section 6). Where developers already are, in the IDE, the analyze-ticket skill can print a ticket's lane as text. That works in Claude Code and in Copilot, on git and on SVN.
+- **Git and SVN.** GG0 reads history through the skill's VCS adapters (`lib/vcs/git.mjs`, `lib/vcs/svn.mjs`), which already serve the analysis on both. On SVN there are no pull requests, so a lane is built from commits and events. The automatic fix and the AI review are git-only today (draft PRs), so an SVN lane shows the analysis, the commits and the documentation. A2 bisect uses `svn update -r`, and A4 (branch care) does not apply.

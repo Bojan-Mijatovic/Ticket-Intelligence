@@ -151,7 +151,7 @@ export async function documentResolved({ issue, repoDir, stateDir, cfg, jira, ev
       /* no remote */
     }
     events.emit('documenting', { key, text: `writing docs/knowledge on branch ${branch}` });
-    const { out, changed, title } = await documentOne({ ws, key, fix: fixSource(key, { fixPr, fixBranch }), cfg, stateDir, onProgress: (step) => events.emit('progress', { key, step }) });
+    const { out, changed, title, meta } = await documentOne({ ws, key, fix: fixSource(key, { fixPr, fixBranch }), cfg, stateDir, onProgress: (step) => events.emit('progress', { key, step }) });
     ws.git(['push', '-q', '-u', 'origin', branch]);
     pushed = true;
 
@@ -161,7 +161,7 @@ export async function documentResolved({ issue, repoDir, stateDir, cfg, jira, ev
       body: `## ${key}: known-issue documentation\n\n**Jira:** ${jira.browseUrl(key)}${fixPr ? `\n**Fix:** ${fixPr}` : ''}\n\n- **Root cause:** ${out.result.rootCause ?? '—'}\n- **Fix:** ${out.result.fix ?? '—'}\n\nFiles:\n${changed.map((f) => `- \`${f}\``).join('\n')}\n\n---\n_Draft pull request opened by the Ticket Intelligence agent after the ticket was resolved. A human reviews and merges._\n`,
     });
     await jira.comment(key, `(robot) *AI documentation* — the problem and its fix are recorded in the project's knowledge base, ready for review.\n\n${prUrl ? `[${title}|${prUrl}]` : `branch {{${branch}}}`}\nFiles: ${changed.map((f) => `{{${f}}}`).join(', ')}`);
-    events.emit('documented', { key, text: `documentation PR ready (${changed.length} file(s))`, url: prUrl, files: changed });
+    events.emit('documented', { key, text: `documentation PR ready (${changed.length} file(s))`, url: prUrl, files: changed, meta });
     return { prUrl, files: changed };
   } finally {
     ws.remove(); // a pushed branch stays, locally and on the remote

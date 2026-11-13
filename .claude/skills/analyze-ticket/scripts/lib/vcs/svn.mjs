@@ -88,6 +88,7 @@ export function openSvn(dir) {
         hash: `r${rev}`,
         short: `r${rev}`,
         rev: Number(rev),
+        parents: [], // revisions are global in SVN: the previous one may belong to another branch
         author: unxml(body.match(/<author>([\s\S]*?)<\/author>/)?.[1] ?? 'unknown'),
         email: '',
         date: body.match(/<date>([^<]+)<\/date>/)?.[1] ?? '',
@@ -149,6 +150,13 @@ export function openSvn(dir) {
     root,
 
     files,
+
+    /** The history of the working copy's line (trunk or a branch), newest first; one server call. Default: one year. */
+    history({ since, until, limit } = {}) {
+      const window = { since: since ?? new Date(Date.now() - 365 * DAY).toISOString(), until };
+      const out = logRange(url, window).filter(inWindow(window));
+      return limit ? out.slice(0, limit) : out;
+    },
 
     logByMessage(terms, { all = false, since, until, limit = 200 } = {}) {
       const usable = terms.filter((t) => !/[*?[\]]/.test(t));

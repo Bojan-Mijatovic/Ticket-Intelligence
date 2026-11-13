@@ -63,6 +63,7 @@ The command-line tools take the project from the ticket key (`LAB-7` → MediLab
 | `node agent/review-one.mjs DEM-7` / `--pr 14` | AI review of a pull request (posted on GitHub; `--dry-run` prints only) | no |
 | `node agent/insights.mjs` | hotspot map in the terminal (`--json`, `--recommend`, `--review` runs the AI review of the app) | no |
 | `node agent/ask.mjs "question"` | ask the knowledge base (sourced answer or "not found") | no |
+| `node agent/accuracy.mjs` | how often the agent was right, per project (`--project DEM`, `--rows`, `--json`) | no |
 | `node agent/mail-test.mjs` / `DEM-7` / `DEM-7 --dry-run` | send a test email, or the "analysis ready" email of a saved analysis, to `MAIL_TO` | no |
 | `node --test agent/test` | unit tests of the agent's plain-code parts | no |
 
@@ -391,3 +392,29 @@ Before the analysis looks for a new cause, it answers **Already known?** The ski
 | `documented` (a knowledge entry describes it) | yes, if it is a bug | cites the entry |
 
 Which kinds stop the automatic fix: `policy.json` → `proposeFixWhen.skipKnown`. The card shows **Already known?**, the analysis email has it, and Insights counts a regression or a repeat as a recurring problem. The agent does not link or close tickets on its own.
+
+## How often the agent was right (accuracy)
+
+`node agent/accuracy.mjs` (and `GET /api/accuracy?project=DEM`) compares what the agent said or did with what happened afterwards. There is no answer key and no AI run: every ticket the agent analysed that later got its change on the main line, and every pull request it opened, is a test case. This is AI1 of [docs/AUTONOMY_AND_NEXT.md](../docs/AUTONOMY_AND_NEXT.md).
+
+The input is one **graph** of the project (`lib/git-graph.mjs`, GG0 of [docs/GIT_GRAPH.md](../docs/GIT_GRAPH.md)), built from five sources:
+
+- the commits of the shared line, through the skill's VCS adapters, so it works on **git and SVN**;
+- the ticket each commit starts with (`DEM-5: …`), or mentions;
+- the pull requests, through `gh`, on git and GitHub;
+- the agent's event log, all `events*.jsonl`. Every analysis there carries its files, owner, confidence, "already known?" verdict and cost;
+- Jira: type, status, resolution, assignee.
+
+| What | Compared with | Notes |
+|---|---|---|
+| Files the analysis named | the code files of the ticket's change (tests and `docs/` left out) | a hit is any common file; also precision and recall. Shown **apart** when the agent fixed the ticket itself, because then the change follows the analysis and does not test it |
+| Component | the component of the changed files (`insights.components`) | |
+| Owner | the author of a person's change, or the Jira assignee | only for a person's change |
+| Already known? | whether the ticket needed a change of its own | "duplicate / in progress / fixed on main" is right when the ticket closes without one; "new" is wrong when it is closed as a duplicate |
+| Fix PRs | merged unchanged, merged with a person's commit, rejected, withdrawn, open | only PRs the agent's runs opened. **Withdrawn** = closed by the demo reset: its comment (`Closed by the demo reset`), or closed together with other agent PRs within two minutes anywhere in the suite. A PR rejected by a person is listed with its last comment as the reason |
+| AI review | what became of the PR | "looks good" agrees with merged unchanged; "needs changes" agrees with changed or rejected |
+| Documentation PRs | the same outcomes as fix PRs | |
+
+Only a prediction made **before** the change counts: an analysis run after the ticket's change was on main is listed as skipped. Every number says what it is out of, and the notes say what could not be measured and why. One snapshot a day is kept in `<project state>/accuracy/snapshots.json` for the trend.
+
+From 2026-11-13 on, the events also record the model of each run (`meta.model`), and the cost of fixes and documentation (`fix-proposed` and `documented` carry `meta`).

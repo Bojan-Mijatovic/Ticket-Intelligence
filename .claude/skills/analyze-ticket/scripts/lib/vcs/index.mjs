@@ -2,8 +2,9 @@
 // a repository. An SVN working copy inside a git repository (or the other way round) is the inner one: the outer
 // repository only holds it as files.
 // Both adapters expose the same read-only interface:
-//   kind, root, files(), logByMessage(terms, opts), logByPaths(paths, opts), grep(term, opts),
+//   kind, root, files(), history(opts), logByMessage(terms, opts), logByPaths(paths, opts), grep(term, opts),
 //   patch(commit, opts), branches(), info(cfg)
+// A commit is { hash, short, parents[], author, email, date, subject, body, files[] } (SVN: hash "r12", no parents).
 
 import { resolve } from 'node:path';
 import { openGit } from './git.mjs';

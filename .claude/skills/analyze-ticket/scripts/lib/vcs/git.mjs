@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 const REC = '\x1e';
 const FLD = '\x1f';
 const END = '\x1d';
-const FORMAT = `--format=${REC}%H${FLD}%an${FLD}%ae${FLD}%aI${FLD}%s${FLD}%b${END}`;
+const FORMAT = `--format=${REC}%H${FLD}%P${FLD}%an${FLD}%ae${FLD}%aI${FLD}%s${FLD}%b${END}`;
 
 function parseLog(out) {
   return out
@@ -13,10 +13,11 @@ function parseLog(out) {
     .filter((s) => s.trim())
     .map((chunk) => {
       const [head, files = ''] = chunk.split(END);
-      const [hash, author, email, date, subject, body = ''] = head.split(FLD);
+      const [hash, parents = '', author, email, date, subject, body = ''] = head.split(FLD);
       return {
         hash,
         short: hash.slice(0, 8),
+        parents: parents.split(' ').filter(Boolean),
         author,
         email,
         date,
@@ -47,12 +48,28 @@ export function openGit(dir) {
   // The "(root)" component means files directly in the repo root, not the whole repo.
   const spec = (p) => (p === '(root)' ? ':(glob)*' : p);
   const range = ({ since, until, limit }) => [...(since ? [`--since=${since}`] : []), ...(until ? [`--until=${until}`] : []), ...(limit ? ['-n', String(limit)] : [])];
+  // The shared line of development: the remote's default branch, else origin/main or origin/master, else HEAD (a clone
+  // may have a preview or a developer's branch checked out).
+  const baseRef = () => {
+    for (const ref of ['refs/remotes/origin/HEAD', 'refs/remotes/origin/main', 'refs/remotes/origin/master']) {
+      try {
+        git(['rev-parse', '--verify', '-q', ref]);
+        return ref.replace(/^refs\/remotes\//, '');
+      } catch {
+        /* not there: try the next one */
+      }
+    }
+    return 'HEAD';
+  };
 
   return {
     kind: 'git',
     root,
 
     files: () => git(['ls-files']).split(/\r?\n/).filter(Boolean),
+
+    /** The history of one line, newest first, with each commit's parents and files: `ref`, or the shared base line. */
+    history: ({ ref = null, ...r } = {}) => log([ref ?? baseRef(), ...range(r)]),
 
     logByMessage: (terms, { all = false, ...r } = {}) =>
       terms.length ? log([...(all ? ['--all'] : []), '-i', '-F', ...terms.flatMap((t) => ['--grep', t]), ...range(r)]) : [],

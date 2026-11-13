@@ -158,7 +158,7 @@ async function maybeFix({ issue, result, cfg, policy, jira, events, repoDir, sta
     // What the reviewer (review.mjs) and agent/review-one.mjs need later, after the worktree is gone.
     const { ws: _ws, ...saved } = fix;
     writeFileSync(join(stateDir, 'work', key, 'fix.json'), JSON.stringify({ ...saved, prUrl: pub.prUrl, at: new Date().toISOString() }, null, 2));
-    events.emit('fix-proposed', { key, text: `draft PR ready: ${fix.title}`, url: pub.prUrl, checks: fix.checks, files: fix.fix.files });
+    events.emit('fix-proposed', { key, text: `draft PR ready: ${fix.title}`, url: pub.prUrl, checks: fix.checks, files: fix.fix.files, meta: fix.meta });
     return Boolean(pub.prUrl);
   } catch (e) {
     events.emit('fix-failed', { key, text: `${e.stage ? `${e.stage}: ` : ''}${e.message}`, checks: e.checks });

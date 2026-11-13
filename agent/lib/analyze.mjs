@@ -106,7 +106,9 @@ export async function runClaude(opts) {
   if (transcriptFile) writeFileSync(transcriptFile, transcript.map((e) => JSON.stringify(e)).join('\n'));
   if (parsed.error) throw new Error(parsed.error);
   // sessionId: a caller can continue the same session (--resume), e.g. to correct what a check found (document.mjs).
-  return { result: parsed.result, meta: { costUsd: final.total_cost_usd ?? 0, durationMs: final.duration_ms ?? 0, turns: final.num_turns ?? 0, sessionId: final.session_id ?? null } };
+  // model: the one the CLI actually ran (its init event), kept for the accuracy per model (AI1).
+  const model = first.transcript.find((e) => e.type === 'system' && e.subtype === 'init')?.model ?? opts.cfg?.claude?.model ?? null;
+  return { result: parsed.result, meta: { costUsd: final.total_cost_usd ?? 0, durationMs: final.duration_ms ?? 0, turns: final.num_turns ?? 0, sessionId: final.session_id ?? null, model } };
 }
 
 function parseResult(final, required) {

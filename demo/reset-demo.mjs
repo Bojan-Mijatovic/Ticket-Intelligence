@@ -65,7 +65,9 @@ for (const app of APPS) {
   // 1. Pull requests opened by the agent
   const prs = slug ? JSON.parse(sh('gh', ['pr', 'list', '--repo', slug, '--state', 'open', '--json', 'number,headRefName,title'], APP)) : [];
   for (const pr of prs.filter((p) => AGENT_BRANCH.test(p.headRefName))) {
-    step(`close PR #${pr.number} (${pr.headRefName}) and delete its branch: ${pr.title}`, () => sh('gh', ['pr', 'close', String(pr.number), '--repo', slug, '--delete-branch'], APP));
+    // The comment starts with RESET_MARK (agent/lib/git-graph.mjs): the accuracy (AI1) counts the PR as withdrawn, not
+    // as rejected by a reviewer.
+    step(`close PR #${pr.number} (${pr.headRefName}) and delete its branch: ${pr.title}`, () => sh('gh', ['pr', 'close', String(pr.number), '--repo', slug, '--delete-branch', '--comment', 'Closed by the demo reset (not a review decision).'], APP));
   }
   const keptDocs = prs.filter((p) => !DROP_DOCS && DOCS_BRANCH.test(p.headRefName));
   if (keptDocs.length) console.log(`  kept ${keptDocs.length} documentation PR(s): ${keptDocs.map((p) => `#${p.number} ${p.headRefName}`).join(', ')} (--drop-docs to close them)`);

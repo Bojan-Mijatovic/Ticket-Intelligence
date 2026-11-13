@@ -69,7 +69,7 @@ export function createJira() {
       const out = [];
       let token = null;
       do {
-        const page = await api('GET', `/rest/api/2/search/jql?jql=${encodeURIComponent(jql)}&fields=summary,status,priority,labels,created,reporter,issuetype,resolutiondate,issuelinks&maxResults=${pageSize}${token ? `&nextPageToken=${encodeURIComponent(token)}` : ''}`);
+        const page = await api('GET', `/rest/api/2/search/jql?jql=${encodeURIComponent(jql)}&fields=summary,status,priority,labels,created,reporter,assignee,issuetype,resolution,resolutiondate,issuelinks&maxResults=${pageSize}${token ? `&nextPageToken=${encodeURIComponent(token)}` : ''}`);
         for (const i of page.issues ?? []) {
           out.push({
             key: i.key,
@@ -79,7 +79,9 @@ export function createJira() {
             labels: i.fields.labels ?? [],
             created: i.fields.created,
             reporter: i.fields.reporter?.displayName ?? null,
+            assignee: i.fields.assignee?.displayName ?? null,
             issueType: i.fields.issuetype?.name ?? null,
+            resolution: i.fields.resolution?.name ?? null,
             resolved: i.fields.resolutiondate ?? null,
             // Linked tickets, also of other projects (Insights: recurring problems, causes in a linked app).
             links: (i.fields.issuelinks ?? [])

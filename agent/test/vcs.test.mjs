@@ -25,3 +25,19 @@ test('the demo SVN working copy (inside this git repository) is read as SVN', { 
   assert.equal(repo.kind, 'svn');
   assert.ok(repo.logByMessage(['DEM-5'], { all: true, limit: 10 }).some((c) => c.short === 'r12'));
 });
+
+test('history of the shared line, git: newest first, with parents and files', () => {
+  const repo = openRepo(ROOT);
+  const h = repo.history({ limit: 3 });
+  assert.equal(h.length, 3);
+  assert.ok(h.every((c) => c.parents.length > 0 && c.parents.every((p) => /^[0-9a-f]{40}$/.test(p))), 'each commit names its parents');
+  assert.ok(h.every((c) => Array.isArray(c.files) && c.date && c.subject));
+});
+
+test('history of the shared line, SVN: revisions newest first, no parents', { skip: !(existsSync(SVN_WC) && existsSync(SVN_BIN)) && 'no demo SVN working copy or portable svn here' }, () => {
+  process.env.SVN_BIN ??= SVN_BIN;
+  const h = openRepo(SVN_WC).history({ since: '2000-01-01T00:00:00Z' });
+  assert.ok(h.length > 1 && h[0].rev > h[1].rev);
+  assert.deepEqual(h[0].parents, []);
+  assert.ok(h.some((c) => c.subject.startsWith('DEM-5') && c.files.length));
+});

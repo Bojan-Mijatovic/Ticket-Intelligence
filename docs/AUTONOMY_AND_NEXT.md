@@ -35,7 +35,8 @@ Done: #4 AI reviewer, #5 Insights, #6 Ask. Open: #1 approval from Teams, #2 Miss
 
 | What | Result |
 |---|---|
-| Analyses run | 49 (event logs). Cost is known only for the 8 still saved (the demo reset removed the others' results): $0.26 and 48 s on average, all high confidence |
+| Analyses run | 49 (event logs, which keep every analysis with its cost): **$0.39 and 63 s on average**, $19.16 in all (MediAgenda $0.43, the other apps $0.16–0.19). The 8 saved result files alone gave $0.26, an earlier figure that was too low |
+| Accuracy (AI1, `agent/accuracy.mjs`, 2026-11-13) | fix PRs: **5 of 6 decided merged unchanged** (the 6th, DEM-36, closed because DEM-37 replaced it); 15 withdrawn by demo resets, not counted. Documentation PRs: 8 of 11 merged unchanged (1 with a person's commit, 2 closed: a duplicate and one without a reason). AI review agrees with the outcome 2 of 3 (the one miss is the replaced DEM-36). Analysis files: 5 of 5 hit, but all five were fixed by the agent itself; **no analysed ticket has been fixed by a person yet**, so the analysis is not tested independently (AI1b) |
 | Automatic fixes | 21 draft PRs, 8 stopped: **72 %** of the attempts end in a verified PR (test fails before, all checks pass after) |
 | AI review | 11 reviews, risk and findings posted on GitHub |
 | Documentation | 46 backfilled + 11 on Done; 8 merged from the dashboard; 48 tickets documented on the four `main`s, 0 lint findings, 0 stale entries (re-checked 2026-11-13) |
@@ -144,17 +145,25 @@ Per-agent metrics and autonomy follow from it, and a new agent has a template.
 
 ## 5. Recommended order
 
-| # | Step | Why first | Effort |
-|---|---|---|---|
-| 1 | **AI1** continuous evaluation | everything else (AG2, AI2, WF5) needs its numbers; no new AI cost | 1.5 d |
-| 2 | **KB1** entry ↔ regression test | executable knowledge; run as a command until the night shift exists | 1 d |
-| 3 | **AG1** agent contracts (refactor, no behaviour change) | prerequisite for AG2 and AG3 | 1.5 d |
-| 4 | **AG2** trust ladder | autonomy by evidence; needs 1 and 3 | 1 d |
-| 5 | **WF1** intake check | fewer low-confidence analyses; cheap model | 1 d |
-| 6 | **KG1** + **KG2** gaps from all signals, researcher agent | knowledge grows where it is missing | 2 d |
-| 7 | KB2 handbooks, WF4, WF5, AI2–AI4, AG3 | after the above shows where it pays | 5 d |
+One plan for this document and [GIT_GRAPH.md](GIT_GRAPH.md) (GG0, G1–G3, A1–A7). Updated 2026-11-13 after the answers in GIT_GRAPH section 7: everyone looks at it (developers every day, management weekly or more often), on git and SVN.
 
-About 13 working days without the deferred items, in three blocks: **measure** (1–2), **earn autonomy** (3–5), **grow** (6–7).
+| # | Step | Why in this place | Effort | Status |
+|---|---|---|---|---|
+| 1 | **AI1** continuous evaluation + **GG0** graph model (git and SVN) | everything else (G1, WF5, AG2, AI2) needs its numbers and its edges; no new AI cost | 2 d | **done 2026-11-13**: `agent/accuracy.mjs`, `GET /api/accuracy`, one snapshot a day (FR-68, FR-69); the dashboard panel comes with step 2 |
+| 2 | **G1** ticket lanes (developer mode) + the accuracy panel | the picture the CTO asked for; developers every day | 1.5 d | |
+| 3 | **AI1b** replay on resolved history: the analysis of a resolved ticket as it was reported, on the code before its fix, compared with the real fix | the demo has no person-made fixes of analyzed tickets to compare with; history has 46. Gives a baseline now and on the pilot project on day one. **Costs about $15 for the suite: needs a go** | 1 d | |
+| 4 | **WF5** Impact: the management week (what the agent did, accuracy, cost per ticket, time saved against the team's baseline) | management looks weekly; built on the records of step 1 | 1 d | |
+| 5 | **KB1** entry ↔ regression test | executable knowledge; run as a command until the night shift exists | 1 d | |
+| 6 | **A2** automatic bisect with the reproduction test | proof of the breaking commit instead of a guess; no model cost | 1.5 d | |
+| 7 | **A1** regression guard on every commit to `main` | catches a regression before a ticket; runs KB1's tests | 1 d | |
+| 8 | **A3** blast radius from what changes together | better fixes and reviews; cheap | 1 d | |
+| 9 | **AG1** agent contracts (refactor, no behaviour change) | prerequisite for AG2 and AG3 | 1.5 d | |
+| 10 | **AG2** trust ladder | autonomy by evidence; needs 1 and 9 | 1 d | |
+| 11 | **WF1** intake check | fewer low-confidence analyses; cheap model | 1 d | |
+| 12 | **KG1** + **KG2** gaps from all signals, researcher agent | knowledge grows where it is missing | 2 d | |
+| 13 | G2 bug lineage, G3 relationship graph (KB3), A4 branch care, A5 port fixes, A6 releases, A7 orphan commits, KB2, WF4, AI2–AI4, AG3 | after the above shows where it pays | ~10 d | |
+
+About **25 working days** without the deferred items, in three blocks: **measure and show** (1–4), **act on the code** (5–8), **earn autonomy and grow** (9–13).
 
 **Deferred, kept in the plan** (decided 2026-11-13, to keep the scope narrow for now): **WF2** Teams front door (ROADMAP #1, approval from Teams; 2 d + IT) and **WF3** night shift + morning digest (ROADMAP #3; 1.5 d). Until WF3 exists, the checks it would run (K7 refresh, lint, redaction audit, KB1 tests, AI1 accuracy) stay commands a person runs. They come back when the pilot project (section 6) gives them real tickets.
 
@@ -165,3 +174,4 @@ About 13 working days without the deferred items, in three blocks: **measure** (
 3. **The thresholds of the trust ladder** (AG2): how many runs, which acceptance rate, per action.
 4. **The night-shift budget** (AI3, WF3): not needed while WF3 is deferred; a daily budget per action (AI3) still is.
 5. **R-02**: DPO approval and the AI service ([REDACTION.md](REDACTION.md)).
+6. **A team machine for the dashboard, with sign-in** (G1, WF5): developers look every day and management weekly, and today the dashboard answers only on the machine it runs on.

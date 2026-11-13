@@ -32,6 +32,8 @@ import { askQuestion } from './lib/ask.mjs';
 import { recordedAsks, recordedRuns } from './lib/tour.mjs';
 import { attachMailUpdates } from './lib/mail-updates.mjs';
 import { loadProjects, peerCheckouts, teamOf } from './lib/projects.mjs';
+import { loadGraph, readSuitePullRequests } from './lib/git-graph.mjs';
+import { recordAccuracy, scoreAccuracy } from './lib/accuracy.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const all = loadProjects(HERE);
@@ -337,6 +339,20 @@ async function insightsCached(p, refresh = false) {
   insightsCache.set(p.key, { at: Date.now(), data });
   return data;
 }
+// Accuracy (AI1) from the project's graph (GG0): pull requests of the whole suite read once per refresh (a demo reset
+// is recognised across the repositories), each project's result cached for two minutes like the insights.
+const accuracyCache = new Map();
+let suitePrsCache = null;
+async function accuracyCached(p, refresh = false) {
+  const hit = accuracyCache.get(p.key);
+  if (!refresh && hit && Date.now() - hit.at < 120_000) return hit.data;
+  if (refresh || !suitePrsCache || Date.now() - suitePrsCache.at >= 120_000) suitePrsCache = { at: Date.now(), prs: readSuitePullRequests(all.projects.filter((x) => existsSync(x.repoDir))) };
+  const graph = await loadGraph({ project: p, eventsDir: rootState, jira, suitePrs: suitePrsCache.prs });
+  const acc = scoreAccuracy(graph, { rules: p.cfg.insights?.components ?? [] });
+  const data = { ...acc, trend: recordAccuracy(p.stateDir, acc) };
+  accuracyCache.set(p.key, { at: Date.now(), data });
+  return data;
+}
 const queryOf = (req) => new URL(req.url, 'http://localhost').searchParams;
 const readyProject = (sel) => {
   const p = projectFor(sel);
@@ -455,6 +471,17 @@ const server = createServer(async (req, res) => {
       // Knowledge gaps (K12): questions without a good answer; the coverage per component is put together on the page.
       const gaps = knowledgeGaps(readAsks(p.stateDir));
       return json(res, 200, { ...data, gaps, project: p.key, recommendations: readRecommendations(p.stateDir, data), review, reviewing: reviewing === p.key, suggestions, createTicket: policy.actions.createTicket ?? 'draft' });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    }
+  }
+  // How often the agent was right (AI1): /api/accuracy?project=DEM[&refresh=1]. Jira only adds the tickets' state, so
+  // it is required like for the insights (without it, a deleted ticket and an unread one look the same).
+  if (req.method === 'GET' && path === '/api/accuracy') {
+    try {
+      const p = readyProject({ project: queryOf(req).get('project') });
+      await health.require();
+      return json(res, 200, await accuracyCached(p, queryOf(req).get('refresh') === '1'));
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     }

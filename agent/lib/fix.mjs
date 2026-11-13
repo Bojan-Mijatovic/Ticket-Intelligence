@@ -246,7 +246,7 @@ export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg,
       fix: { commit: fixCommit, summary: fix.result.summary, description: fix.result.description, files: changed2, updatedTests },
       checks,
       evidence: { before: evBefore.png ?? null, after: evAfter.png ?? null, beforeJson: evBefore.json ?? null, afterJson: evAfter.json ?? null, beforeText: evBefore.text ?? null, afterText: evAfter.text ?? null },
-      meta: { durationMs: repro.meta.durationMs + fix.meta.durationMs, costUsd: repro.meta.costUsd + fix.meta.costUsd },
+      meta: { durationMs: repro.meta.durationMs + fix.meta.durationMs, costUsd: repro.meta.costUsd + fix.meta.costUsd, model: fix.meta.model ?? null },
     };
   } catch (e) {
     ws.remove();
