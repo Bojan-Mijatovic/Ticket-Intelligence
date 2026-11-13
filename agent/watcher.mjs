@@ -19,10 +19,11 @@ import { createJiraHealth } from './lib/jira-health.mjs';
 import { documentResolved } from './lib/document.mjs';
 import { createDocsPrs } from './lib/docs-prs.mjs';
 import { repoKnowledge } from './lib/doc-candidates.mjs';
+import { loadPriorArtSources } from './lib/prior-art.mjs';
 import { processTicket } from './lib/pipeline.mjs';
 import { currentBranch, previewBranch } from './lib/preview.mjs';
 import { reviewPullRequest } from './lib/review.mjs';
-import { buildInsights, readRecommendations, writeRecommendations } from './lib/insights.mjs';
+import { buildInsights, readRecommendations, savedAnalyses, writeRecommendations } from './lib/insights.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
 import { createSuggested, readCreated, suggestTickets } from './lib/suggestions.mjs';
 import { suiteInsights } from './lib/suite.mjs';
@@ -315,6 +316,17 @@ const assignableCache = new Map(); // project key → { at, users }
 let asking = false;
 const knowledgeCache = new Map(); // project key → { at, data }: the documentation PRs (gh + git, a few seconds)
 let mergingDocs = false;
+// Prior art of the suggested tickets (K17/K19): commit files, knowledge entries, open PRs, saved analyses of a project.
+const priorArtCache = new Map(); // project key → { at, sources }
+function priorArtSourcesOf(p, refresh = false) {
+  const hit = priorArtCache.get(p.key);
+  if (!refresh && hit && Date.now() - hit.at < 120_000) return hit.sources;
+  const sources = loadPriorArtSources({ repoDir: p.repoDir, analyses: savedAnalyses(p.stateDir) });
+  priorArtCache.set(p.key, { at: Date.now(), sources });
+  return sources;
+}
+const suggestionsOf = (p, data, review, refresh = false) =>
+  suggestTickets({ insights: data, review, rules: p.cfg.insights?.components ?? [], created: readCreated(p.stateDir), project: p.key, priorArtSources: priorArtSourcesOf(p, refresh) });
 async function insightsCached(p, refresh = false) {
   const hit = insightsCache.get(p.key);
   if (!refresh && hit && Date.now() - hit.at < 120_000) return hit.data;
@@ -434,9 +446,10 @@ const server = createServer(async (req, res) => {
     try {
       const p = readyProject({ project: queryOf(req).get('project') });
       await health.require(); // without Jira every ticket count would be 0 and every suggestion would look new
-      const data = await insightsCached(p, queryOf(req).get('refresh') === '1');
+      const refresh = queryOf(req).get('refresh') === '1';
+      const data = await insightsCached(p, refresh);
       const review = readReview(p, data);
-      const suggestions = suggestTickets({ insights: data, review, rules: p.cfg.insights?.components ?? [], created: readCreated(p.stateDir), project: p.key });
+      const suggestions = suggestionsOf(p, data, review, refresh);
       return json(res, 200, { ...data, project: p.key, recommendations: readRecommendations(p.stateDir, data), review, reviewing: reviewing === p.key, suggestions, createTicket: policy.actions.createTicket ?? 'draft' });
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
@@ -451,7 +464,7 @@ const server = createServer(async (req, res) => {
       for (const p of all.projects.filter((x) => existsSync(x.repoDir))) {
         const data = await insightsCached(p, refresh);
         const review = readReview(p, data);
-        const suggestions = suggestTickets({ insights: data, review, rules: p.cfg.insights?.components ?? [], created: readCreated(p.stateDir), project: p.key });
+        const suggestions = suggestionsOf(p, data, review, refresh);
         apps.push({ project: p, data: { ...data, suggestions }, review });
       }
       return json(res, 200, suiteInsights(apps));
@@ -522,12 +535,19 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req);
       const p = readyProject(body);
       await health.require(); // the duplicate check compares with the tickets in Jira
-      const data = await insightsCached(p);
-      const s = suggestTickets({ insights: data, review: readReview(p, data), rules: p.cfg.insights?.components ?? [], created: readCreated(p.stateDir), project: p.key }).find((x) => x.id === body.id);
+      // Checked again live (K19): Jira, git and the open PRs may have changed since the page was loaded.
+      const data = await insightsCached(p, true);
+      const s = suggestionsOf(p, data, readReview(p, data), true).find((x) => x.id === body.id);
       if (!s) return json(res, 404, { ok: false, error: 'this suggestion is no longer there; refresh the Insights tab' });
       if (s.created) return json(res, 409, { ok: false, error: `already created as ${s.created.key}` });
-      if (s.openAs && body.evenIfOpen !== true) return json(res, 409, { ok: false, error: `${s.openAs} is open and says the same` });
-      const created = await createSuggested({ jira, project: p.key, stateDir: p.stateDir, suggestion: s, edits: body.edits ?? {}, assign: body.assign !== false, assigneeId: body.assigneeId, analyze: body.analyze === true });
+      const reason = String(body.reason ?? '').trim();
+      const verdict = s.priorArt?.verdict ?? (s.openAs ? 'duplicate-of' : 'new');
+      if (verdict !== 'new' && !reason && body.evenIfOpen !== true) {
+        const what = { 'duplicate-of': `${s.priorArt?.key ?? s.openAs} is open and says the same`, 'fixed-by': `${s.priorArt.key} fixed it after the suggestion was written`, 'in-progress': `pull request #${s.priorArt.pr} is changing the same files` }[verdict] ?? verdict;
+        return json(res, 409, { ok: false, error: `${what}; to create it anyway, give the reason`, priorArt: s.priorArt });
+      }
+      insightsCache.delete(p.key);
+      const created = await createSuggested({ jira, project: p.key, stateDir: p.stateDir, suggestion: s, edits: body.edits ?? {}, assign: body.assign !== false, assigneeId: body.assigneeId, analyze: body.analyze === true, reason });
       events.emit('insights', { project: p.key, text: `${created.key} created from an Insights suggestion: ${created.summary}${created.assignee ? ` (assigned to ${created.assignee})` : ''}` });
       insightsCache.delete(p.key);
       return json(res, 200, { ok: true, ...created });

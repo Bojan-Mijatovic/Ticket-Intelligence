@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { checkSources, keywords } from '../lib/ask.mjs';
+import { checkSources, collect, keywords, withWarnings } from '../lib/ask.mjs';
 
 test('keywords: longest first, no stop words, no numbers, no duplicates', () => {
   assert.deepEqual(keywords('Why are cancelled appointments not offered again? Cancelled since 2026'), ['appointments', 'cancelled', 'offered']);
@@ -28,4 +28,39 @@ test('sources: only tickets, commits and files that exist are kept, each with a 
     { tickets: ['DEM-5'], analyses: [], log: 'abc1234 2026-09-22 Sara | DEM-5: fix', repoDir, links },
   );
   assert.deepEqual(kept.map((s) => [s.type, s.ref, s.url]), [['ticket', 'DEM-5', 'J/DEM-5'], ['commit', 'abc1234', 'G/abc1234def'], ['file', 'frontend/src/a.ts', 'F/frontend/src/a.ts']]);
+});
+
+test('sources: a ticket only in the git history is kept, marked inJira: false (K10)', () => {
+  const links = { ticket: (k) => `J/${k}`, commit: (h) => `G/${h}`, file: (p) => `F/${p}` };
+  const kept = checkSources([{ type: 'ticket', ref: 'BIL-18', why: 'latest fix' }, { type: 'ticket', ref: 'BIL-99', why: 'invented' }], { tickets: [], analyses: [], log: '\n0ca5391 2026-11-02 Davide Greco | BIL-18: Report incassi opens on the current month', repoDir: '.', links });
+  assert.deepEqual(kept, [{ type: 'ticket', ref: 'BIL-18', why: 'latest fix', url: 'J/BIL-18', inJira: false }]);
+});
+
+test('warnings: a "not found" answer says Jira could not be searched; a found one keeps its text (K10)', () => {
+  const jira = [{ source: 'jira', text: 'Jira search (latest tickets) failed: 400' }];
+  const nf = withWarnings({ found: false, answer: 'Not in the knowledge base. The closest is BIL-17.' }, jira);
+  assert.equal(nf.answer, 'Jira could not be searched, so this answer rests on the code and the git history only. The closest is BIL-17.');
+  assert.equal(nf.searchFailed, true);
+  assert.deepEqual(withWarnings({ found: true, answer: 'BIL-18.' }, jira), { found: true, answer: 'BIL-18.', warnings: jira });
+  assert.deepEqual(withWarnings({ found: false, answer: 'Not in the knowledge base.' }), { found: false, answer: 'Not in the knowledge base.', warnings: [] });
+  assert.match(withWarnings({ found: false, answer: 'x' }, [{ source: 'git', text: 'git failed' }]).answer, /^Some sources could not be read/);
+});
+
+test('collect: every failed source becomes a warning, never an empty "nothing found" (K10)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ask-collect-'));
+  const jira = {
+    search: async (jql) => {
+      if (/text ~/.test(jql)) throw new Error('GET /rest/api/2/search/jql -> 400: bad JQL');
+      return [{ key: 'DEM-5' }, { key: 'DEM-6' }];
+    },
+    getIssueFull: async (key) => {
+      if (key === 'DEM-6') throw new Error('GET /rest/api/2/issue/DEM-6 -> 404: gone');
+      return { key, summary: 's' };
+    },
+  };
+  const data = await collect({ question: 'Has the Struttura bug happened before?', dir, repoDir: dir, stateDir: dir, cfg: { project: 'DEM' }, jira });
+  assert.deepEqual(data.tickets, ['DEM-5']);
+  assert.deepEqual(data.warnings.map((w) => w.source), ['jira', 'jira', 'git']);
+  assert.match(data.warnings[0].text, /Jira search \(by the words of the question\) failed: GET .* 400: bad JQL/);
+  assert.match(data.warnings[1].text, /1 ticket\(s\) could not be read from Jira: DEM-6/);
 });

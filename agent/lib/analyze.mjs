@@ -44,6 +44,7 @@ When you are done, reply with ONLY one \`\`\`json fenced block, nothing else, ma
   "files": ["path:line", "..."],
   "relatedTickets": [{ "key": "…", "why": "one line" }],
   "duplicateOf": null or { "key": "an open ticket reporting the same problem", "why": "one line" },
+  "priorArt": { "kind": "none | documented | duplicate | in-progress | fixed-on-main | regression | solved-before (the skill's step Already known?)", "key": "the ticket it is about, or null", "commit": "fix commit (7 characters) or null", "branch": "fix branch of another ticket or null", "entry": "docs/knowledge/…#anchor or null", "why": "one line of evidence" },
   "supersedes": [{ "key": "an earlier ticket whose implemented behaviour this ticket deliberately replaces (a change request, e.g. a new colour instead of the one DEM-32 introduced)", "why": "one line" }] — empty [] for a bug or when nothing earlier is replaced,
   "otherProjects": [{ "key": "Jira project key of a linked project involved in the cause", "evidence": "its ticket keys, commit hashes or files", "why": "one line" }] — empty [] when only this project is involved,
   "fixInProject": "Jira project key of the project whose code the fix belongs in (normally this ticket's own project)",
@@ -52,9 +53,9 @@ When you are done, reply with ONLY one \`\`\`json fenced block, nothing else, ma
   "alternatives": [{ "name": "…", "why": "…" }],
   "escalate": { "yes": true, "reason": "which rule" },
   "nextSteps": ["step — owner", "…"],
-  "jiraComment": "internal Jira comment in Jira wiki markup (h3. headings, *bold*, {{code}}, '* ' bullets), max 3500 characters, hypotheses labelled as such",
+  "jiraComment": "internal Jira comment in Jira wiki markup (h3. headings, *bold*, {{code}}, '* ' bullets), max 3500 characters, hypotheses labelled as such; when priorArt.kind is not none, start with a line 'Already known: …' naming the ticket, commit, branch or entry",
   "handoff": { "to": "owner name", "message": "Teams-ready message to the owner, max 120 words" },
-  "reporterReply": "short reply to the reporter, no internal names or speculation, no ETA"
+  "reporterReply": "short reply to the reporter, no internal names or speculation, no ETA; when already known: already reported (follow KEY), a fix is being prepared, or fixed and coming with the next release"
 }`;
 }
 
@@ -211,6 +212,21 @@ export function skillEnv(cfg, extra = {}) {
  * @param {{ key: string, name: string, dir: string, relation?: string }[]} [p.peers]  linked projects: their code
  *   (read-only checkouts) is added to the run and their Jira projects to the skill's related-ticket search
  */
+export const PRIOR_ART_KINDS = ['none', 'documented', 'duplicate', 'in-progress', 'fixed-on-main', 'regression', 'solved-before'];
+
+/**
+ * The analysis' "Already known?" answer, normalized (K20): an unknown kind is "none"; a duplicate given only in the
+ * older duplicateOf field counts as one. Keys and hashes are kept as given (the analysis cites what it read).
+ */
+export function normalizePriorArt(result) {
+  const p = result?.priorArt && typeof result.priorArt === 'object' ? result.priorArt : {};
+  let kind = String(p.kind ?? '').trim().toLowerCase();
+  if (!PRIOR_ART_KINDS.includes(kind)) kind = 'none';
+  if (kind === 'none' && result?.duplicateOf?.key) return { kind: 'duplicate', key: result.duplicateOf.key, commit: null, branch: null, entry: null, why: result.duplicateOf.why ?? '' };
+  const str = (v) => (v == null || v === 'null' || v === '' ? null : String(v));
+  return { kind, key: str(p.key)?.toUpperCase() ?? null, commit: str(p.commit), branch: str(p.branch), entry: str(p.entry), why: String(p.why ?? '') };
+}
+
 export async function runAnalysis({ key, repoDir, stateDir, cfg, project = null, peers = [], onProgress = () => {} }) {
   const workDir = join(stateDir, 'work', key);
   mkdirSync(workDir, { recursive: true });
@@ -229,6 +245,7 @@ export async function runAnalysis({ key, repoDir, stateDir, cfg, project = null,
     required: REQUIRED,
     onProgress,
   });
+  out.result.priorArt = normalizePriorArt(out.result);
   writeFileSync(join(workDir, 'result.json'), JSON.stringify(out.result, null, 2));
   // Kept across demo resets (work folders are removed): the hotspot map and Ask use past analyses.
   mkdirSync(join(stateDir, 'results'), { recursive: true });

@@ -53,7 +53,18 @@ Keep facts (with ticket keys, commit hashes and file paths) separate from your i
 5. **`suspectCommits`**: changes to those components in the days before the ticket was created, with patches. **Read every patch against the symptom.** A suspect commit that removes or changes exactly what an earlier fix added is usually the answer; say so and quote the diff lines.
 6. **`ticketCommits`**: commits that reference this ticket or related tickets, with patches. They show how similar problems were fixed in code. Commits referencing the current ticket mean work has already started; check `branchesForTicket` too.
 7. **`grepHits`**: where the ticket's terms appear in the code. **Open the 1–3 most relevant files** with your file tools, and read only the code around the hits (offset/limit), not whole files, to understand the logic before proposing a fix. Don't propose a fix to code you haven't read.
-8. **`knowledgeDocs`**: earlier documented problems. If a component's `knowledgeDoc.exists` or there are `hits`, read them first: the problem may already be documented.
+8. **`knowledgeDocs`**: earlier documented problems. If a component's `knowledgeDoc.exists` or there are `hits`, read them first: the problem may already be documented. `knowledgeDocs.entries` are the entries about this ticket or its related tickets, with their symptom, root cause and fix.
+
+**Already known?** Before you look for a new cause, decide whether this exact problem is known. `priorArt.candidates` puts the evidence in one place; read the ones that matter and decide **one** kind, checking in this order:
+1. **documented**: a knowledge entry (`kind: documented`) describes the same symptom. Use its cause and fix, and check them against the current code.
+2. **duplicate**: an open ticket (`kind: open`) reports the same problem (same symptom, same screen or endpoint), not just the same area.
+3. **in-progress**: a fix branch of another ticket (`kind: fix-branch`) changes the code of this problem. Read its diff (`git log origin/main..<branch>`, `git show`).
+4. **fixed-on-main**: a resolved ticket (`kind: resolved`) fixed this problem on main *before* this ticket was reported (`fixedBeforeThisTicket: true`), the current code no longer has it, and the reporter's environment or version predates the fix (or nothing says it is current).
+5. **regression**: a resolved ticket fixed it before, and a later change brought it back (a `suspectCommit` undoes or bypasses that fix; the current code has the problem again).
+6. **solved-before**: a resolved ticket had the same symptom, but its fix does not cover this case (a different path to the same symptom): it is the template for the fix, and its resolver is the person to ask.
+7. **none**: nothing above holds. Related tickets in the same area are not prior art by themselves.
+
+Say which kind in the report (**Already known?** line), with the ticket key, commit, branch or entry, and the evidence. Never call something a duplicate on words alone.
 
 **People**
 9. Combine Jira `people` (evidence across tickets) with `components[].authors` (who changed the relevant code and under which tickets). Someone who both fixed a related ticket and authored the relevant code is the strongest candidate. Recommend only people with evidence. The ticket's reporter is never a candidate. If the current assignee isn't the best fit, recommend pulling the expert in, and don't frame it as a reassignment.
@@ -76,6 +87,7 @@ Next steps must be concrete and must say who does each one, for example: "Emit a
 <url>
 
 **Problem**: 2–3 sentences: what is broken, for whom, and what it blocks.
+**Already known?**: none | documented | duplicate of KEY | fix in progress (branch) | fixed on main by KEY (commit), check whether it is released | regression of KEY (brought back by commit) | solved before as KEY: the evidence in one line.
 **Status**: where it stands and what it is waiting on.
 **Where in the code**: the component, its key files (path:line), and 2–3 sentences of orientation for someone new to the project: what this part does and how the pieces connect.
 **What changed**: the suspect commit(s): hash, date, author, ticket, and what the diff did. Or "no suspicious changes before the ticket".
@@ -92,7 +104,7 @@ Next steps must be concrete and must say who does each one, for example: "Emit a
 After the report, always write these three:
 
 - **A. Handoff to the recommended person.** Internal, ready for Teams or email, ≤ 150 words: what is broken and for whom, why them (their ticket or commit), what to check first (file and commit), the ticket link, and the urgency.
-- **B. Reply to the reporter / customer.** Acknowledge the request, give the current status and the next step, and say that someone with experience on this area is involved. Don't promise an ETA unless the ticket contains one. Don't expose internal file or flag names, people's speculation or other customers' tickets.
+- **B. Reply to the reporter / customer.** Acknowledge the request, give the current status and the next step, and say that someone with experience on this area is involved. When the problem is already known, say so plainly: already reported (follow that ticket), a fix is being prepared, or it is fixed and comes with the next release. Don't promise an ETA unless the ticket contains one. Don't expose internal file or flag names, people's speculation or other customers' tickets.
 - **C. Internal Jira comment.** Summary, likely cause with evidence (commit hashes), proposed fix, recommended owner, next steps. Label hypotheses as hypotheses.
 
 ## 6. Offer, don't do

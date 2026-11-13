@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { componentOf, personKey } from './insights.mjs';
+import { codeVerdict, priorArtCandidates } from './prior-art.mjs';
 
 export const TYPES = ['Bug', 'Task', 'Story'];
 export const PRIORITIES = ['Highest', 'High', 'Medium', 'Low', 'Lowest'];
@@ -73,7 +74,7 @@ const refsIn = (...texts) => [...new Set(texts.flat().join(' ').match(/\b[A-Z][A
  * files); `created`: id → { key } of the suggestions already created. Suggestions whose summary matches an existing
  * ticket are left out.
  */
-export function suggestTickets({ insights, review = null, rules = [], created = {}, project }) {
+export function suggestTickets({ insights, review = null, rules = [], created = {}, project, priorArtSources = null }) {
   const out = [];
   const add = (s) => out.push({ ...s, id: idOf(s.source, s.summary), created: null });
   const componentOfFiles = (files) => files.map((f) => componentOf(f, rules)).find(Boolean) ?? null;
@@ -174,9 +175,21 @@ export function suggestTickets({ insights, review = null, rules = [], created = 
   // count: the same problem found again on main is a regression worth a ticket.
   const open = insights.tickets.filter((t) => !/done|closed|resolved/i.test(t.status ?? ''));
   const openAs = (s) => open.find((t) => t.key !== createdOf(s)?.key && wordsAlike(s.summary, t.summary) >= 0.6)?.key ?? null;
+  // Prior art (K17, K19): what the project already knows about each suggestion. Without the sources (a caller that
+  // did not load them) the suggestions keep only the word check above.
+  const reviewAt = review?.at ?? null;
+  const priorArtOf = (s) => {
+    if (!priorArtSources) return null;
+    const candidates = priorArtCandidates(
+      { summary: s.summary, text: s.description, files: s.files, component: s.component, since: s.source.startsWith('review') ? reviewAt : null },
+      { ...priorArtSources, tickets: insights.tickets },
+    );
+    return { ...codeVerdict(candidates, { own: createdOf(s) }), candidates, notes: priorArtSources.notes ?? [] };
+  };
   return out
     .filter((s) => !existing.has(normal(s.summary)) || createdOf(s))
     .map((s) => ({ ...s, created: createdOf(s), openAs: createdOf(s) ? null : openAs(s), project }))
+    .map((s) => ({ ...s, priorArt: priorArtOf(s) }))
     .sort((a, b) => Number(Boolean(a.created)) - Number(Boolean(b.created)) || (ORDER[a.priority] ?? 9) - (ORDER[b.priority] ?? 9) || TYPES.indexOf(a.type) - TYPES.indexOf(b.type));
 }
 
@@ -198,11 +211,23 @@ export function readCreated(stateDir) {
  *   assigneeId undefined   the suggested person, when a Jira user of the project has that name (with assign: true)
  * When the suggested person has no Jira account, the description says so.
  */
-export async function createSuggested({ jira, project, stateDir, suggestion, edits = {}, assign = true, assigneeId = undefined, analyze = false }) {
+/**
+ * What was checked before the ticket was created (K19), for its description: the verdict, the reason a person gave
+ * to create it anyway, and the related tickets, entries and pull requests.
+ */
+export function priorArtSection(priorArt, reason = '') {
+  if (!priorArt) return '';
+  const KIND = { open: 'open ticket', solved: 'resolved before', 'fixed-by': 'fixed after the suggestion', documented: 'knowledge entry', 'in-progress': 'open pull request' };
+  const lines = (priorArt.candidates ?? []).map((c) => `* ${c.key ? `${c.key}` : `PR #${c.pr}`} (${KIND[c.kind] ?? c.kind}): ${c.title} — ${c.reasons.slice(0, 2).join('; ')}`);
+  if (!lines.length && !reason) return '';
+  return ['', 'h3. Checked before creating', ...(reason ? [`Created although the check said *${priorArt.verdict}${priorArt.key ? ` ${priorArt.key}` : ''}*. Reason: ${reason}`] : []), ...(lines.length ? ['Related:', ...lines] : [])].join('\n');
+}
+
+export async function createSuggested({ jira, project, stateDir, suggestion, edits = {}, assign = true, assigneeId = undefined, analyze = false, reason = '' }) {
   const summary = clean(edits.summary ?? suggestion.summary);
   const type = edits.type ?? suggestion.type;
   const priority = edits.priority ?? suggestion.priority;
-  let description = String(edits.description ?? suggestion.description ?? '').trim();
+  let description = String(edits.description ?? suggestion.description ?? '').trim() + priorArtSection(suggestion.priorArt, clean(reason).slice(0, 500));
   if (!summary || summary.length > 250) throw Object.assign(new Error('the summary must have 1 to 250 characters'), { status: 400 });
   if (!TYPES.includes(type)) throw Object.assign(new Error(`the type must be one of ${TYPES.join(', ')}`), { status: 400 });
   if (priority && !PRIORITIES.includes(priority)) throw Object.assign(new Error(`the priority must be one of ${PRIORITIES.join(', ')}`), { status: 400 });

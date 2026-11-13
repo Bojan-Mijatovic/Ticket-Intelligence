@@ -34,6 +34,7 @@ export function composeUpdate(ev, { title, url } = {}) {
         ['Confidence', r.confidence],
         ['Escalate', r.escalate ? (r.escalate.yes ? `yes · ${r.escalate.reason ?? ''}` : 'no') : null],
         ['Component', r.component],
+        ['Already known', r.priorArt && r.priorArt.kind && r.priorArt.kind !== 'none' ? `${r.priorArt.kind}${r.priorArt.key ? ` ${r.priorArt.key}` : ''}${r.priorArt.commit ? ` (${r.priorArt.commit})` : ''}${r.priorArt.why ? ` · ${r.priorArt.why}` : ''}` : null],
       ] });
       s.push({ h: 'Summary', p: r.summary });
       s.push({ h: 'Likely cause', p: r.likelyCause });

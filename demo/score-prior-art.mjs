@@ -21,9 +21,10 @@ const map = (k) => keyMap[k] ?? k;
 const { loadProjects } = await import('../agent/lib/projects.mjs');
 const { createJira } = await import('../agent/lib/jira-actions.mjs');
 const { createJiraHealth } = await import('../agent/lib/jira-health.mjs');
-const { buildInsights } = await import('../agent/lib/insights.mjs');
+const { buildInsights, savedAnalyses } = await import('../agent/lib/insights.mjs');
 const { readReview } = await import('../agent/lib/app-review.mjs');
 const { readCreated, suggestTickets } = await import('../agent/lib/suggestions.mjs');
+const { loadPriorArtSources } = await import('../agent/lib/prior-art.mjs');
 
 const all = loadProjects(AGENT);
 const jira = createJira();
@@ -39,7 +40,8 @@ for (const key of projects) {
   const p = all.byKey(key);
   const peers = all.projects.filter((x) => x.key !== key).map((x) => ({ key: x.key, name: x.name, repoDir: x.repoDir }));
   const data = await buildInsights({ repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira, peers });
-  suggestionsOf.set(key, suggestTickets({ insights: data, review: readReview(p, data), rules: p.cfg.insights?.components ?? [], created: readCreated(p.stateDir), project: key }));
+  const priorArtSources = loadPriorArtSources({ repoDir: p.repoDir, analyses: savedAnalyses(p.stateDir) });
+  suggestionsOf.set(key, suggestTickets({ insights: data, review: readReview(p, data), rules: p.cfg.insights?.components ?? [], created: readCreated(p.stateDir), project: key, priorArtSources }));
 }
 
 let pass = 0;

@@ -101,7 +101,9 @@ export function checkReview(answer, known) {
     .filter((r) => keep('refactor', r, r.files.length > 0 && cited(r.why)));
   const growth = list(answer?.growth).slice(0, LIMITS.growth)
     .filter((g) => keep('growth', g, cited(g?.why, list(g?.buildsOn).map(String))));
-  return { evaluation, findings, refactors, growth, dropped };
+  // What the review left out because a ticket already has it (K19): only keys of the facts.
+  const existing = list(answer?.existing).filter((e) => known.keys.has(String(e?.key ?? '').toUpperCase())).map((e) => ({ key: String(e.key).toUpperCase(), why: String(e.why ?? '') }));
+  return { evaluation, findings, refactors, growth, existing, dropped };
 }
 
 function prompt(project, factsFile) {
@@ -123,6 +125,7 @@ Rules:
 - Every item must cite its evidence inline: a ticket key from the facts (e.g. ${k}-5), a commit hash (7 characters) or a file path that exists. Items without a citation are dropped.
 - Only claims you can support from the facts or the code. Do not invent tickets, numbers or files.
 - Do not name, rank or blame people. Plain language, short sentences.
+- Do not propose what an open ticket of the facts already reports, or what a resolved ticket fixed since: put it in "existing" with the ticket key and one line, so nobody opens it twice.
 - Each finding, refactor and growth item also gets "ticket": a Jira summary for it of at most 70 characters, in the style of the project's tickets, without the [FE]/[BE] tag and without the component (both are added from the file), e.g. "decimal comma values are saved as whole numbers".
 
 Reply with ONLY one \`\`\`json block:
@@ -130,7 +133,8 @@ Reply with ONLY one \`\`\`json block:
   "evaluation": { "summary": "…", "scores": [{ "area": "${SCORE_AREAS[0]}", "score": 3, "why": "… (${k}-5)" }], "strengths": ["…"], "risks": ["…"] },
   "findings": [{ "component": "…", "file": "backend/src/main/java/…", "problem": "…", "evidence": "…", "fix": "…", "prevent": "…", "priority": "high", "ticket": "…" }],
   "refactors": [{ "title": "…", "files": ["…"], "why": "…", "steps": ["…"], "effort": "M", "payoff": "…", "ticket": "…" }],
-  "growth": [{ "title": "…", "why": "…", "buildsOn": ["${k}-7", "frontend/src/app/…"], "prerequisites": "…", "ticket": "…" }]
+  "growth": [{ "title": "…", "why": "…", "buildsOn": ["${k}-7", "frontend/src/app/…"], "prerequisites": "…", "ticket": "…" }],
+  "existing": [{ "key": "${k}-12", "why": "already reports …" }]
 }`;
 }
 

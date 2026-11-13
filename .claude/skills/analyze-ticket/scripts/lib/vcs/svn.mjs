@@ -203,6 +203,9 @@ export function openSvn(dir) {
       return { stat, patch: lines.slice(0, maxLines).join('\n') + (lines.length > maxLines ? `\n… [+${lines.length - maxLines} lines]` : '') };
     },
 
+    /** Not compared on SVN (a branch diff is a server round trip per branch): no fix-in-progress detection there. */
+    changedFiles: () => [],
+
     branches() {
       const xml = svn('ls', '--xml', `${reposRoot}/branches`);
       return [...xml.matchAll(/<entry\s+kind="dir">\s*<name>([^<]+)<\/name>[\s\S]*?<author>([^<]*)<\/author>\s*<date>([^<]+)<\/date>/g)].map(([, name, author, date]) => ({

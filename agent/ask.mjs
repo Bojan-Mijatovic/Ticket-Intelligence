@@ -38,8 +38,9 @@ const a = await askQuestion({
   project: { key: p.key, name: p.name },
   onProgress: (step) => console.log(`  [${Math.round((Date.now() - started) / 1000)}s] ${step}`),
 });
-console.log(`\n${a.found ? 'Answer' : 'Not found'}: ${a.answer}\n`);
-for (const s of a.sources) console.log(`  ${s.type.padEnd(7)} ${s.ref}  ${s.why}${s.url ? `\n          ${s.url}` : ''}`);
+for (const w of a.warnings ?? []) console.log(`  ⚠ ${w.text}`);
+console.log(`\n${a.found ? 'Answer' : a.searchFailed ? 'Not found (Jira could not be searched)' : 'Not found'}: ${a.answer}\n`);
+for (const s of a.sources) console.log(`  ${s.type.padEnd(7)} ${s.ref}${s.inJira === false ? ' (only in the git history)' : ''}  ${s.why}${s.url ? `\n          ${s.url}` : ''}`);
 if (a.closest.length) console.log(`  closest tickets: ${a.closest.map((c) => c.key).join(', ')}`);
 if (a.dropped) console.log(`  (${a.dropped} cited source(s) dropped: not found in the data)`);
 console.log(`\n${Math.round(a.meta.durationMs / 1000)} s · ${a.meta.turns} turns · ~$${a.meta.costUsd.toFixed(2)}`);

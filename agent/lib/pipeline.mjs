@@ -3,7 +3,7 @@
 import { writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runAnalysis } from './analyze.mjs';
+import { normalizePriorArt, runAnalysis } from './analyze.mjs';
 import { execFileSync } from 'node:child_process';
 import { reproduceAndFix } from './fix.mjs';
 import { analysisCheckout, createWorkspace, startDevServer } from './workspace.mjs';
@@ -55,8 +55,14 @@ export function fixBlocker({ issue, result, policy }) {
     }
   }
   if (when.skipDuplicates && result.duplicateOf?.key) return `possible duplicate of ${result.duplicateOf.key}`;
+  // Already known (K20): no automatic fix for a duplicate, a fix in progress elsewhere, or a problem fixed on main.
+  const known = normalizePriorArt(result);
+  const skipKnown = when.skipKnown ?? ['duplicate', 'in-progress', 'fixed-on-main'];
+  if (skipKnown.includes(known.kind)) return `already known: ${PRIOR_ART_TEXT[known.kind]}${known.key ? ` ${known.key}` : ''}${known.branch ? ` (${known.branch})` : ''}`;
   return null;
 }
+
+export const PRIOR_ART_TEXT = { documented: 'documented', duplicate: 'duplicate of', 'in-progress': 'fix in progress', 'fixed-on-main': 'fixed on main by', regression: 'regression of', 'solved-before': 'solved before as' };
 
 /**
  * Which side reproduces and fixes the ticket: 'frontend' (Playwright with the mocked API) or 'backend' (JUnit against
@@ -210,6 +216,10 @@ export async function processTicket({ issue, cfg, policy, jira, events, repoDir,
     const confidentEnough = (rank[result.confidence] ?? 0) >= (rank[policy.notifyMinConfidence] ?? 1);
     if (result.duplicateOf?.key) {
       events.emit('duplicate', { key, text: `possible duplicate of ${result.duplicateOf.key}`, of: result.duplicateOf.key, why: result.duplicateOf.why });
+    }
+    const known = normalizePriorArt(result);
+    if (known.kind !== 'none') {
+      events.emit('prior-art', { key, text: `already known: ${PRIOR_ART_TEXT[known.kind]}${known.key ? ` ${known.key}` : ''}${known.commit ? ` (${known.commit})` : ''}${known.why ? ` · ${known.why}` : ''}`, priorArt: known });
     }
     if (auto('notifyOwner') && !(realOwner && confidentEnough)) {
       events.emit('skipped', { key, text: `no notification: ${realOwner ? `${result.confidence} confidence` : 'no clear owner'}` });

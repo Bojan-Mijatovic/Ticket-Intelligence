@@ -6,55 +6,9 @@ const KEY_RE = /\b[A-Z][A-Z0-9_]+-\d+\b/g;
 export const TYPES = ['bug', 'change request', 'configuration'];
 export const REQUIRED = ['Type', 'Symptom', 'Search terms', 'Root cause', 'Fix'];
 
-/** GitHub's anchor of a heading: "DEM-32: Pazienti page …" → "dem-32-pazienti-page-…". */
-export const anchorOf = (heading) => heading.trim().toLowerCase().replace(/[^\p{L}\p{N} _-]/gu, '').replace(/ /g, '-');
-
-/**
- * One knowledge file → its preamble (title, people) and its entries.
- * An entry is "### KEY: title" up to the next heading; its fields are "- **Name**: value" lines (continued by
- * indented lines). An entry without fields that links elsewhere is a reference to the full entry in another file.
- */
-export function parseKnowledgeFile(text, file = '') {
-  const lines = String(text).replace(/\r/g, '').split('\n');
-  const entries = [];
-  let cur = null;
-  let field = null;
-  const preamble = [];
-  for (const line of lines) {
-    const head = line.match(/^### ([A-Z][A-Z0-9_]+-\d+):\s*(.*)$/);
-    if (head) {
-      cur = { key: head[1], title: head[2].trim(), file, anchor: anchorOf(`${head[1]}: ${head[2]}`), fields: {}, body: [] };
-      entries.push(cur);
-      field = null;
-      continue;
-    }
-    if (/^#{1,3} /.test(line)) {
-      cur = null;
-      field = null;
-      if (!entries.length) preamble.push(line);
-      continue;
-    }
-    if (!cur) {
-      if (!entries.length) preamble.push(line);
-      continue;
-    }
-    cur.body.push(line);
-    const f = line.match(/^- \*\*([^*]+)\*\*:?\s*(.*)$/);
-    if (f) {
-      field = f[1].replace(/:$/, '').trim();
-      cur.fields[field] = f[2].trim();
-    } else if (field && /^\s+\S/.test(line)) {
-      cur.fields[field] += `\n${line.trim()}`;
-    } else if (line.trim()) field = null;
-  }
-  for (const e of entries) {
-    e.text = e.body.join('\n');
-    e.reference = !Object.keys(e.fields).length;
-    delete e.body;
-  }
-  const people = preamble.find((l) => /^\*\*People who know it\*\*/.test(l)) ?? null;
-  return { file, people, entries };
-}
+// The parser is shared with the analyze-ticket skill (it reads the knowledge base for the analysis too).
+export { anchorOf, parseKnowledgeFile } from '../../.claude/skills/analyze-ticket/scripts/lib/knowledge-file.mjs';
+import { parseKnowledgeFile } from '../../.claude/skills/analyze-ticket/scripts/lib/knowledge-file.mjs';
 
 // Statements about the state of a pull request or a branch: true when written, wrong a week later.
 const TIME_BOUND = /\b(not (yet )?merged|may not be merged|is not merged|not been merged|still (open|in review)|as of \d{4}-\d{2}-\d{2}|draft (pull request|PR)\b)/i;

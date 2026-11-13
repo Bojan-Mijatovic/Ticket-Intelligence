@@ -36,9 +36,11 @@
       "e2e/"
     ],
     "skipDuplicates": true,
+    "skipKnown": ["duplicate", "in-progress", "fixed-on-main"],
     "allowSupersededTestUpdates": true
   },
   "_supersededComment": "allowSupersededTestUpdates = a change request that deliberately replaces an earlier ticket's behaviour (analysis.supersedes, e.g. DEM-33 red instead of DEM-32 blue) may update ONLY the e2e tests of those tickets; the watcher checks it, and the PR, the Jira comment and the AI review call it out. false = the fix never touches tests.",
+  "_skipKnownComment": "skipKnown = the analysis' 'Already known?' kinds (analysis.priorArt.kind) that get no automatic fix: a duplicate, a fix in progress on another ticket's branch, a problem fixed on main. A regression or a problem solved before in another way is still fixed (the earlier ticket's test must keep passing).",
   "_proposeFixWhenComment": "[FE] is reproduced with a Playwright test (mocked API), [BE] with a JUnit test against the real code and H2 (agent/lib/fix.mjs). A title without a tag qualifies when every file the analysis names is under frontend/ or under backend/ (inferTagFromFiles). Remove BE from titleTags to keep backend tickets analysis-only.",
   "_fixComment": "proposeFix = reproduce with a browser test, fix on branch <KEY>, verify independently, open a DRAFT pull request. mergeFix is always off: a human merges.",
   "_reviewComment": "reviewFix = after a draft PR is opened, a second read-only agent reviews it and posts a COMMENT review with a risk level (it never approves or merges).",

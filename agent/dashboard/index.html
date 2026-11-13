@@ -338,7 +338,8 @@ function h(tag, attrs = {}, ...kids) {
 }
 const initials = (name = '?') => name.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
 const ago = (iso) => { if (!iso) return '–'; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`; };
-const ICON = { mailed: '✉', 'mail-failed': '✖', resolved: '☑', documenting: '📝', documented: '📚', 'docs-merged': '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺', reviewing: '👀', reviewed: '🧐', 'review-skipped': '–' };
+const KNOWN_TEXT = { documented: 'documented', duplicate: 'duplicate of', 'in-progress': 'fix in progress', 'fixed-on-main': 'fixed on main by', regression: 'regression of', 'solved-before': 'solved before as' };
+const ICON = { 'prior-art': '⟲', mailed: '✉', 'mail-failed': '✖', resolved: '☑', documenting: '📝', documented: '📚', 'docs-merged': '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺', reviewing: '👀', reviewed: '🧐', 'review-skipped': '–' };
 
 const tickets = new Map();
 const teams = [];
@@ -395,8 +396,8 @@ function apply(ev) {
   if (ev.priority) t.priority = ev.priority;
   switch (ev.type) {
     case 'queued': t.title = ev.text; t.state = 'queued'; break;
-    case 'picked': t.title = ev.text || t.title; t.state = 'analyzing'; t.startedAt = ev.at; t.steps = []; t.result = null; t.fix = null; t.review = null; t.fixSkipped = null; t.duplicateOf = null; t.cross = null; t.error = null; t.expanded = false; break;
-    case 'analyzed': t.result = ev.result; t.meta = ev.meta; break;
+    case 'picked': t.title = ev.text || t.title; t.state = 'analyzing'; t.startedAt = ev.at; t.steps = []; t.result = null; t.fix = null; t.review = null; t.fixSkipped = null; t.duplicateOf = null; t.priorArt = null; t.cross = null; t.error = null; t.expanded = false; break;
+    case 'analyzed': t.result = ev.result; t.meta = ev.meta; t.priorArt = ev.result?.priorArt ?? t.priorArt ?? null; break;
     case 'commented': t.commentUrl = ev.url; break;
     case 'notified': teams.unshift({ ...ev.card, key: ev.key, at: ev.at, channel: ev.channel }); break;
     case 'cross-project': t.cross = { projects: ev.projects ?? [], fixIn: ev.fixIn }; break;
@@ -404,6 +405,7 @@ function apply(ev) {
     case 'done': t.state = 'done'; t.doneAt = ev.at; t.totalMs = ev.totalMs; break;
     case 'failed': t.state = 'failed'; t.error = ev.text; break;
     case 'duplicate': t.duplicateOf = { key: ev.of, why: ev.why }; break;
+    case 'prior-art': t.priorArt = ev.priorArt; break;
     case 'reproducing': t.fix = { stage: 'reproducing', side: ev.side ?? 'frontend' }; t.state = 'fixing'; break;
     case 'reproduced': t.fix = { ...(t.fix ?? {}), stage: 'fixing', reproduced: true, failure: ev.failure, before: ev.evidence ? `/evidence/${ev.key}/before.png?${Date.parse(ev.at)}` : null }; break;
     case 'verified': t.fix = { ...(t.fix ?? {}), stage: 'publishing', checks: ev.checks, after: ev.evidence ? `/evidence/${ev.key}/after.png?${Date.parse(ev.at)}` : null }; break;
@@ -420,7 +422,7 @@ function apply(ev) {
     case 'reviewed': t.review = { stage: 'done', ...ev.review, url: ev.url }; break;
     case 'review-skipped': t.review = { stage: 'skipped', error: ev.text }; break;
   }
-  if (['picked', 'analyzing', 'progress', 'cross-project', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'docs-merged', 'warmed', 'workspace', 'reproducing', 'reproduced', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-skipped', 'reviewing', 'reviewed', 'review-skipped', 'mailed', 'mail-failed'].includes(ev.type)) {
+  if (['picked', 'analyzing', 'progress', 'cross-project', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'prior-art', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'docs-merged', 'warmed', 'workspace', 'reproducing', 'reproduced', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-skipped', 'reviewing', 'reviewed', 'review-skipped', 'mailed', 'mail-failed'].includes(ev.type)) {
     t.steps.push({ at: ev.at, type: ev.type, text: ev.step ?? ev.text });
   }
 }
@@ -475,7 +477,11 @@ function resultView(t) {
   if (!r) return t.docs ? docsView(t) : null;
   const confCls = r.confidence === 'high' ? 'done' : r.confidence === 'medium' ? 'analyzing' : 'failed';
   return h('div', { class: 'result' },
-    t.duplicateOf ? h('div', { class: 'row' }, h('span', { class: 'k' }, 'Duplicate?'), h('span', {}, h('span', { class: 'chip analyzing' }, `possible duplicate of ${t.duplicateOf.key}`), ' ', t.duplicateOf.why ?? '')) : null,
+    // Already known? (K20): what the analysis found before looking for a new cause.
+    t.priorArt && t.priorArt.kind !== 'none' ? h('div', { class: 'row' }, h('span', { class: 'k' }, 'Already known?'), h('span', {},
+      h('span', { class: `chip ${['duplicate', 'in-progress', 'fixed-on-main'].includes(t.priorArt.kind) ? 'analyzing' : 'done'}` }, `${KNOWN_TEXT[t.priorArt.kind] ?? t.priorArt.kind}${t.priorArt.key ? ` ${t.priorArt.key}` : ''}`),
+      t.priorArt.commit ? [' ', h('code', {}, t.priorArt.commit)] : null, t.priorArt.branch ? [' ', h('code', {}, t.priorArt.branch)] : null, ' ', t.priorArt.why ?? ''))
+      : t.duplicateOf ? h('div', { class: 'row' }, h('span', { class: 'k' }, 'Duplicate?'), h('span', {}, h('span', { class: 'chip analyzing' }, `possible duplicate of ${t.duplicateOf.key}`), ' ', t.duplicateOf.why ?? '')) : null,
     t.cross?.projects?.length ? h('div', { class: 'row' }, h('span', { class: 'k' }, 'Other projects'), h('div', {},
       t.cross.projects.map((o) => h('div', {}, h('span', { class: 'proj' }, projectInfo(o.key)?.name ?? o.key), ' ', o.why ?? '', o.evidence ? h('div', { class: 't-sub' }, linkify(o.evidence)) : null)),
       t.cross.fixIn && t.cross.fixIn !== projOf(t.key) ? h('div', { class: 't-sub' }, `The fix belongs in ${projectInfo(t.cross.fixIn)?.name ?? t.cross.fixIn} (${t.cross.fixIn}).`) : null)) : null,
@@ -875,12 +881,34 @@ function renderKnowledgeBase(d, p) {
   $('#ins-docs').replaceChildren(table(['Ticket', 'Documentation pull request', 'State', ''].map((x) => h('th', {}, x)), rows));
 }
 
+// Prior art of a suggestion (K19): what the project already knows. Fixed ones are hidden unless asked for.
+let showResolved = false;
+const PRIOR = {
+  'fixed-by': (p) => ['done', `fixed by ${p.key}`],
+  'duplicate-of': (p) => ['analyzing', `possible duplicate of ${p.key}`],
+  'in-progress': (p) => ['analyzing', `in progress: PR #${p.pr}`],
+};
+const PRIOR_KIND = { open: 'open ticket', solved: 'resolved before', 'fixed-by': 'fixed after the suggestion', documented: 'knowledge entry', 'in-progress': 'open pull request' };
+function priorArtLine(s) {
+  const p = s.priorArt;
+  if (!p || (s.created && p.verdict !== 'fixed-by')) return null;
+  if (PRIOR[p.verdict]) {
+    const [cls, text] = PRIOR[p.verdict](p);
+    return h('div', { style: 'margin-top:3px' }, h('span', { class: `chip ${cls}` }, text));
+  }
+  const related = (p.candidates ?? []).filter((c) => c.key).slice(0, 3);
+  return related.length ? h('div', { class: 't-sub' }, 'related: ', related.flatMap((c) => [jiraLink(c.key), ` (${PRIOR_KIND[c.kind] ?? c.kind}) `])) : null;
+}
+
 function renderSuggestions(d) {
-  const list = d.suggestions ?? [];
+  const everything = d.suggestions ?? [];
+  const resolved = everything.filter((s) => !s.created && s.priorArt?.verdict === 'fixed-by');
+  const list = showResolved ? everything : everything.filter((s) => !resolved.includes(s));
   const canCreate = d.createTicket !== 'off';
-  $('#ins-sugg-hint').textContent = canCreate
-    ? 'From the AI review and the facts on this page, with the person who knows the code best. Nothing is created on its own: open one, check and edit it, then confirm.'
-    : 'From the AI review and the facts on this page. Creating them in Jira is off (policy.json createTicket).';
+  $('#ins-sugg-hint').replaceChildren(canCreate
+    ? 'From the AI review and the facts on this page, with the person who knows the code best. Each is checked against Jira, the knowledge base and the open pull requests. Nothing is created on its own: open one, check and edit it, then confirm.'
+    : 'From the AI review and the facts on this page. Creating them in Jira is off (policy.json createTicket).',
+  ...(resolved.length ? [' ', h('button', { class: 'small', onclick: () => { showResolved = !showResolved; renderSuggestions(insightsData); } }, showResolved ? 'hide the fixed ones' : `show the fixed ones (${resolved.length})`)] : []));
   if (!list.length) {
     $('#ins-suggestions').replaceChildren(h('div', { class: 'empty' }, d.review ? 'No suggestions: nothing new to open.' : 'Run the AI review above for more suggestions; the facts give none now.'));
     return;
@@ -888,10 +916,10 @@ function renderSuggestions(d) {
   const rows = list.map((s) => {
     const row = h('tr', {},
       h('td', {}, h('span', { class: `chip ${s.type === 'Bug' ? 'failed' : s.type === 'Story' ? 'done' : ''}` }, s.type), ' ', prioChip(s.priority)),
-      h('td', {}, h('div', {}, h('b', {}, s.summary)), h('div', { class: 't-sub' }, SOURCE[s.source] ?? s.source, s.stale ? ' · review older than the data' : '', s.files.length ? ' · ' : '', s.files.slice(0, 3).map((f) => h('code', { title: f, style: 'margin-right:4px' }, f.split('/').pop())))),
+      h('td', {}, h('div', {}, h('b', {}, s.summary)), h('div', { class: 't-sub' }, SOURCE[s.source] ?? s.source, s.stale ? ' · review older than the data' : '', s.files.length ? ' · ' : '', s.files.slice(0, 3).map((f) => h('code', { title: f, style: 'margin-right:4px' }, f.split('/').pop()))), priorArtLine(s)),
       h('td', {}, s.person ? [h('div', {}, s.person.name), h('div', { class: 't-sub' }, s.person.why)] : h('span', { class: 't-sub' }, '–')),
       h('td', {}, s.created ? [h('a', { href: s.created.url, target: '_blank' }, s.created.key), h('div', { class: 't-sub' }, `created ${ago(s.created.at)}${s.created.assignee ? ` · ${s.created.assignee}` : ''}`)]
-        : s.openAs ? [h('span', { class: 't-sub' }, 'already open as '), jiraLink(s.openAs)]
+        : s.openAs && !s.priorArt ? [h('span', { class: 't-sub' }, 'already open as '), jiraLink(s.openAs)]
         : canCreate ? h('button', { class: 'small', onclick: () => { openSuggestion = openSuggestion === s.id ? null : s.id; renderSuggestions(insightsData); } }, openSuggestion === s.id ? 'Close' : 'Create in Jira…') : null));
     return openSuggestion === s.id && !s.created ? [row, h('tr', {}, h('td', { colspan: 4 }, suggestionEditor(s)))] : [row];
   }).flat();
@@ -915,12 +943,27 @@ function suggestionEditor(s) {
   }).catch((e) => { assignee.replaceChildren(h('option', { value: '' }, 'Unassigned')); assignee.disabled = false; assigneeNote.textContent = `the people of ${s.project} could not be read: ${e.message}`; });
   const analyze = h('input', { type: 'checkbox' });
   const state = h('span', { class: 'meta' });
+  // Before you create (K19): what Jira, the knowledge base and the open pull requests already have. When the check says
+  // it is not new, creating it needs a reason, which goes into the description.
+  const p = s.priorArt;
+  const warned = p && p.verdict !== 'new';
+  const reason = h('input', { type: 'text', maxlength: 500, style: 'width:100%', placeholder: 'Why it is needed anyway (goes into the description)' });
+  const candidateRow = (c) => h('li', {},
+    c.key ? jiraLink(c.key) : h('a', { href: c.url, target: '_blank' }, `PR #${c.pr}`),
+    h('span', { class: 't-sub' }, ` ${PRIOR_KIND[c.kind] ?? c.kind} · ${c.title} · `), h('span', { class: 't-sub' }, c.reasons.join(' · ')));
+  const before = !p ? null : h('div', { class: 'panel', style: `padding:8px 12px;${warned ? 'border-color:var(--warn)' : ''}` },
+    h('div', {}, h('b', {}, 'Before you create'), warned ? [' ', h('span', { class: `chip ${PRIOR[p.verdict]?.(p)[0] ?? 'analyzing'}` }, PRIOR[p.verdict]?.(p)[1] ?? p.verdict)] : null),
+    p.candidates?.length ? h('ul', { style: 'margin:6px 0' }, p.candidates.map(candidateRow))
+      : h('div', { class: 't-sub' }, 'Nothing about this in Jira, the knowledge base or the open pull requests.'),
+    p.notes?.length ? h('div', { class: 't-sub' }, p.notes.join(' · ')) : null,
+    warned ? h('label', {}, h('div', { class: 't-sub' }, 'Create it anyway? Say why'), reason) : null);
   const go = h('button', { class: 'primary small', onclick: async () => {
+    if (warned && !reason.value.trim()) { alert(`The check says: ${PRIOR[p.verdict]?.(p)[1] ?? p.verdict}. To create it anyway, say why.`); reason.focus(); return; }
     const who = assignee.value ? assignee.selectedOptions[0].textContent : 'nobody';
     if (!confirm(`Create this ${type.value} in Jira (${s.project}), assigned to ${who}?\n\n${summary.value}`)) return;
-    go.disabled = true; state.textContent = 'Creating…';
+    go.disabled = true; state.textContent = 'Checking again and creating…';
     try {
-      const r = await post('/api/insights/tickets', { project: s.project, id: s.id, assigneeId: assignee.value || null, analyze: analyze.checked,
+      const r = await post('/api/insights/tickets', { project: s.project, id: s.id, assigneeId: assignee.value || null, analyze: analyze.checked, reason: reason.value.trim(),
         edits: { summary: summary.value, type: type.value, priority: priority.value, description: description.value } });
       openSuggestion = null;
       state.textContent = `Created ${r.key}`;
@@ -928,6 +971,7 @@ function suggestionEditor(s) {
     } catch (err) { state.textContent = ''; go.disabled = false; alert(`Not created: ${err.message}`); }
   } }, 'Create in Jira');
   return h('div', { style: 'display:flex;flex-direction:column;gap:8px;padding:8px 0' },
+    before,
     h('label', {}, h('div', { class: 't-sub' }, 'Summary'), summary),
     h('div', { style: 'display:flex;gap:12px;align-items:center;flex-wrap:wrap' },
       h('label', {}, h('span', { class: 't-sub' }, 'Type '), type), h('label', {}, h('span', { class: 't-sub' }, 'Priority '), priority),
@@ -1354,11 +1398,13 @@ function renderAnswers() {
   $('#ask-answers').replaceChildren(...answers.map((a) => h('div', { class: 'panel answer' },
     h('div', { class: 'q' }, a.project ? h('span', { class: 'proj', style: 'margin-right:8px' }, projectInfo(a.project)?.name ?? a.project) : null, a.question),
     a.error ? h('pre', { class: 'err' }, a.error) : [
-      h('div', {}, h('span', { class: `chip ${a.found ? 'done' : 'analyzing'}` }, a.found ? 'answered from sources' : 'not in the knowledge base'),
+      h('div', {}, h('span', { class: `chip ${a.found ? 'done' : a.searchFailed ? 'failed' : 'analyzing'}` }, a.found ? 'answered from sources' : a.searchFailed ? 'Jira could not be searched' : 'not in the knowledge base'),
         h('span', { class: 'meta', style: 'margin-left:8px' }, `${Math.round((a.meta?.durationMs ?? 0) / 1000)} s · ~$${(a.meta?.costUsd ?? 0).toFixed(2)}`)),
+      // K10: a source that could not be read is said, never hidden behind "not found".
+      a.warnings?.length ? h('div', { class: 'err', style: 'margin:6px 0;padding:6px 10px;border-radius:6px' }, a.warnings.map((w) => h('div', {}, `⚠ ${w.text}`))) : null,
       h('div', { class: 'a' }, linkify(a.answer, a.project)),
       a.sources?.length ? h('div', {}, h('div', { class: 't-sub' }, 'Sources'), h('ul', {}, a.sources.map((s) => h('li', {},
-        s.url ? h('a', { href: s.url, target: '_blank' }, s.type === 'ticket' ? s.ref : h('code', {}, s.ref)) : h('code', {}, s.ref), s.why ? ` · ${s.why}` : '')))) : null,
+        s.url ? h('a', { href: s.url, target: '_blank' }, s.type === 'ticket' ? s.ref : h('code', {}, s.ref)) : h('code', {}, s.ref), s.inJira === false ? h('span', { class: 't-sub' }, ' (only in the git history)') : null, s.why ? ` · ${s.why}` : '')))) : null,
       a.closest?.length ? h('div', { class: 't-sub' }, 'Closest tickets: ', a.closest.flatMap((c) => [jiraLink(c.key), ' '])) : null,
       a.dropped ? h('div', { class: 't-sub' }, `${a.dropped} cited source(s) were not found in the data and were left out.`) : null,
     ])));

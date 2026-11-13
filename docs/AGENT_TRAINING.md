@@ -91,6 +91,7 @@ Results:
 | Date | Eval | Result | Note |
 |---|---|---|---|
 | 2026-11-12 | prior art, suggestions | 3/4 | baseline. The decimal-comma suggestion shows "created LAB-23" but not that LAB-23 fixed it (a427822); the two genuinely new suggestions stay new (no false duplicate) |
+| 2026-11-13 | prior art, suggestions | 4/4 | after K17/K19: "fixed by LAB-23" found (the fix commit a427822 came after the AI review, in the suggestion's file, about the same thing); no false duplicate |
 | 2026-11-12 | Ask, DEM | 10/10 | baseline; 0 invented sources; avg 15 s, $0.21 |
 | 2026-11-12 | Ask, LAB | 8/8 | baseline; 0 invented; avg 16 s, $0.16 |
 | 2026-11-12 | Ask, FAR | 3/3 | baseline; avg 16 s, $0.13 |

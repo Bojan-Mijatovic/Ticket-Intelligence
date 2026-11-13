@@ -6,6 +6,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { codeClues, keywords, trimText } from './text.mjs';
 import { componentRules, namedComponentOf, namedComponentOfFiles, slugOf } from './components.mjs';
+import { parseKnowledgeFile } from './knowledge-file.mjs';
 
 const DAY = 864e5;
 
@@ -252,6 +253,36 @@ export function codeContext({ vcs, target, related, envs }) {
     warnings.push(`Branches: ${e.message}`);
   }
 
+  // Fix branches of OTHER tickets that change the code of this ticket's top components: work in progress on the same
+  // problem, maybe (K20). Git only; the remote ones (origin/KEY), compared with the base branch.
+  const otherFixBranches = [];
+  const baseRef = (() => {
+    try {
+      const b = vcs.info(cfg).baseBranch;
+      return b ? `origin/${b}` : null;
+    } catch {
+      return null;
+    }
+  })();
+  if (vcs.kind === 'git' && baseRef) {
+    const prefixes = topPaths.filter((p) => p !== '(root)').map((p) => `${p}/`); // own-key branches: branchesForTicket
+    let candidates = [];
+    try {
+      candidates = vcs.branches().filter((b) => /^origin\/[A-Z][A-Z0-9_]+-\d+$/.test(b.name) && b.name !== `origin/${target.key}`).slice(0, 30);
+    } catch (e) {
+      warnings.push(`Branches: ${e.message}`);
+    }
+    for (const b of candidates) {
+      try {
+        const changed = vcs.changedFiles(b.name, baseRef).filter((f) => !isDoc(f));
+        const touching = changed.filter((f) => prefixes.some((p) => f.startsWith(p)));
+        if (touching.length) otherFixBranches.push({ branch: b.name, key: b.name.replace(/^origin\//, ''), lastCommit: b.lastCommit, author: b.author, files: touching.slice(0, 8) });
+      } catch {
+        /* a branch that cannot be compared (unrelated history): skipped */
+      }
+    }
+  }
+
   const docs = listDocs(repo, cfg.docsPath);
   const docHits = [];
   if (docs.length) {
@@ -260,6 +291,35 @@ export function codeContext({ vcs, target, related, envs }) {
         const hit = docHits.find((d) => d.file === h.file) ?? (docHits.push({ file: h.file, matched: [] }), docHits.at(-1));
         if (!hit.matched.includes(term)) hit.matched.push(term);
       }
+    }
+  }
+
+  // Knowledge entries about this ticket (K20): an entry of the ticket or a related ticket, or one whose title, symptom
+  // and search terms share several words with the ticket. Read from the working tree (the analysis runs on main).
+  // Calibrated on LAB-24 and DEM-22 (2026-11-13): without stop words "with", "from" and "request" matched half the
+  // knowledge base; an entry now needs 3 words in common and a fifth of its own words.
+  const STOPW = new Set('with from that this have when after before into instead there their which while where what were been being does done also only than then them they your will would should could about over under same other such some more most very just like page field value values test tests ticket bug problem issue error'.split(' '));
+  const wordsOf = (s) => new Set((String(s ?? '').toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? []).filter((w) => !/^\d+$/.test(w) && !STOPW.has(w)));
+  const ticketWords = wordsOf(`${target.summary} ${target.description ?? ''}`);
+  const knowledgeEntries = [];
+  for (const file of docs.filter((f) => !/README\.md$/i.test(f))) {
+    let text = '';
+    try {
+      text = readFileSync(join(repo, file), 'utf8');
+    } catch {
+      continue;
+    }
+    for (const e of parseKnowledgeFile(text, file).entries.filter((x) => !x.reference)) {
+      const entryWords = wordsOf(`${e.title} ${e.fields.Symptom ?? ''} ${e.fields['Search terms'] ?? ''}`);
+      const common = [...entryWords].filter((w) => ticketWords.has(w));
+      const relevance = e.key === target.key ? 2 : keyRelevance.get(e.key) ?? 0; // related tickets from 0.3, as known.mjs
+      const byWords = common.length >= 3 && common.length / Math.max(1, Math.min(entryWords.size, ticketWords.size)) >= 0.2;
+      if (relevance < 0.3 && !byWords) continue;
+      knowledgeEntries.push({
+        rank: Math.max(relevance, byWords ? common.length / 10 : 0),
+        key: e.key, title: e.title, file, anchor: e.anchor, why: relevance >= 0.3 ? (e.key === target.key ? 'entry of this ticket' : `entry of a related ticket (relevance ${relevance})`) : `words in common: ${common.slice(0, 6).join(', ')}`,
+        symptom: trimText(e.fields.Symptom ?? '', 300), rootCause: trimText(e.fields['Root cause'] ?? '', 300), fix: trimText(e.fields.Fix ?? '', 300),
+      });
     }
   }
 
@@ -277,7 +337,8 @@ export function codeContext({ vcs, target, related, envs }) {
       .map((c) => presentCommit(c, c.keys.includes(target.key) ? 250 : 80)),
     suspectCommits: suspects.slice(0, 5).map((c) => presentCommit(c, 150, topPaths)),
     branchesForTicket: branches,
-    knowledgeDocs: { path: cfg.docsPath, files: docs, hits: docHits },
+    knowledgeDocs: { path: cfg.docsPath, files: docs, hits: docHits, entries: knowledgeEntries.sort((a, b) => b.rank - a.rank).slice(0, 6).map(({ rank, ...e }) => e) },
+    otherFixBranches,
     warnings,
   };
 }

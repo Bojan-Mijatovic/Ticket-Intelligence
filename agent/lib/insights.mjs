@@ -411,7 +411,9 @@ function recurringBugs({ byKey, analyses, comp, project }) {
   for (const [key, a] of analyses) {
     const t = byKey.get(key);
     if (!t) continue;
-    for (const ref of new Set([...(a.result.relatedTickets ?? []).map((r) => r.key), a.result.duplicateOf?.key].filter(Boolean))) {
+    // The analysis' "Already known?" (K20) names the earlier ticket of a regression or a repeat, too.
+    const known = ['regression', 'solved-before', 'duplicate', 'fixed-on-main'].includes(a.result.priorArt?.kind) ? a.result.priorArt.key : null;
+    for (const ref of new Set([...(a.result.relatedTickets ?? []).map((r) => r.key), a.result.duplicateOf?.key, known].filter(Boolean))) {
       const other = byKey.get(ref);
       const c = other && isBug(other) ? shared(t, other) : null;
       if (c) add(t, other, c, 'analysis');

@@ -79,6 +79,9 @@ export function openGit(dir) {
       return { stat, patch: lines.slice(0, maxLines).join('\n') + (lines.length > maxLines ? `\n… [+${lines.length - maxLines} lines]` : '') };
     },
 
+    /** Files a branch changes compared with the base it forked from (`base...branch`). */
+    changedFiles: (branch, base) => git(['diff', '--name-only', `${base}...${branch}`]).split(/\r?\n/).filter(Boolean),
+
     branches: () =>
       git(['for-each-ref', '--format=%(refname:short)\t%(committerdate:iso-strict)\t%(authorname)', 'refs/heads', 'refs/remotes'])
         .split(/\r?\n/)

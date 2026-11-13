@@ -100,7 +100,7 @@ B. REPORTED BY A PERSON (Jira → watcher → analysis)
 | Recurrence recognized | eval scenario (K1): a repeat of a documented bug in other words; the analysis cites the entry | not measured | the entry is cited in the scenario run |
 | Cost per question | `asks.jsonl` | $0.07–0.37 | ≤ $0.25 average |
 | Jira outage noticed | time from the first 401 to a visible warning | never (F16) | ≤ one poll (30 s) |
-| Prior-art verdict | eval (K21): correct verdict on known cases | suggestions 3/4 (2026-11-12); reported tickets not run yet | ≥ 90 %, and no "duplicate" on a genuinely new problem |
+| Prior-art verdict | eval (K21): correct verdict on known cases | suggestions 3/4 (2026-11-12) → **4/4** after K17/K19 (2026-11-13); reported tickets not run yet | ≥ 90 %, and no "duplicate" on a genuinely new problem |
 | Duplicate tickets created | `ai-suggested` tickets later resolved as Duplicate, or with "already fixed" in the resolution comment | not measured | 0 |
 
 ## 4. Plan
@@ -200,6 +200,7 @@ Phase 0 sets the baseline. Phases 1–4 then change **one lever at a time**, re-
 - No silent `.catch(() => [])`: a failed source is a `warning` in the answer ("Jira search failed: …"), shown on the page and logged. When Jira failed, "not found" says "Jira could not be searched", not "not in the knowledge base".
 - A ticket key that appears in a commit subject of the collected log is a valid source with `inJira: false`.
 - **Acceptance:** with the Jira URL broken, the answer shows the warning; the BIL question above cites BIL-18 from git.
+- **Done 2026-11-13** (FR-65): `collect()` turns every failed source (each Jira search, tickets Jira could not return, the saved analyses, the git log) into a warning; the run's prompt names what could not be checked; `withWarnings()` makes a "not found" after a failed Jira search say "Jira could not be searched"; `checkSources()` keeps a ticket named only in a commit subject (`inJira: false`); the full tickets are fetched five at a time; the dashboard and `ask.mjs` show the warnings. Tests in `agent/test/ask.test.mjs` with a Jira that fails one search and one ticket. A Jira that is down as a whole is stopped earlier by K16, so the acceptance case "Jira URL broken" is covered by the unit test, not live. Live check: the MediBill question that said "not found" on 2026-11-12 ("show me last bug ?") now answers BIL-18 with its fix commit (8 s, $0.12).
 
 **K11. Ask over the suite** · 1 d · F10
 - Ask on a project with `linked` projects also gets their knowledge entries, their git log and their read-only checkouts (`peerCheckouts` already exists); with **All projects** selected, all projects. Sources from another project are written `KEY:path` and checked in that project's checkout.
@@ -254,6 +255,7 @@ new item: a suggestion (Insights)  or  a ticket a person reported
 
 - Scored by code (same file, same component, words alike, same linked-project value), with the reason for each score. If Jira is down it throws (K16); it never returns "nothing found" on a failure.
 - **Acceptance:** unit tests with fixture data for each kind.
+- **Done 2026-11-13** with K19 (see there). Simplified from the plan: the Jira tickets come from the Insights data already loaded (own project, every status, with their commits), not from a new JQL search per item, and linked projects are not searched yet; "fixed on main since" is a property of a resolved ticket's fix commits (`fixed-by`), not a separate scan of the git log.
 
 **K18. The AI decides only on the close candidates** · 1 d · F17, F18
 - One call **without tools** (`claude.priorArtModel`, default `haiku`) gets the new item and the top 5 candidates as text (summary, description excerpt, cause, files, fix commit subject). It returns for each candidate `same | related | different`, and one verdict: `new`, `duplicate-of KEY`, `fixed-by KEY/commit`, `in-progress PR`, `regression-of KEY` or `documented ENTRY`. Code validates it: every key, commit and PR must be one of the candidates, otherwise the verdict is `new` with a warning.
@@ -266,6 +268,9 @@ new item: a suggestion (Insights)  or  a ticket a person reported
 - At creation the watcher runs K17 again **live** (not from the cache) and answers 409 when a new candidate appeared since the editor opened.
 - The app review (`app-review.mjs`) also gets the open tickets, the open PRs and the knowledge entries, and is asked to return an item that an open ticket already covers as `existing: [{ key, why }]` instead of proposing it.
 - **Acceptance:** the MediLab decimal-comma suggestion shows "fixed by LAB-23 (a427822)" and is hidden; a reworded copy of an open ticket shows "already open"; MediBill's "cancelled visits are charged" shows the BIL-19 analysis.
+- **Done 2026-11-13, together with K17** (FR-54): `agent/lib/prior-art.mjs` (`priorArtCandidates`, `codeVerdict`, `loadPriorArtSources`), wired into `suggestTickets` (watcher: sources cached 2 minutes per project, fresh on create), the list chips and *show the fixed ones*, **Before you create** with the reason required for a non-new verdict, `priorArtSection` in the description, the 409 on create when the live check says otherwise, and the app review's `existing` list. Tests: `agent/test/prior-art.test.mjs`. Prior-art eval: **4/4** (was 3/4).
+  - **Calibrated on the 61 real suggestions.** The first weights let a shared file make almost every ticket a candidate (~0.5 for 2–10 % common words) and called LAB-23 the fix of an unrelated suggestion in the same file. Now words decide: a candidate needs ≥ 12 % common words, "fixed-by" ≥ 30 %, and the verdicts need high scores (fixed-by 0.6, duplicate 0.75, in progress 0.6). Result: 4 verdicts that are not "new" (all right), related tickets on 18 suggestions.
+  - **Deviations from the plan:** without K18 the verdict is the code's (thresholds above), so "regression of KEY" is not a verdict yet (a resolved ticket before the suggestion is shown as *related*); the Jira link (`linkTickets: draft`) is not built, the related tickets go into the description instead; the acceptance case for BIL-19 cannot be run (the BIL-19/20 tickets were deleted by a demo reset; MediBill's suggestion stays "new", which is right without them); "a reworded copy of an open ticket" is covered by the unit test, not by the demo data (no such pair exists).
 
 **K20. Reported tickets: prior art in the analysis** · 1 d · F21
 - The `ticket.mjs analyze` bundle gets `priorArt` (K17). It is the same code, so Claude Code and Copilot users get it too (git; on SVN without PRs).
@@ -283,6 +288,9 @@ new item: a suggestion (Insights)  or  a ticket a person reported
 
 - Insights' `recurringBugs` counts `regression` as `via: 'analysis'`.
 - **Acceptance:** the K21 scenarios.
+- **Built 2026-11-13** (FR-55): the skill's `lib/known.mjs` (`knownProblems`), `code.mjs` adds `knowledgeDocs.entries` (entries of the ticket, of related tickets from relevance 0.3, or with several words in common) and `otherFixBranches` (git: other tickets' remote branches that change the top components; SVN: not compared), the bundle's `priorArt`; SKILL.md step **Already known?** (7 kinds in a fixed order) and a report line; the agent's `priorArt` field, `normalizePriorArt`, `fixBlocker` with `policy.proposeFixWhen.skipKnown`, the `prior-art` event, the card, the email and Insights' recurrence. The knowledge-file parser moved into the skill (`lib/knowledge-file.mjs`) so the analysis and the agent read entries the same way. Tests: `agent/test/known.test.mjs`.
+  - **Calibrated on LAB-24, LAB-19, DEM-22, DEM-25, BIL-12:** matching entries by words first pulled half the knowledge base ("with", "from", "request"); now an entry needs 3 words in common and a fifth of its own words, related tickets count from relevance 0.3, and at most 6 entries are passed.
+  - **Live dry run (`analyze-one.mjs LAB-24`, no Jira write, 32 s, $0.20):** `priorArt.kind: none`, with the reason "LAB-11 and LAB-23 are in the same area but have different symptoms"; the origin traced to LAB-7. A true negative, no false duplicate. The positive cases need the scenario tickets (K21 b, c, e), which create Jira tickets: they wait for a go.
 
 **K21. Eval for prior art** · 0.5 d · F15
 Added to the K1 eval set:

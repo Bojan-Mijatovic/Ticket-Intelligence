@@ -10,6 +10,7 @@ import { createMockSource } from './lib/mock.mjs';
 import { keywords, trimText, stem, stemSet, codeClues } from './lib/text.mjs';
 import { computeSignals, rankRelated, scorePeople } from './lib/analysis.mjs';
 import { codeContext } from './lib/code.mjs';
+import { knownProblems } from './lib/known.mjs';
 import { openRepo } from './lib/vcs/index.mjs';
 
 const USAGE = `Usage: node ticket.mjs <command> [args]
@@ -273,6 +274,8 @@ async function analyze(source, cfg, ref, opts) {
     queries: queries.map(({ kind, jql }) => ({ kind, jql })),
     candidatesConsidered: new Set(candidates.map((c) => c.key)).size,
     related: related.map(presentRelated),
+    // Already known? (K20): the evidence in one place; the analysis decides the kind (SKILL.md step "Already known?").
+    priorArt: knownProblems({ target, related: related.map(presentRelated), code }),
     people: scorePeople(target, related, cfg),
     warnings,
   };
