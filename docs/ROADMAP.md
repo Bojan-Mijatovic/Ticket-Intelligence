@@ -13,9 +13,9 @@ Two rules from the POC still apply:
 
 | # | Feature | Audience | What they see | Effort | Phase |
 |---|---|---|---|---|---|
-| 1 | Approval from Teams | Team lead | Card with before/after, test result, risk; **Approve** / **Reject** | 1 d | A |
+| 1 | Approval from Teams | Team lead | Card with before/after, test result, risk; **Approve** / **Reject** | 1 d · **deferred** (2026-11-13) | A |
 | 2 | Mission Control dashboard | Team lead, management | Live phase timeline + Impact tab (time, hours saved, cost) + "Run on ticket" | 1 d | A |
-| 3 | Night shift + morning digest | Management | 08:00 Teams digest: what the agent did overnight | 1 d | C |
+| 3 | Night shift + morning digest | Management | 08:00 Teams digest: what the agent did overnight | 1 d · **deferred** (2026-11-13) | C |
 | 4 | AI reviewer | Team lead, developers | Second agent reviews the PR, posts comments, sets a risk level | 0.5–1 d · **done** | B |
 | 5 | Hotspot map | Management, architects | Which components produce the most bugs, and the trend | 1 d + 1 d data · **done** | D |
 | 6 | Ask the knowledge base | PM, support, developers | Question in plain language → answer with ticket/PR links | 1 d · **done** | D |

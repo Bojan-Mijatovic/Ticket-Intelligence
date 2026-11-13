@@ -35,13 +35,13 @@ Done: #4 AI reviewer, #5 Insights, #6 Ask. Open: #1 approval from Teams, #2 Miss
 
 | What | Result |
 |---|---|
-| Analyses run | 49 (event logs); the latest 8 saved: $0.26 and 48 s on average, all high confidence |
+| Analyses run | 49 (event logs). Cost is known only for the 8 still saved (the demo reset removed the others' results): $0.26 and 48 s on average, all high confidence |
 | Automatic fixes | 21 draft PRs, 8 stopped: **72 %** of the attempts end in a verified PR (test fails before, all checks pass after) |
 | AI review | 11 reviews, risk and findings posted on GitHub |
-| Documentation | 46 backfilled + 11 on Done; 8 merged from the dashboard; 0 lint findings |
-| Ask | 24/24 on the eval (23/24 before K11) |
-| Prior art | suggestions 4/4; reported-ticket scenarios 29/29 |
-| Personal data | masked before every model; 88 tickets audited, 0 false alarms after the fixes |
+| Documentation | 46 backfilled + 11 on Done; 8 merged from the dashboard; 48 tickets documented on the four `main`s, 0 lint findings, 0 stale entries (re-checked 2026-11-13) |
+| Ask | latest run per project: **23/24** (DEM 10/10 and FAR 3/3 before R-02, LAB 8/8 and BIL 2/3 with it). Every question has passed at least once (24/24 across runs); the cross-app MediBill question cites DEM-17 but not always BIL-4 |
+| Prior art | suggestions 4/4 (re-run 2026-11-13); reported tickets: 4 scenarios, 29/29 checks |
+| Personal data | masked before every model; audit 0 false alarms after the fixes (88 tickets then, 84 today after demo resets) |
 
 ## 2. What the AI does on its own today
 
@@ -147,21 +147,21 @@ Per-agent metrics and autonomy follow from it, and a new agent has a template.
 | # | Step | Why first | Effort |
 |---|---|---|---|
 | 1 | **AI1** continuous evaluation | everything else (AG2, AI2, WF5) needs its numbers; no new AI cost | 1.5 d |
-| 2 | **WF3** night shift + digest, with K7, lint, audit, gaps | turns the existing checks into a routine; first "works without being opened" | 1.5 d |
-| 3 | **KB1** entry ↔ regression test, run nightly | executable knowledge; rides on WF3 | 1 d |
-| 4 | **AG1** agent contracts (refactor, no behaviour change) | prerequisite for AG2 and AG3 | 1.5 d |
-| 5 | **AG2** trust ladder | autonomy by evidence; needs 1 and 4 | 1 d |
-| 6 | **WF1** intake check | fewer low-confidence analyses; cheap model | 1 d |
-| 7 | **KG1** + **KG2** gaps from all signals, researcher agent | knowledge grows where it is missing | 2 d |
-| 8 | **WF2** Teams front door | reach; needs a Teams bot (IT) | 2 d + IT |
-| 9 | KB2 handbooks, WF4, WF5, AI2–AI4, AG3 | after the above shows where it pays | 5 d |
+| 2 | **KB1** entry ↔ regression test | executable knowledge; run as a command until the night shift exists | 1 d |
+| 3 | **AG1** agent contracts (refactor, no behaviour change) | prerequisite for AG2 and AG3 | 1.5 d |
+| 4 | **AG2** trust ladder | autonomy by evidence; needs 1 and 3 | 1 d |
+| 5 | **WF1** intake check | fewer low-confidence analyses; cheap model | 1 d |
+| 6 | **KG1** + **KG2** gaps from all signals, researcher agent | knowledge grows where it is missing | 2 d |
+| 7 | KB2 handbooks, WF4, WF5, AI2–AI4, AG3 | after the above shows where it pays | 5 d |
 
-About 16 working days, in three blocks: **measure** (1–3), **earn autonomy** (4–6), **reach and grow** (7–9).
+About 13 working days without the deferred items, in three blocks: **measure** (1–2), **earn autonomy** (3–5), **grow** (6–7).
+
+**Deferred, kept in the plan** (decided 2026-11-13, to keep the scope narrow for now): **WF2** Teams front door (ROADMAP #1, approval from Teams; 2 d + IT) and **WF3** night shift + morning digest (ROADMAP #3; 1.5 d). Until WF3 exists, the checks it would run (K7 refresh, lint, redaction audit, KB1 tests, AI1 accuracy) stay commands a person runs. They come back when the pilot project (section 6) gives them real tickets.
 
 ## 6. What needs a decision
 
 1. **The pilot project** (no patient data, as R-02 allows): AI1 and the night shift need real tickets to mean something.
-2. **A Teams webhook now, a Teams bot later** (WF2, WF3 digest).
+2. **A Teams webhook now, a Teams bot later** (WF2, WF3 digest): not needed while both are deferred.
 3. **The thresholds of the trust ladder** (AG2): how many runs, which acceptance rate, per action.
-4. **The night-shift budget** (AI3, WF3): dollars per night and per month.
+4. **The night-shift budget** (AI3, WF3): not needed while WF3 is deferred; a daily budget per action (AI3) still is.
 5. **R-02**: DPO approval and the AI service ([REDACTION.md](REDACTION.md)).
