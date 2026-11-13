@@ -20,6 +20,7 @@ Result entry and validation.
 - **Fix**: parseDecimal() in numbers.ts (a427822)
   - the Referto keeps formatDecimal
 - **How to verify**: e2e/tests/LAB-23.spec.ts
+- **Test**: \`e2e/tests/LAB-23.spec.ts\` (\`LAB-23: a value typed with a decimal comma is saved with its decimals\`)
 - **Related**: LAB-17
 
 ### LAB-17: Referto values printed with a dot
@@ -61,6 +62,14 @@ test('lint: each rule', () => {
     'LAB-23 time-bound',
   ]);
   assert.match(found.find((f) => f.rule === 'ticket-key').message, /CUP_LAB-120/);
+});
+
+test('lint: the Test line (KB1) names test files that are on main, or says none', () => {
+  const lint = (value, testFileExists = () => true) => lintKnowledge([{ file: 'f.md', text: GOOD.replace(/- \*\*Test\*\*: .*\n/, value == null ? '' : `- **Test**: ${value}\n`) }], { testFileExists }).map((f) => `${f.rule}: ${f.message}`);
+  assert.deepEqual(lint('none: the fix added or changed no test'), []);
+  assert.deepEqual(lint(null), ['missing-field: missing **Test**']);
+  assert.match(lint('the e2e test')[0], /^test: Test: name the regression test files/);
+  assert.deepEqual(lint('`e2e/tests/LAB-23.spec.ts`', (f) => f !== 'e2e/tests/LAB-23.spec.ts'), ['test: Test: e2e/tests/LAB-23.spec.ts is not on main']);
 });
 
 test('lint: only the given tickets get the entry rules; the file rules apply to all', () => {

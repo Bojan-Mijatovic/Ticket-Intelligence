@@ -64,6 +64,7 @@ The command-line tools take the project from the ticket key (`LAB-7` → MediLab
 | `node agent/insights.mjs` | hotspot map in the terminal (`--json`, `--recommend`, `--review` runs the AI review of the app) | no |
 | `node agent/ask.mjs "question"` | ask the knowledge base (sourced answer or "not found") | no |
 | `node agent/accuracy.mjs` | how often the agent was right, per project (`--project DEM`, `--rows`, `--json`) | no |
+| `node agent/knowledge-tests.mjs` | run the regression tests of every known-issue entry on main; a failing one means the issue may be back (`--project LAB`, `--only LAB-9`) | no |
 | `node agent/impact.mjs` | the management week for the whole suite: what the agent did, cost, hours saved, what waits (`--weeks 4`, `--json`) | no |
 | `node agent/replay.mjs --project DEM` | replay resolved bugs a person fixed as they came in, and compare with the real fix (dry run; `--yes`, `--limit`, `--only`, `--max-cost`) | no |
 | `node agent/mail-test.mjs` / `DEM-7` / `DEM-7 --dry-run` | send a test email, or the "analysis ready" email of a saved analysis, to `MAIL_TO` | no |
@@ -379,6 +380,26 @@ node agent/document-backfill.mjs --project DEM --yes    # document them (default
 ```
 
 A candidate is a Done ticket of the chosen types with a commit on `main` that names it, no entry on `main`, no `docs/<KEY>` branch waiting, and no `no-ai` label. A ticket whose run fails is left out (its changes undone) and the batch goes on; each documented ticket gets a Jira comment and the `ai-documented` label. The estimate is the average cost of the documentation runs so far. `demo/reset-demo.mjs` keeps documentation PRs and branches (`--drop-docs` closes them too).
+
+### Regression tests of the known issues (KB1)
+
+Every entry has a **Test** line. It names the regression tests the fix added or changed on main, as files plus test names when the fix's diff shows them, for example:
+
+- `` `backend/src/test/java/com/medilab/sample/SampleServiceTest.java` (`aTubeOfACancelledRequestCannotBeAccepted`) ``
+- `none: the fix added or changed no test`
+
+The tests come from the ticket's own commits (its key starts the subject; documentation commits excluded), because human fixes rarely name the ticket in the test. **Code writes the line, not the model:** `document.mjs` writes it after the documentation run, and `knowledge-refresh.mjs` adds it to older entries and fills in a `none` once a test exists. The lint requires the line, and the cited test files must be on main.
+
+`node agent/knowledge-tests.mjs` runs the cited tests on a detached checkout of `origin/main` (`<state>/kb-tests-repo`, with node_modules linked). It makes one Maven run with a surefire selection (`SampleServiceTest#a+b,OrderServiceTest`) and one Playwright run with the spec files. Each entry gets one of four verdicts:
+
+- **pass**;
+- **fail**: the known issue may be back, before anyone reports it;
+- **did not run**: a compile error, or a test renamed since;
+- **none**: no regression test.
+
+An entry without a Test line yet gets its tests computed from git, marked "from git". The result goes to `<state>/knowledge-tests.json` and appears at the top of Insights → **Knowledge base**, with the failing entries and the known issues that have no test. The fix and the AI review are told which test guards a known issue in the code they touch.
+
+Checked on 2026-11-13: 25 of the 48 entries have tests, and all pass on main (38 JUnit and 3 Playwright tests, about 1–3 minutes per app). Putting back the code of LAB-8's fix (with its test unchanged) made the run report `fail: flagsWithTheRangeOfThePatientsSex: expected "H"`.
 
 ## Duplicates and known problems
 

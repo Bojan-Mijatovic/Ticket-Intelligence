@@ -43,7 +43,16 @@ const entries = files.flatMap((f) => (f.file.endsWith('README.md') ? [] : parseK
 const full = entries.filter((e) => !e.reference);
 console.log(`${new Set(full.map((e) => e.key)).size} documented ticket(s), ${full.length} full entr${full.length === 1 ? 'y' : 'ies'}, ${entries.length - full.length} reference(s)`);
 
-const findings = lintKnowledge(files, { commitExists, projects: all.projects.map((x) => x.key), team: teamOf(all.projects) });
+// A cited regression test (KB1) must exist where the entry is read: on the same ref.
+const testFileExists = (f) => {
+  try {
+    git(['cat-file', '-e', `${ref}:${f}`]);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const findings = lintKnowledge(files, { commitExists, testFileExists, projects: all.projects.map((x) => x.key), team: teamOf(all.projects) });
 if (!findings.length) {
   console.log('No findings.');
   process.exit(0);

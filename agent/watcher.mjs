@@ -630,7 +630,15 @@ const server = createServer(async (req, res) => {
       const hit = knowledgeCache.get(p.key);
       const data = hit && Date.now() - hit.at < 60_000 && queryOf(req).get('refresh') !== '1' ? hit.data : await createDocsPrs({ repoDir: p.repoDir }).list();
       knowledgeCache.set(p.key, { at: Date.now(), data });
-      return json(res, 200, { project: p.key, ...data, mergeDocs: policy.actions.mergeDocs ?? 'draft' });
+      // KB1: the last run of the known issues' regression tests (agent/knowledge-tests.mjs), when there is one.
+      let tests = null;
+      try {
+        const t = JSON.parse(readFileSync(join(p.stateDir, 'knowledge-tests.json'), 'utf8'));
+        tests = { at: t.at, head: t.head, totals: t.totals, entries: t.entries.map(({ key, title, file, anchor, status, source, tests: ts }) => ({ key, title, file, anchor, status, source, tests: ts.filter((x) => x.status !== 'pass').map((x) => ({ file: x.file, status: x.status, failed: x.failed ?? null, missing: x.missing ?? null })) })) };
+      } catch {
+        /* not run yet */
+      }
+      return json(res, 200, { project: p.key, ...data, tests, mergeDocs: policy.actions.mergeDocs ?? 'draft' });
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     }

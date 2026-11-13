@@ -85,6 +85,15 @@ export function analysisCheckout({ repoDir, stateDir, name = 'analysis-repo' }) 
   return path;
 }
 
+/** Links the clone's node_modules into a worktree (junctions on Windows), so its tests run without an install. */
+export function linkDeps(repoDir, path) {
+  for (const dep of LINKED_DEPS) {
+    const target = join(repoDir, dep);
+    const link = join(path, dep);
+    if (existsSync(target) && !existsSync(link)) symlinkSync(target, link, 'junction');
+  }
+}
+
 export function branchExists(repoDir, branch) {
   const local = git(repoDir, ['branch', '--list', branch]);
   let remote = '';
@@ -113,11 +122,7 @@ export function createWorkspace({ repoDir, key, stateDir, branch = key, name = '
   }
   mkdirSync(dirname(path), { recursive: true });
   git(repoDir, ['worktree', 'add', '-q', '-b', branch, path, 'origin/main']);
-
-  for (const dep of LINKED_DEPS) {
-    const target = join(repoDir, dep);
-    if (existsSync(target)) symlinkSync(target, join(path, dep), 'junction');
-  }
+  linkDeps(repoDir, path);
 
   return {
     path,

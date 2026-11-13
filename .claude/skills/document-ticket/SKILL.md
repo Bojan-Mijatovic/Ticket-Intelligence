@@ -85,6 +85,7 @@ Read `code.repoConfig.commitMode`:
 - **Root cause**: … (**confirmed**: <source: comment by X on <date> / commit abc1234>, or **assumed**: <why>)
 - **Fix**: what changed, with commits (short hash) and files
 - **How to verify**: a concrete check
+- **Test**: the regression tests the fix added or changed, as files and test names (`backend/src/test/java/…/SampleServiceTest.java` (`aTubeOfACancelledRequestCannotBeAccepted`); `e2e/tests/LAB-23.spec.ts`), or `none: the fix added or changed no test`. These are run on main to catch the problem coming back. The Ticket Intelligence agent's code writes this line from the fix commits; by hand, read it from `git show --stat <fix>`
 - **Prevent recurrence**: follow-ups mentioned in the ticket or commits, if any
 - **Related**: other ticket keys, and earlier known issues in this file with the same cause
 ```
@@ -95,7 +96,7 @@ A short entry in another component's file that points to the full one (when the 
 
 Write only what stays true. Do not write the state of a pull request or a branch ("not merged yet", "draft PR #14", "as of <date>"): that belongs in the pull request, and the entry outlives it. Cite the commit and the ticket instead.
 
-When the Ticket Intelligence agent runs this skill, its own code checks the entries afterwards (you do not need to run anything) and rejects an entry without Type, Symptom, Search terms, Root cause (labelled confirmed or assumed) and Fix; with a commit that does not exist; with the state of a PR or branch; with the agent among the people; or with patient data (fiscal codes, e-mail addresses, phone numbers, IBANs, birth dates). Test data from the ticket (a booking number, a lab value) is fine; a real person's identifiers are not.
+When the Ticket Intelligence agent runs this skill, its own code checks the entries afterwards (you do not need to run anything) and rejects an entry without Type, Symptom, Search terms, Root cause (labelled confirmed or assumed), Fix and Test (it writes Test itself); with a test file that is not on main; with a commit that does not exist; with the state of a PR or branch; with the agent among the people; or with patient data (fiscal codes, e-mail addresses, phone numbers, IBANs, birth dates). Test data from the ticket (a booking number, a lab value) is fine; a real person's identifiers are not.
 
 ## 6. Review, then commit
 

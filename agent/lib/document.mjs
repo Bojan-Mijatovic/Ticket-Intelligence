@@ -9,7 +9,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runClaude, skillEnv } from './analyze.mjs';
-import { describeFindings, lintKnowledge } from './knowledge.mjs';
+import { describeFindings, lintKnowledge, parseKnowledgeFile } from './knowledge.mjs';
+import { testLine, testsOfTicket, withTestField } from './knowledge-tests.mjs';
 import { teamOf } from './projects.mjs';
 import { createWorkspace } from './workspace.mjs';
 
@@ -67,7 +68,29 @@ function lintChanged(ws, key, cfg) {
   };
   // The team of this repository (git authors, agent.config.json "staff"): any other person's name is personal data.
   const team = teamOf([{ repoDir: ws.path, cfg }]);
-  return lintKnowledge(files.map((f) => ({ file: f, text: readFileSync(join(ws.path, f), 'utf8') })), { keys: [key], projects: [cfg.project], commitExists, team });
+  const testFileExists = (f) => {
+    try {
+      ws.git(['cat-file', '-e', `origin/main:${f}`]);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  return lintKnowledge(files.map((f) => ({ file: f, text: readFileSync(join(ws.path, f), 'utf8') })), { keys: [key], projects: [cfg.project], commitExists, testFileExists, team });
+}
+
+/**
+ * KB1: the entry's **Test** line is written by code, from the ticket's own commits on main (knowledge-tests.mjs), not
+ * by the model: in every changed knowledge file that has the ticket's full entry. A fix not on main yet gives "none";
+ * the knowledge refresh fills it in once the fix is merged.
+ */
+function putTestLine(ws, key, changed) {
+  const value = testLine(testsOfTicket((args) => ws.git(args), key));
+  for (const f of changed.filter((x) => x.endsWith('.md') && existsSync(join(ws.path, x)))) {
+    const text = readFileSync(join(ws.path, f), 'utf8');
+    const entry = parseKnowledgeFile(text, f).entries.find((e) => e.key === key && !e.reference);
+    if (entry) writeFileSync(join(ws.path, f), withTestField(text, key, value));
+  }
 }
 
 const correction = (findings) => `The documentation you wrote does not pass the project's knowledge checks. Correct exactly these findings in the files (docs/knowledge/*.md only) and keep everything else as it is. Do not commit.
@@ -103,6 +126,7 @@ async function documentOne({ ws, key, fix, cfg, stateDir, onProgress = () => {} 
 
   let out = await run({ prompt: prompt(key, ws.branch, fix), transcriptFile: join(stateDir, 'work', key, 'transcript-document.jsonl') });
   let changed = checkPaths();
+  putTestLine(ws, key, changed);
   // The knowledge lint (K5): one correction in the same session, then the entry passes or nothing is pushed.
   let findings = lintChanged(ws, key, cfg);
   if (findings.length && out.meta.sessionId) {
@@ -110,6 +134,7 @@ async function documentOne({ ws, key, fix, cfg, stateDir, onProgress = () => {} 
     const again = await run({ resume: out.meta.sessionId, prompt: correction(findings), transcriptFile: join(stateDir, 'work', key, 'transcript-document-lint.jsonl') });
     out = { result: again.result, meta: { ...again.meta, costUsd: (out.meta.costUsd ?? 0) + (again.meta.costUsd ?? 0), durationMs: (out.meta.durationMs ?? 0) + (again.meta.durationMs ?? 0) } };
     changed = checkPaths();
+    putTestLine(ws, key, changed);
     findings = lintChanged(ws, key, cfg);
   }
   if (findings.length) {

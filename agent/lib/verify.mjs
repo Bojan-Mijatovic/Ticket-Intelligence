@@ -35,16 +35,21 @@ export async function runE2E(ws, specs, { evidenceDir }) {
   });
   let stats = { expected: 0, unexpected: 0, skipped: 0 };
   let firstError = null;
+  const cases = []; // one per test: { file (relative to e2e/tests), title, ok, error }
   if (existsSync(report)) {
     const json = JSON.parse(readFileSync(report, 'utf8'));
     stats = { ...stats, ...json.stats };
     const walk = (suite) => {
       for (const spec of suite.specs ?? []) {
+        let error = null;
         for (const t of spec.tests ?? []) {
           for (const res of t.results ?? []) {
-            if (!firstError && res.status !== 'passed') firstError = (res.error?.message ?? res.status).replace(/\x1b\[[0-9;]*m/g, '');
+            const msg = res.status !== 'passed' ? (res.error?.message ?? res.status).replace(/\x1b\[[0-9;]*m/g, '') : null;
+            if (msg && !error) error = tail(msg, 8);
+            if (!firstError && msg) firstError = msg;
           }
         }
+        cases.push({ file: spec.file ?? suite.file ?? null, title: spec.title, ok: spec.ok !== false && !error, error });
       }
       (suite.suites ?? []).forEach(walk);
     };
@@ -55,6 +60,7 @@ export async function runE2E(ws, specs, { evidenceDir }) {
     passed: stats.expected,
     failed: stats.unexpected,
     firstError: firstError ? tail(firstError, 12) : null,
+    cases,
     durationMs: r.durationMs,
     output: tail(r.out),
   };
@@ -105,6 +111,37 @@ export function surefireResults(reportsDir, onlyClass = null) {
     }
   }
   return out;
+}
+
+/** Every test case in the surefire reports: { className (simple), method, ok, error }. */
+export function surefireCases(reportsDir) {
+  const out = [];
+  if (!existsSync(reportsDir)) return out;
+  const decode = (s) => String(s ?? '').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#10;/g, '\n').replace(/&amp;/g, '&');
+  for (const f of readdirSync(reportsDir).filter((n) => /^TEST-.+\.xml$/.test(n))) {
+    const xml = readFileSync(join(reportsDir, f), 'utf8');
+    for (const m of xml.matchAll(/<testcase\b([^>]*?)(\/>|>([\s\S]*?)<\/testcase>)/g)) {
+      const attr = (a) => decode(m[1].match(new RegExp(`\\s${a}="([^"]*)"`))?.[1]);
+      const bad = m[3]?.match(/<(failure|error)(\s[^>]*)?>([\s\S]*?)<\/\1>|<(failure|error)(\s[^>]*)?\/>/);
+      out.push({
+        className: attr('classname').split('.').pop(),
+        method: attr('name').replace(/\(.*\)$/, ''),
+        ok: !bad,
+        error: bad ? tail(decode((bad[2] ?? bad[5] ?? '').match(/\smessage="([^"]*)"/)?.[1] ?? bad[3] ?? 'failed'), 8) : null,
+      });
+    }
+  }
+  return out;
+}
+
+/** A surefire selection (-Dtest=A#m1+m2,B): every case run, or the build output when nothing ran (compile error). */
+export async function runBackendSelection(ws, toolsDir, selection) {
+  const { mvn, env } = maven(toolsDir);
+  const reports = join(ws.path, 'backend', 'target', 'surefire-reports');
+  rmSync(reports, { recursive: true, force: true });
+  const r = await run(mvn, ['-q', '-B', 'test', `-Dtest=${selection}`, '-Dsurefire.failIfNoSpecifiedTests=false'], { cwd: join(ws.path, 'backend'), env });
+  const cases = surefireCases(reports);
+  return { cases, error: cases.length ? null : tail(r.out, 15), durationMs: r.durationMs };
 }
 
 /** All Maven tests; passed/failed from the surefire reports. */

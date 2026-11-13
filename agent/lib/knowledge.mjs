@@ -4,10 +4,11 @@
 
 const KEY_RE = /\b[A-Z][A-Z0-9_]+-\d+\b/g;
 export const TYPES = ['bug', 'change request', 'configuration'];
-export const REQUIRED = ['Type', 'Symptom', 'Search terms', 'Root cause', 'Fix'];
+export const REQUIRED = ['Type', 'Symptom', 'Search terms', 'Root cause', 'Fix', 'Test'];
 
 // The parser is shared with the analyze-ticket skill (it reads the knowledge base for the analysis too).
 export { anchorOf, parseKnowledgeFile } from '../../.claude/skills/analyze-ticket/scripts/lib/knowledge-file.mjs';
+import { parseTestLine } from './knowledge-tests.mjs';
 import { parseKnowledgeFile } from '../../.claude/skills/analyze-ticket/scripts/lib/knowledge-file.mjs';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -42,7 +43,7 @@ export const hashesIn = (text) => [...new Set([...String(text).matchAll(/(?<![#\
  *                                 personal data too (R-02's name rule, redact.mjs)
  * @returns {{ file: string, key: string | null, rule: string, message: string }[]}
  */
-export function lintKnowledge(files, { commitExists = () => true, projects = null, keys = null, team = null } = {}) {
+export function lintKnowledge(files, { commitExists = () => true, testFileExists = () => true, projects = null, keys = null, team = null } = {}) {
   const out = [];
   const add = (file, key, rule, message) => out.push({ file, key, rule, message });
   for (const { file, text } of files) {
@@ -76,6 +77,12 @@ export function lintKnowledge(files, { commitExists = () => true, projects = nul
       if (e.fields.Type && !TYPES.some((t) => type.startsWith(t))) add(file, e.key, 'type', `Type must be one of: ${TYPES.join(', ')} (is "${e.fields.Type}")`);
       if (e.fields['Root cause'] && !/\b(confirmed|assumed)\b/i.test(e.fields['Root cause'])) add(file, e.key, 'root-cause', 'Root cause is not labelled confirmed or assumed');
       if (e.fields['Search terms'] && e.fields['Search terms'].split(',').filter((t) => t.trim()).length < 3) add(file, e.key, 'search-terms', 'Search terms: at least 3, comma separated (error text, screen and route, the words a user would use)');
+      // KB1: the regression tests of the fix, run on main (knowledge-tests.mjs); "none" when the fix added none.
+      if (e.fields.Test) {
+        const tests = parseTestLine(e.fields.Test);
+        if (!tests.length && !/^none\b/i.test(e.fields.Test.trim())) add(file, e.key, 'test', 'Test: name the regression test files in backticks (`backend/src/test/java/…Test.java`, `e2e/tests/…spec.ts`) or write "none: the fix added or changed no test"');
+        for (const t of tests) if (!testFileExists(t.file)) add(file, e.key, 'test', `Test: ${t.file} is not on main`);
+      }
       const tb = e.text.match(TIME_BOUND);
       if (tb) add(file, e.key, 'time-bound', `states the state of a PR or branch ("${tb[0]}"): it goes stale; cite the commit instead`);
       for (const h of hashesIn(e.text)) if (!commitExists(h)) add(file, e.key, 'commit', `commit ${h} does not exist in the repository`);
@@ -127,6 +134,8 @@ export function knowledgeFor({ dir, files = [], keys = [], max = 4, docsPath = '
       e.fields['Root cause'] ? `  Root cause: ${cut(e.fields['Root cause'])}` : null,
       e.fields.Fix ? `  Fix: ${cut(e.fields.Fix)}` : null,
       e.fields['Prevent recurrence'] ? `  Prevent recurrence: ${cut(e.fields['Prevent recurrence'])}` : null,
+      // KB1: the test that guards this known issue must keep passing after the change.
+      e.fields.Test && !/^none\b/i.test(e.fields.Test.trim()) ? `  Regression test (must keep passing): ${cut(e.fields.Test)}` : null,
     ].filter(Boolean).join('\n')),
   ].join('\n');
 }

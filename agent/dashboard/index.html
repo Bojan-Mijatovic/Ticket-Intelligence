@@ -950,13 +950,35 @@ async function loadKnowledge(refresh = false) {
   }
 }
 
+/** KB1: the known issues' regression tests, last run on main. A failing one means the problem may be back. */
+function knowledgeTestsBlock(t, p) {
+  if (!t) return h('div', { class: 't-sub', style: 'margin-bottom:8px' }, 'Regression tests of the known issues: not run yet (node agent/knowledge-tests.mjs).');
+  const s = t.totals;
+  const repo = p.github?.repo;
+  const entryLink = (e) => (repo ? h('a', { href: `https://github.com/${repo}/blob/main/${e.file}#${e.anchor}`, target: '_blank' }, e.key) : e.key);
+  const failing = t.entries.filter((e) => e.status === 'fail');
+  const notRun = t.entries.filter((e) => e.status === 'not-run');
+  const none = t.entries.filter((e) => e.status === 'none');
+  return h('div', { style: 'margin-bottom:10px' },
+    h('div', {}, h('b', {}, 'Regression tests of the known issues'), h('span', { class: 't-sub' }, ` · run ${ago(t.at)} on main ${t.head}: `),
+      h('span', { class: 'chip done' }, `${s.pass} pass`), ' ',
+      s.fail ? h('span', { class: 'chip failed' }, `${s.fail} fail`) : null, ' ',
+      s.notRun ? h('span', { class: 'chip analyzing' }, `${s.notRun} did not run`) : null, ' ',
+      h('span', { class: 't-sub' }, `${s.none} without a test`)),
+    failing.length ? h('ul', { class: 'review-list' }, failing.map((e) => h('li', {}, h('b', { style: 'color:var(--bad)' }, '✗ may be back: '), entryLink(e), ` ${e.title} · `,
+      e.tests.flatMap((x) => (x.failed ?? []).map((f) => `${x.file.split('/').pop()} ${f.name}: ${String(f.error ?? '').split('\n')[0]}`)).join('; ')))) : null,
+    notRun.length ? h('div', { class: 't-sub' }, 'Did not run (a compile error or a renamed test): ', notRun.flatMap((e, i) => [i ? ', ' : '', entryLink(e)])) : null,
+    none.length ? h('details', {}, h('summary', {}, `${none.length} known issues have no regression test`), h('div', { class: 't-sub' }, 'A test would catch them coming back: ', none.flatMap((e, i) => [i ? ', ' : '', entryLink(e)]))) : null);
+}
+
 function renderKnowledgeBase(d, p) {
   const on = d.onMain;
   $('#ins-docs-state').textContent = on ? `on main: ${on.entries} documented ticket${on.entries === 1 ? '' : 's'} in ${on.files} file${on.files === 1 ? '' : 's'}` : '';
   if (d.error) { $('#ins-docs').replaceChildren(h('div', { class: 'empty' }, d.error)); return; }
   const canMerge = d.mergeDocs !== 'off';
+  const testsBlock = knowledgeTestsBlock(d.tests, p);
   if (!d.prs.length) {
-    $('#ins-docs').replaceChildren(h('div', { class: 'empty' }, 'No documentation waiting: every documentation PR is merged or discarded.'));
+    $('#ins-docs').replaceChildren(testsBlock, h('div', { class: 'empty' }, 'No documentation waiting: every documentation PR is merged or discarded.'));
     return;
   }
   const STATE = { draft: ['analyzing', 'draft'], open: ['analyzing', 'open'], closed: ['failed', 'closed, not merged'] };
@@ -978,7 +1000,7 @@ function renderKnowledgeBase(d, p) {
       h('td', {}, h('span', { class: `chip ${cls}` }, label), h('div', { class: 't-sub' }, `${x.ageDays} day${x.ageDays === 1 ? '' : 's'} old`)),
       h('td', {}, btn, state));
   });
-  $('#ins-docs').replaceChildren(table(['Ticket', 'Documentation pull request', 'State', ''].map((x) => h('th', {}, x)), rows));
+  $('#ins-docs').replaceChildren(testsBlock, table(['Ticket', 'Documentation pull request', 'State', ''].map((x) => h('th', {}, x)), rows));
 }
 
 // Prior art of a suggestion (K19): what the project already knows. Fixed ones are hidden unless asked for.
