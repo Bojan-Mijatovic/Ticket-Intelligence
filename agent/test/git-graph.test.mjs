@@ -86,6 +86,19 @@ test('the graph joins commits, pull requests, events and Jira per ticket, oldest
   assert.ok(edges.some((e) => e.from === 'ticket:DEM-3' && e.to === 'pr:9' && e.kind === 'documented-in'));
 });
 
+test('one clock: a commit at 16:23+01:00 comes before a step at 15:25Z, not after it', () => {
+  const g = buildGraph({
+    project: 'DEM', vcsKind: 'git',
+    commits: [commit('f898df2aaaa', 'DEM-40: red background (#24)', { date: '2026-11-06T16:23:00+01:00' })],
+    events: [{ at: '2026-11-06T15:25:00.000Z', type: 'documented', key: 'DEM-40', text: 'documentation PR ready' }],
+    tickets: [{ key: 'DEM-40', resolved: '2026-11-06T16:24:00.000+0100' }],
+  });
+  const t = g.tickets[0];
+  assert.deepEqual(t.steps.map((s) => s.type), ['commit', 'documented']);
+  assert.equal(g.commits[0].date, '2026-11-06T15:23:00.000Z');
+  assert.equal(t.resolved, '2026-11-06T15:24:00.000Z', "Jira's +0100 too");
+});
+
 test('a PR with the agent\'s commits but no run of its own (planted by hand) is not one of its fixes', () => {
   const g = buildGraph({ project: 'DEM', vcsKind: 'git', commits: [], events: [], prs: [pr(12, 'DEM-90', { state: 'CLOSED', closedAt: '2026-11-06T08:04:11Z', comments: ['Reviewer test done'] })] });
   assert.deepEqual([g.prs[0].run, g.prs[0].outcome, g.prs[0].reason], [false, 'rejected', 'Reviewer test done']);

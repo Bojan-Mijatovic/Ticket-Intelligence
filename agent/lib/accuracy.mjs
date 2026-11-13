@@ -62,9 +62,9 @@ export function analysisRows(graph, { rules = [], docsPath = 'docs/knowledge/' }
   const comps = (files) => new Set(files.map((f) => componentOf(f, rules)).filter(Boolean));
   const rows = [];
   for (const t of graph.tickets.filter((x) => x.analyses.length)) {
-    const changes = t.changes.map((id) => commits.get(id)).filter(Boolean).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const changes = t.changes.map((id) => commits.get(id)).filter(Boolean).sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
     const firstChange = changes[0]?.date ?? null;
-    const before = firstChange ? t.analyses.filter((a) => a.at < firstChange) : t.analyses;
+    const before = firstChange ? t.analyses.filter((a) => Date.parse(a.at) < Date.parse(firstChange)) : t.analyses;
     const row = { key: t.key, runs: t.analyses.length, costUsd: sum(t.analyses.map((a) => a.costUsd)), ownChange: changes.length > 0 };
     if (!before.length) {
       rows.push({ ...row, skipped: 'analysed only after its change was on main (not a prediction)' });

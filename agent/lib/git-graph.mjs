@@ -47,6 +47,15 @@ export function prOfCommit(subject) {
   return n ? Number(n) : null;
 }
 
+/**
+ * One clock for everything: git gives local time with an offset (2026-11-06T16:23:00+01:00), events and GitHub give UTC
+ * (…Z). Compared as text they would put a commit before the steps that came before it.
+ */
+export const utc = (d) => {
+  const t = Date.parse(d ?? '');
+  return Number.isNaN(t) ? d ?? null : new Date(t).toISOString();
+};
+
 const keyOrder = (a, b) => {
   const [pa, na] = a.split('-');
   const [pb, nb] = b.split('-');
@@ -73,7 +82,7 @@ export function readEvents(dir) {
       out.push(e);
     }
   }
-  return out.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  return out.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 }
 
 const closedUnmerged = (prs) => prs.filter((p) => p.state === 'CLOSED' && !p.mergedAt && p.closedAt);
@@ -185,7 +194,7 @@ export function buildGraph({ project, vcsKind, commits, events, prs = [], suiteC
     return {
       id: c.hash,
       short: c.short ?? String(c.hash).slice(0, 8),
-      date: c.date,
+      date: utc(c.date),
       author: c.author,
       agent: isAgentCommit(c),
       subject: c.subject,
@@ -213,7 +222,7 @@ export function buildGraph({ project, vcsKind, commits, events, prs = [], suiteC
       number: p.number, url: p.url, title: p.title, branch: p.branch, kind: docs ? 'docs' : 'fix', agent, run: openedByRun.has(p.url), keys, state: p.state, outcome,
       // Why a person closed it, in their words (the last comment): "rejected" covers replaced, duplicate and wrong.
       reason: outcome === 'rejected' ? (p.comments.at(-1) ?? '').replace(/\s+/g, ' ').trim().slice(0, 200) || null : null,
-      createdAt: p.createdAt, mergedAt: p.mergedAt, closedAt: p.closedAt, mergedAs: commitOfPr.get(p.number)?.short ?? null,
+      createdAt: utc(p.createdAt), mergedAt: utc(p.mergedAt), closedAt: utc(p.closedAt), mergedAs: commitOfPr.get(p.number)?.short ?? null,
     };
   });
 
@@ -223,7 +232,7 @@ export function buildGraph({ project, vcsKind, commits, events, prs = [], suiteC
     return byKey.get(key);
   };
   for (const t of tickets.filter((x) => mine(x.key))) {
-    Object.assign(ticket(t.key), { summary: t.summary ?? null, type: t.issueType ?? null, status: t.status ?? null, resolution: t.resolution ?? null, assignee: t.assignee ?? null, resolved: t.resolved ?? null, links: t.links ?? [], exists: true });
+    Object.assign(ticket(t.key), { summary: t.summary ?? null, type: t.issueType ?? null, status: t.status ?? null, resolution: t.resolution ?? null, assignee: t.assignee ?? null, resolved: utc(t.resolved), links: t.links ?? [], exists: true });
   }
   // Oldest first, so a ticket's changes and steps are in the order they happened.
   for (const c of [...nodes].reverse()) {
@@ -243,8 +252,9 @@ export function buildGraph({ project, vcsKind, commits, events, prs = [], suiteC
     }
   }
 
-  for (const e of events) {
-    if (!mine(e.key)) continue;
+  for (const raw of events) {
+    if (!mine(raw.key)) continue;
+    const e = { ...raw, at: utc(raw.at) };
     const t = ticket(e.key.toUpperCase());
     if (e.type === 'analyzed' && e.result) {
       const r = e.result;
@@ -269,7 +279,7 @@ export function buildGraph({ project, vcsKind, commits, events, prs = [], suiteC
     }
     if (LANE.has(e.type)) t.steps.push({ at: e.at, type: e.type, text: String(e.text ?? '').slice(0, 200), url: e.url ?? null });
   }
-  for (const t of byKey.values()) t.steps.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  for (const t of byKey.values()) t.steps.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 
   return {
     project,

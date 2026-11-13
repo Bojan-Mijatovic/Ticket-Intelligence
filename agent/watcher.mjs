@@ -34,6 +34,7 @@ import { attachMailUpdates } from './lib/mail-updates.mjs';
 import { loadProjects, peerCheckouts, teamOf } from './lib/projects.mjs';
 import { loadGraph, readSuitePullRequests } from './lib/git-graph.mjs';
 import { recordAccuracy, scoreAccuracy } from './lib/accuracy.mjs';
+import { laneLayout } from './lib/graph-lanes.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const all = loadProjects(HERE);
@@ -341,16 +342,17 @@ async function insightsCached(p, refresh = false) {
 }
 // Accuracy (AI1) from the project's graph (GG0): pull requests of the whole suite read once per refresh (a demo reset
 // is recognised across the repositories), each project's result cached for two minutes like the insights.
-const accuracyCache = new Map();
+const graphCache = new Map();
 let suitePrsCache = null;
-async function accuracyCached(p, refresh = false) {
-  const hit = accuracyCache.get(p.key);
+/** The project's graph (GG0) and its accuracy (AI1), with the daily snapshots: { graph, accuracy }. */
+async function graphCached(p, refresh = false) {
+  const hit = graphCache.get(p.key);
   if (!refresh && hit && Date.now() - hit.at < 120_000) return hit.data;
   if (refresh || !suitePrsCache || Date.now() - suitePrsCache.at >= 120_000) suitePrsCache = { at: Date.now(), prs: readSuitePullRequests(all.projects.filter((x) => existsSync(x.repoDir))) };
   const graph = await loadGraph({ project: p, eventsDir: rootState, jira, suitePrs: suitePrsCache.prs });
   const acc = scoreAccuracy(graph, { rules: p.cfg.insights?.components ?? [] });
-  const data = { ...acc, trend: recordAccuracy(p.stateDir, acc) };
-  accuracyCache.set(p.key, { at: Date.now(), data });
+  const data = { graph, accuracy: { ...acc, trend: recordAccuracy(p.stateDir, acc) } };
+  graphCache.set(p.key, { at: Date.now(), data });
   return data;
 }
 const queryOf = (req) => new URL(req.url, 'http://localhost').searchParams;
@@ -481,7 +483,24 @@ const server = createServer(async (req, res) => {
     try {
       const p = readyProject({ project: queryOf(req).get('project') });
       await health.require();
-      return json(res, 200, await accuracyCached(p, queryOf(req).get('refresh') === '1'));
+      return json(res, 200, (await graphCached(p, queryOf(req).get('refresh') === '1')).accuracy);
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    }
+  }
+  // Ticket lanes (G1): /api/graph?project=DEM[&days=30][&ticket=DEM-42][&agentOnly=1][&refresh=1], laid out by
+  // lib/graph-lanes.mjs, with the accuracy summary for the panel above it.
+  if (req.method === 'GET' && path === '/api/graph') {
+    try {
+      const q = queryOf(req);
+      const p = readyProject({ project: q.get('project') });
+      await health.require();
+      const { graph, accuracy } = await graphCached(p, q.get('refresh') === '1');
+      const days = Math.min(Math.max(Number(q.get('days')) || 30, 1), 3650);
+      const ticket = /^[A-Z][A-Z0-9_]+-\d+$/i.test(q.get('ticket') ?? '') ? q.get('ticket').toUpperCase() : null;
+      const layout = laneLayout(graph, { since: ticket ? null : new Date(Date.now() - days * 86_400_000).toISOString(), ticket, agentOnly: q.get('agentOnly') === '1' });
+      const { rows: _rows, reviews: _reviews, ...summary } = accuracy;
+      return json(res, 200, { project: p.key, vcs: graph.vcs, head: graph.head, builtAt: graph.builtAt, days, ticket, layout, accuracy: summary, warnings: graph.warnings });
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     }

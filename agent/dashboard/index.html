@@ -187,6 +187,31 @@
   .review-list { margin: 4px 0 0; padding-left: 18px; }
   .review-list li { margin: 3px 0; }
   .rec { border-left: 3px solid var(--accent); padding: 6px 10px; background: var(--accent-soft); border-radius: 0 6px 6px 0; font-size: 13px; }
+  /* Graph tab (G1): the main line and one lane per ticket. Node colour = the state of the step (the row's text says it too). */
+  #acc-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  @media (max-width: 1100px) { #acc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .graph-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 10px; }
+  .graph-tools select, .graph-tools input[type=text] { font: inherit; font-size: 13px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+  .graph-tools input[type=text] { width: 96px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+  .graph { padding: 8px 10px; overflow-x: auto; margin-bottom: 20px; }
+  .g-wrap { display: grid; align-items: start; min-width: 600px; }
+  .g-svg { display: block; overflow: visible; }
+  .g-svg .g-main { stroke: var(--muted); stroke-width: 2; }
+  .g-svg .g-lane { fill: none; stroke: var(--accent); stroke-width: 2; stroke-opacity: 0.5; }
+  .g-svg .g-node { stroke: var(--surface); stroke-width: 2; }
+  .g-svg .g-commit { fill: var(--text); } .g-svg .g-commit.agent { fill: var(--accent); }
+  .g-ok { fill: var(--ok); background: var(--ok); } .g-bad { fill: var(--bad); background: var(--bad); } .g-warn { fill: var(--warn); background: var(--warn); }
+  .g-info { fill: var(--accent); background: var(--accent); } .g-muted { fill: var(--muted); background: var(--muted); }
+  .g-row { height: 26px; display: grid; grid-template-columns: 104px 76px minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 12.5px; padding: 0 6px; border-radius: 4px; }
+  .g-row:hover { background: var(--surface-2); }
+  .g-row.commit .g-text { font-weight: 600; }
+  .g-t { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .g-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .g-key { padding: 0 6px; font-size: 11px; font-weight: 700; justify-self: start; }
+  .g-ref { color: var(--muted); white-space: nowrap; font-size: 12px; display: inline-flex; gap: 8px; align-items: center; }
+  .g-agent { color: var(--accent); font-weight: 700; }
   @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hotspots { grid-template-columns: 1fr; } }
   @media (max-width: 600px) { header, main { padding-left: 16px; padding-right: 16px; } .result .row { grid-template-columns: 1fr; } }
 </style>
@@ -200,7 +225,7 @@
     <span class="meta">Project</span>
     <select id="project-sel" aria-label="Project"><option value="all">All projects</option></select>
   </label>
-  <nav class="tabs" id="tabs"><button data-tab="tickets" class="active">Tickets</button><button data-tab="insights">Insights</button><button data-tab="ask">Ask</button></nav>
+  <nav class="tabs" id="tabs"><button data-tab="tickets" class="active">Tickets</button><button data-tab="graph">Graph</button><button data-tab="insights">Insights</button><button data-tab="ask">Ask</button></nav>
   <span class="spacer"></span>
   <span class="meta" id="poll"></span>
   <span class="pill" id="app-branch" title="Branch the selected project's app shows"></span>
@@ -282,6 +307,27 @@
     <h2>People</h2>
     <div class="hint" style="margin:-4px 0 8px">Activity and areas, to know whom to ask. Click a column to sort.</div>
     <div class="panel ins-list" id="ins-people"></div>
+    </div>
+  </section>
+  <section id="tab-graph" hidden>
+    <div class="pick-first panel" id="graph-pick" hidden></div>
+    <div id="graph-body">
+      <div style="display:flex;align-items:center;gap:10px"><h2 id="graph-title" style="margin:0">Graph</h2><span class="spacer"></span>
+        <span class="meta" id="graph-state"></span><button class="small" id="graph-refresh">Refresh</button></div>
+      <div class="hint" style="margin:4px 0 10px">How often the agent was right: what it said or did, compared with what happened afterwards. Plain code over git (or SVN), the pull requests, Jira and the agent's log; no AI, no answer key.</div>
+      <div class="kpis" id="acc-kpis"></div>
+      <div class="panel ins-list" id="acc-notes" hidden></div>
+      <h2>Ticket lanes</h2>
+      <div class="hint" style="margin:-4px 0 8px">The main line on the left, and one lane for each ticket the agent worked on. A lane runs from the analysis to the merge into main, or until its pull request was closed. Newest first. Click a ticket key to see only its lane.</div>
+      <div class="graph-tools">
+        <label class="meta">Window <select id="graph-days" aria-label="Time window"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">a year</option></select></label>
+        <label class="meta"><input type="checkbox" id="graph-agent"> only the agent's work</label>
+        <form id="graph-ticket-form" style="display:inline-flex;gap:6px"><input type="text" id="graph-ticket" placeholder="DEM-42" aria-label="One ticket"><button class="small" type="submit">Show</button></form>
+        <button class="small" id="graph-all" hidden>All tickets</button>
+        <span class="spacer"></span>
+        <span class="legend"><span><i class="g-commit-dot" style="background:var(--text)"></i>commit on main</span><span><i style="background:var(--accent)"></i>the agent's commit · analysis, PR</span><span><i class="g-ok"></i>verified, merged, low risk</span><span><i class="g-bad"></i>failing test, stopped, high risk</span><span><i class="g-warn"></i>already known, medium risk</span><span><i class="g-muted"></i>closed, not eligible</span></span>
+      </div>
+      <div class="panel graph" id="graph-lanes"><div class="empty">Loading…</div></div>
     </div>
   </section>
   <section id="tab-ask" hidden>
@@ -377,6 +423,7 @@ function selectProject(key) {
   try { localStorage.setItem('ti-project', key); } catch { /* storage blocked */ }
   render(); renderStatus(); renderAskHead();
   if (tab === 'insights') loadInsights();
+  if (tab === 'graph') { graphOpts.ticket = null; loadGraph(); }
 }
 /** A row of project buttons, for Insights and Ask when "All projects" is selected. */
 function projectPicker(box, what) {
@@ -654,7 +701,7 @@ function connect() {
     if (ev.type === 'status') {
       const first = !status;
       status = ev.status; renderStatus(); render();
-      if (first) { renderAskHead(); if (tab === 'insights') loadInsights(); }
+      if (first) { renderAskHead(); if (tab === 'insights') loadInsights(); if (tab === 'graph') loadGraph(); }
       return;
     }
     if (ev.type === 'ping') return;
@@ -682,8 +729,9 @@ let tab = 'tickets';
 function showTab(name) {
   tab = name;
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === name);
-  for (const s of ['tickets', 'insights', 'ask']) $(`#tab-${s}`).hidden = s !== name;
+  for (const s of ['tickets', 'graph', 'insights', 'ask']) $(`#tab-${s}`).hidden = s !== name;
   if (name === 'insights') loadInsights();
+  if (name === 'graph') loadGraph();
   if (name === 'ask') renderAskHead();
   try { localStorage.setItem('ti-tab', name); } catch { /* storage blocked */ }
 }
@@ -1402,6 +1450,112 @@ $('#ins-recommend').addEventListener('click', async (e) => {
   finally { b.disabled = false; b.textContent = '✦ Write recommendations (AI)'; }
 });
 
+// ---------------------------------------------------------------- graph (G1, FR-70) and accuracy (AI1, FR-69)
+const graphOpts = { days: 30, agentOnly: false, ticket: null };
+let graphFor = null; // the project whose graph is shown (a late answer for another project is dropped)
+async function loadGraph(refresh = false) {
+  const p = focus();
+  $('#graph-body').hidden = !p;
+  if (!p) { if (status) projectPicker($('#graph-pick'), 'The graph'); return; }
+  $('#graph-pick').hidden = true;
+  graphFor = p.key;
+  $('#graph-title').textContent = `Graph · ${projLabel(p)}`;
+  $('#graph-state').textContent = 'reading the history…';
+  $('#graph-all').hidden = !graphOpts.ticket;
+  const q = new URLSearchParams({ project: p.key, days: graphOpts.days, ...(graphOpts.agentOnly ? { agentOnly: '1' } : {}), ...(graphOpts.ticket ? { ticket: graphOpts.ticket } : {}), ...(refresh ? { refresh: '1' } : {}) });
+  try {
+    const res = await fetch(`/api/graph?${q}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+    if (graphFor !== p.key) return;
+    renderAccuracy(data.accuracy);
+    renderLanes(data);
+    $('#graph-state').textContent = `${data.vcs} · head ${data.head ?? '–'} · read ${ago(data.builtAt)}`;
+  } catch (e) {
+    if (graphFor === p.key) { $('#graph-lanes').replaceChildren(h('pre', { class: 'err' }, `Graph failed: ${e.message}`)); $('#graph-state').textContent = ''; }
+  }
+}
+$('#graph-refresh').addEventListener('click', () => loadGraph(true));
+$('#graph-days').addEventListener('change', (e) => { graphOpts.days = Number(e.target.value); loadGraph(); });
+$('#graph-agent').addEventListener('change', (e) => { graphOpts.agentOnly = e.target.checked; loadGraph(); });
+$('#graph-ticket-form').addEventListener('submit', (e) => { e.preventDefault(); const k = $('#graph-ticket').value.trim().toUpperCase(); graphOpts.ticket = k || null; loadGraph(); });
+$('#graph-all').addEventListener('click', () => { graphOpts.ticket = null; $('#graph-ticket').value = ''; loadGraph(); });
+const showTicketLane = (key) => { graphOpts.ticket = key; $('#graph-ticket').value = key; loadGraph(); $('#graph-lanes').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+
+/** "83% (5/6)", or "–" when nothing is decided yet. */
+const pctOf = (r) => (r?.of ? `${Math.round(r.rate * 100)}%` : '–');
+const outOf = (r) => (r?.of ? `${r.n} of ${r.of}` : 'nothing decided yet');
+function renderAccuracy(a) {
+  const kpi = (label, value, sub, title = '') => h('div', { class: 'kpi', title }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), h('div', { class: 'sub' }, sub));
+  const an = a.analysis;
+  $('#acc-kpis').replaceChildren(
+    kpi('Fix PRs merged unchanged', pctOf(a.fix.acceptedUnchanged), `${outOf(a.fix.acceptedUnchanged)} decided · ${a.fix.withdrawn} withdrawn by resets · ${a.fix.open} open`, 'Draft PRs of the agent\'s own fixes: merged as they were, merged after a person added a commit, or closed by a person'),
+    kpi('Documentation merged unchanged', pctOf(a.docs.acceptedUnchanged), `${outOf(a.docs.acceptedUnchanged)} decided · ${a.docs.open} open`),
+    kpi('AI review agrees', pctOf(a.review.agreement), `${outOf(a.review.agreement)} · ${a.review.reviews} reviews`, '"Looks good" and merged unchanged, or "needs changes" and changed or closed'),
+    kpi('Analysis: files vs a person\'s fix', pctOf(an.filesVsPerson.hit), an.filesVsPerson.hit.of ? `${outOf(an.filesVsPerson.hit)} named a changed file` : 'no analysed ticket fixed by a person yet', 'The independent test of the analysis: a person changed the code, and the analysis had named the file'),
+    kpi('Analysis: files vs its own fix', pctOf(an.filesVsAgent.hit), `${outOf(an.filesVsAgent.hit)} (not independent)`, 'The agent fixed what it analysed: shown apart, it does not test the analysis'),
+    kpi('Analyses', String(an.runs), `${an.tickets} tickets · avg $${(an.avgCostUsd ?? 0).toFixed(2)} · ${Math.round(an.avgSeconds ?? 0)} s`),
+  );
+  const closed = [...a.fix.closed.map((c) => ({ ...c, kind: 'fix' })), ...a.docs.closed.map((c) => ({ ...c, kind: 'documentation' }))];
+  const trend = a.trend ?? [];
+  const box = $('#acc-notes');
+  box.hidden = !(a.notes.length || closed.length || trend.length);
+  box.replaceChildren(...[ // replaceChildren() would print a null as text
+    a.notes.length ? h('ul', { class: 'review-list', style: 'margin:0 0 6px' }, a.notes.map((n) => h('li', { class: 't-sub' }, n))) : null,
+    closed.length ? h('div', { class: 't-sub' }, h('b', {}, 'Closed by a person: '), closed.flatMap((c, i) => [i ? ' · ' : '', h('a', { href: c.url, target: '_blank' }, `${c.kind} PR #${c.number}`), c.keys.length ? ` (${c.keys.join(', ')})` : '', c.reason ? `: "${c.reason}"` : ': no reason given'])) : null,
+    trend.length ? h('div', { class: 't-sub', style: 'margin-top:4px' }, `Daily snapshots: ${trend.length}, since ${trend[0].day}${trend.length > 1 ? ` · fix PRs merged unchanged then ${trend[0].fixAcceptedUnchanged ? `${trend[0].fixAcceptedUnchanged.n}/${trend[0].fixAcceptedUnchanged.of}` : '–'}, now ${trend.at(-1).fixAcceptedUnchanged ? `${trend.at(-1).fixAcceptedUnchanged.n}/${trend.at(-1).fixAcceptedUnchanged.of}` : '–'}` : ''}.`) : null].filter(Boolean));
+}
+
+const G_ROW = 26;
+const G_COL = 16;
+const GPAD = 10;
+const svgEl = (tag, attrs = {}, title = null) => {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  if (title) { const t = document.createElementNS('http://www.w3.org/2000/svg', 'title'); t.textContent = title; el.append(t); }
+  return el;
+};
+const gWhen = (iso) => new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+function renderLanes(d) {
+  const L = d.layout;
+  const box = $('#graph-lanes');
+  if (!L.rows.length) {
+    box.replaceChildren(h('div', { class: 'empty' }, d.ticket ? `Nothing for ${d.ticket}.` : `Nothing in the last ${d.days} days. Pick a longer window.`));
+    return;
+  }
+  const repo = projectInfo(d.project)?.github?.repo;
+  const n = L.rows.length;
+  const x = (c) => GPAD + c * G_COL;
+  const y = (i) => i * G_ROW + G_ROW / 2;
+  const svg = svgEl('svg', { class: 'g-svg', width: GPAD * 2 + (L.cols - 1) * G_COL, height: n * G_ROW, 'aria-hidden': 'true' });
+  svg.append(svgEl('line', { class: 'g-main', x1: x(0), y1: y(0), x2: x(0), y2: L.cut ? n * G_ROW : y(n - 1) }));
+  for (const l of L.lanes) {
+    const xs = x(l.col);
+    const into = (yy) => `M${xs},${yy + G_ROW * 0.5} C${xs},${yy + G_ROW * 0.1} ${x(0) + G_COL * 0.4},${yy} ${x(0)},${yy}`; // joins main at a merge row
+    const top = l.merges.includes(l.top) ? y(l.top) + G_ROW * 0.5 : y(l.top);
+    svg.append(svgEl('path', { class: 'g-lane', d: `M${xs},${l.cut ? n * G_ROW : y(l.bottom)} L${xs},${top}` }));
+    for (const m of l.merges) svg.append(svgEl('path', { class: 'g-lane', d: into(y(m)) }));
+  }
+  for (const r of L.rows) {
+    const cls = r.kind === 'commit' ? `g-node g-commit${r.agent ? ' agent' : ''}` : `g-node g-${r.tone ?? 'info'}`;
+    svg.append(svgEl('circle', { class: cls, cx: x(r.col), cy: y(r.y), r: r.kind === 'commit' ? 5 : 4 }, `${r.ticket ? `${r.ticket} · ` : ''}${r.text}`));
+  }
+  const link = (href, text) => h('a', { href, target: '_blank' }, text);
+  const rows = L.rows.map((r) => h('div', { class: `g-row ${r.kind}` },
+    h('span', { class: 'g-t' }, gWhen(r.at)),
+    r.ticket ? h('button', { class: 'small g-key', title: `Only ${r.ticket}`, onclick: () => showTicketLane(r.ticket) }, r.ticket) : h('span'),
+    h('span', { class: 'g-text', title: r.text }, r.text),
+    h('span', { class: 'g-ref' },
+      r.kind === 'commit'
+        ? [r.agent ? h('span', { class: 'g-agent', title: "The agent's work (its commit, or the squash merge of its PR)" }, '✦ agent') : h('span', {}, r.by ?? ''),
+          repo && !/^r\d+$/.test(r.ref) ? link(`https://github.com/${repo}/commit/${r.ref}`, h('code', {}, r.ref)) : h('code', {}, r.ref),
+          r.pr && repo ? link(`https://github.com/${repo}/pull/${r.pr}`, `#${r.pr}`) : null]
+        : [r.url ? link(r.url, 'open') : null])));
+  box.replaceChildren(...[
+    h('div', { class: 'g-wrap', style: `grid-template-columns:${GPAD * 2 + (L.cols - 1) * G_COL + 6}px minmax(0,1fr)` }, svg, h('div', {}, rows)),
+    L.cut ? h('div', { class: 'hint', style: 'padding:6px' }, `${L.cut} older row(s) not shown: pick a shorter window or one ticket.`) : null].filter(Boolean));
+}
+
 // ---------------------------------------------------------------- ask (FR-65)
 const answers = [];
 let askId = null;
@@ -1487,7 +1641,7 @@ function onAskProgress(ev) {
 
 setInterval(() => { renderStatus(); if (status?.processing && tab === 'tickets') render(); }, 1000);
 connect();
-try { const saved = localStorage.getItem('ti-tab'); if (saved === 'insights' || saved === 'ask') showTab(saved); } catch { /* storage blocked */ }
+try { const saved = localStorage.getItem('ti-tab'); if (saved === 'insights' || saved === 'ask' || saved === 'graph') showTab(saved); } catch { /* storage blocked */ }
 </script>
 <script src="/slides.js"></script>
 <script src="/tour.js"></script>

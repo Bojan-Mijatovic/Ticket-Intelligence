@@ -418,3 +418,9 @@ The input is one **graph** of the project (`lib/git-graph.mjs`, GG0 of [docs/GIT
 Only a prediction made **before** the change counts: an analysis run after the ticket's change was on main is listed as skipped. Every number says what it is out of, and the notes say what could not be measured and why. One snapshot a day is kept in `<project state>/accuracy/snapshots.json` for the trend.
 
 From 2026-11-13 on, the events also record the model of each run (`meta.model`), and the cost of fixes and documentation (`fix-proposed` and `documented` carry `meta`).
+
+### Graph tab
+
+The dashboard's **Graph** tab shows the same numbers as six tiles, with the notes and every PR a person closed together with its reason. Below them are the **ticket lanes**. On the left is the main line, and next to it one lane for each ticket the agent worked on. A lane runs from the analysis through the failing test, the fix, the draft PR and the AI review, and bends into the main line at the ticket's commit there (the squash merge of its PR; on SVN, the commit). A lane that never reaches main ends where its PR was closed. The newest row is at the top, as in a branch graph. A node's colour is the state of its step: green for verified, merged or low risk; red for a failing test, a stop or high risk; amber for already known or medium risk; grey for closed or not eligible. The row names the step in words too.
+
+Filters: the time window (7, 30, 90 or 365 days), one ticket (click its key), and only the agent's work. The layout is plain code (`lib/graph-lanes.mjs`), served by `GET /api/graph?project=DEM&days=30[&ticket=DEM-42][&agentOnly=1]`, and is cut to the newest 400 rows. All times are compared in UTC: git gives local time with an offset, while the events and GitHub use UTC.
