@@ -1492,15 +1492,20 @@ function renderAccuracy(a) {
     kpi('Fix PRs merged unchanged', pctOf(a.fix.acceptedUnchanged), `${outOf(a.fix.acceptedUnchanged)} decided · ${a.fix.withdrawn} withdrawn by resets · ${a.fix.open} open`, 'Draft PRs of the agent\'s own fixes: merged as they were, merged after a person added a commit, or closed by a person'),
     kpi('Documentation merged unchanged', pctOf(a.docs.acceptedUnchanged), `${outOf(a.docs.acceptedUnchanged)} decided · ${a.docs.open} open`),
     kpi('AI review agrees', pctOf(a.review.agreement), `${outOf(a.review.agreement)} · ${a.review.reviews} reviews`, '"Looks good" and merged unchanged, or "needs changes" and changed or closed'),
-    kpi('Analysis: files vs a person\'s fix', pctOf(an.filesVsPerson.hit), an.filesVsPerson.hit.of ? `${outOf(an.filesVsPerson.hit)} named a changed file` : 'no analysed ticket fixed by a person yet', 'The independent test of the analysis: a person changed the code, and the analysis had named the file'),
+    // The independent test of the analysis: live cases when there are some, else the replay on resolved history (AI1b).
+    an.filesVsPerson.hit.of || !a.replay
+      ? kpi('Analysis: files vs a person\'s fix', pctOf(an.filesVsPerson.hit), an.filesVsPerson.hit.of ? `${outOf(an.filesVsPerson.hit)} named a changed file` : 'no analysed ticket fixed by a person yet', 'The independent test of the analysis: a person changed the code, and the analysis had named the file')
+      : kpi('Analysis on history (replay)', pctOf(a.replay.files), `${outOf(a.replay.files)} resolved bugs: named a file of the real fix · owner ${pctOf(a.replay.owner)}`, 'Resolved bugs a person fixed, analysed again as they came in: the code before the fix, Jira as it was. Compared with the real fix'),
     kpi('Analysis: files vs its own fix', pctOf(an.filesVsAgent.hit), `${outOf(an.filesVsAgent.hit)} (not independent)`, 'The agent fixed what it analysed: shown apart, it does not test the analysis'),
     kpi('Analyses', String(an.runs), `${an.tickets} tickets · avg $${(an.avgCostUsd ?? 0).toFixed(2)} · ${Math.round(an.avgSeconds ?? 0)} s`),
   );
   const closed = [...a.fix.closed.map((c) => ({ ...c, kind: 'fix' })), ...a.docs.closed.map((c) => ({ ...c, kind: 'documentation' }))];
   const trend = a.trend ?? [];
   const box = $('#acc-notes');
-  box.hidden = !(a.notes.length || closed.length || trend.length);
+  box.hidden = !(a.notes.length || closed.length || trend.length || a.replay);
+  const r = a.replay;
   box.replaceChildren(...[ // replaceChildren() would print a null as text
+    r ? h('div', { class: 't-sub', style: 'margin-bottom:6px' }, h('b', {}, 'Replay on history: '), `${r.tickets} resolved bugs a person fixed, analysed again as they came in (the code before the fix, Jira as it was). Files of the real fix named ${pctOf(r.files)} (${outOf(r.files)}), precision ${(r.precision ?? 0).toFixed(2)}, recall ${(r.recall ?? 0).toFixed(2)} · component ${pctOf(r.component)} · owner ${pctOf(r.owner)} · "already known?" right ${pctOf(r.priorArt)} · by confidence: ${Object.entries(r.byConfidence).filter(([, x]) => x.of).map(([c, x]) => `${c} ${outOf(x)}`).join(', ')} · $${r.costUsd.toFixed(2)}.`) : null,
     a.notes.length ? h('ul', { class: 'review-list', style: 'margin:0 0 6px' }, a.notes.map((n) => h('li', { class: 't-sub' }, n))) : null,
     closed.length ? h('div', { class: 't-sub' }, h('b', {}, 'Closed by a person: '), closed.flatMap((c, i) => [i ? ' · ' : '', h('a', { href: c.url, target: '_blank' }, `${c.kind} PR #${c.number}`), c.keys.length ? ` (${c.keys.join(', ')})` : '', c.reason ? `: "${c.reason}"` : ': no reason given'])) : null,
     trend.length ? h('div', { class: 't-sub', style: 'margin-top:4px' }, `Daily snapshots: ${trend.length}, since ${trend[0].day}${trend.length > 1 ? ` · fix PRs merged unchanged then ${trend[0].fixAcceptedUnchanged ? `${trend[0].fixAcceptedUnchanged.n}/${trend[0].fixAcceptedUnchanged.of}` : '–'}, now ${trend.at(-1).fixAcceptedUnchanged ? `${trend.at(-1).fixAcceptedUnchanged.n}/${trend.at(-1).fixAcceptedUnchanged.of}` : '–'}` : ''}.`) : null].filter(Boolean));

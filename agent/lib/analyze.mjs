@@ -234,7 +234,8 @@ export function normalizePriorArt(result) {
   return { kind, key: str(p.key)?.toUpperCase() ?? null, commit: str(p.commit), branch: str(p.branch), entry: str(p.entry), why: String(p.why ?? '') };
 }
 
-export async function runAnalysis({ key, repoDir, stateDir, cfg, project = null, peers = [], onProgress = () => {} }) {
+/** @param {object} [p.env]  more environment for the skill (the replay's frozen Jira: JIRA_MOCK, JIRA_MOCK_FILE) */
+export async function runAnalysis({ key, repoDir, stateDir, cfg, project = null, peers = [], env = {}, onProgress = () => {} }) {
   const workDir = join(stateDir, 'work', key);
   mkdirSync(workDir, { recursive: true });
   // The analysis (the analyze-ticket skill) may run on a cheaper model than the fix and the review (claude.analysisModel).
@@ -247,7 +248,7 @@ export async function runAnalysis({ key, repoDir, stateDir, cfg, project = null,
     addDirs: [workDir, ...peers.map((p) => p.dir)],
     // The skill's config.mjs adds these Jira projects to the related-ticket search (the ticket's own is always in).
     // The own key comes first: a configured list also scopes the skill's title search (resolve).
-    env: skillEnv(cfg, peers.length ? { TICKET_INTEL_PROJECTS: [project?.key ?? key.split('-')[0], ...peers.map((p) => p.key)].join(',') } : {}),
+    env: skillEnv(cfg, { ...env, ...(peers.length ? { TICKET_INTEL_PROJECTS: [project?.key ?? key.split('-')[0], ...peers.map((p) => p.key)].join(',') } : {}) }),
     disallowedTools: ['Edit', 'Write', 'NotebookEdit'],
     required: REQUIRED,
     onProgress,

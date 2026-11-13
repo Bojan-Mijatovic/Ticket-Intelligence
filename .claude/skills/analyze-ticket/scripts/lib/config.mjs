@@ -47,6 +47,8 @@ export function loadConfig() {
   if (env.JIRA_DEPLOYMENT) cfg.deployment = env.JIRA_DEPLOYMENT;
   if (env.JIRA_ENV_FIELD) cfg.environmentField = env.JIRA_ENV_FIELD;
   if (env.JIRA_MOCK !== undefined && env.JIRA_MOCK !== '') cfg.mock = /^(1|true|yes)$/i.test(env.JIRA_MOCK);
+  // Another data file for the offline source: the agent's replay (AI1b) freezes Jira as it was when a ticket came in.
+  if (env.JIRA_MOCK_FILE) cfg.mockFile = env.JIRA_MOCK_FILE;
   // Linked projects (set by the agent for an app that calls other apps' APIs): searched for related tickets too.
   if (env.TICKET_INTEL_PROJECTS) cfg.projects = [...new Set([...(cfg.projects ?? []), ...env.TICKET_INTEL_PROJECTS.split(',').map((k) => k.trim().toUpperCase()).filter(Boolean)])];
   cfg.baseUrl = String(cfg.baseUrl || '').replace(/\/+$/, '');

@@ -122,7 +122,7 @@ export function reviewAgreement(verdict, outcome) {
  * @param {object} graph   buildGraph()/loadGraph()
  * @param {{ rules?: object[] }} [o]  insights.components of the project (for the component check)
  */
-export function scoreAccuracy(graph, { rules = [], now = new Date() } = {}) {
+export function scoreAccuracy(graph, { rules = [], replays = [], now = new Date() } = {}) {
   const rows = analysisRows(graph, { rules });
   const predictions = rows.filter((r) => !r.skipped);
   const withFiles = predictions.filter((r) => r.files);
@@ -165,7 +165,7 @@ export function scoreAccuracy(graph, { rules = [], now = new Date() } = {}) {
   const notes = [];
   const person = withFiles.filter((r) => r.fixer === 'person').length;
   const agentFixed = withFiles.filter((r) => r.fixer === 'agent').length;
-  if (!person) notes.push(`No analysed ticket was changed by a person yet${agentFixed ? ` (${agentFixed} were fixed by the agent itself, shown apart: the agent fixing what it analysed does not test the analysis)` : ''}. The replay on resolved history (AI1b) gives independent cases.`);
+  if (!person) notes.push(`No analysed ticket was changed by a person yet${agentFixed ? ` (${agentFixed} were fixed by the agent itself, shown apart: the agent fixing what it analysed does not test the analysis)` : ''}. ${replays.length ? `The replay on resolved history (AI1b) gives ${replays.length} independent case(s): see "replay".` : 'The replay on resolved history (AI1b, agent/replay.mjs) gives independent cases.'}`);
   const skipped = rows.filter((r) => r.skipped).length;
   if (skipped) notes.push(`${skipped} ticket(s) were analysed only after their change was on main: not counted.`);
   const withdrawn = fixPrs.filter((p) => p.outcome === 'withdrawn').length;
@@ -198,9 +198,36 @@ export function scoreAccuracy(graph, { rules = [], now = new Date() } = {}) {
     fix: { tried: attempts.filter((a) => a.outcome !== 'skipped').length, pr: attempts.filter((a) => a.outcome === 'pr').length, failed: attempts.filter((a) => a.outcome === 'failed').length, skipped: attempts.filter((a) => a.outcome === 'skipped').length, ...outcomes(fixPrs) },
     review: { reviews: reviewRows.length, agreement: rate(decidedReviews.filter((r) => r.agreement === 'agree').length, decidedReviews.length), costUsd: sum(reviewRows.map((r) => r.costUsd)) },
     docs: outcomes(agentPrs.filter((p) => p.kind === 'docs')),
+    replay: replays.length ? summarizeReplays(replays) : null,
     rows,
     reviews: reviewRows,
     notes,
+  };
+}
+
+/**
+ * The replay on resolved history (AI1b, lib/replay.mjs): each row is an analysis run again on the code before a
+ * person's fix, with Jira as it was, compared with that fix. Independent of the agent's own fixes.
+ */
+export function summarizeReplays(rows) {
+  const withFiles = rows.filter((r) => r.files?.predicted?.length && r.files?.actual?.length);
+  const owners = rows.filter((r) => r.ownerHit != null);
+  const comps = rows.filter((r) => r.componentHit != null);
+  const byConfidence = Object.fromEntries(CONFIDENCE.map((c) => {
+    const rs = withFiles.filter((r) => r.confidence === c);
+    return [c, rate(rs.filter((r) => r.files.hit).length, rs.length)];
+  }));
+  return {
+    tickets: rows.length,
+    files: rate(withFiles.filter((r) => r.files.hit).length, withFiles.length),
+    precision: avg(withFiles.map((r) => r.files.precision).filter((x) => x != null)),
+    recall: avg(withFiles.map((r) => r.files.recall).filter((x) => x != null)),
+    component: rate(comps.filter((r) => r.componentHit).length, comps.length),
+    owner: rate(owners.filter((r) => r.ownerHit).length, owners.length),
+    priorArt: rate(rows.filter((r) => r.priorArtOutcome === 'right').length, rows.length),
+    byConfidence,
+    costUsd: sum(rows.map((r) => r.meta?.costUsd)),
+    avgSeconds: avg(rows.map((r) => r.meta?.durationMs).filter((x) => x != null).map((ms) => ms / 1000)),
   };
 }
 
@@ -218,6 +245,8 @@ export function snapshotOf(acc) {
     fixAcceptedUnchanged: r(acc.fix.acceptedUnchanged),
     reviewAgreement: r(acc.review.agreement),
     docsAcceptedUnchanged: r(acc.docs.acceptedUnchanged),
+    replayFiles: r(acc.replay?.files),
+    replayOwner: r(acc.replay?.owner),
     costUsd: Math.round((acc.analysis.costUsd + acc.review.costUsd) * 100) / 100,
   };
 }

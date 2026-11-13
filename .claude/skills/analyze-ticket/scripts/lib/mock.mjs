@@ -1,13 +1,14 @@
-// Offline demo source: serves fixtures/mock-jira.json through the same interface as the Jira client.
-// Queries are evaluated structurally (environment / keywords / linked keys) instead of by running JQL.
+// Offline source: serves fixtures/mock-jira.json (or cfg.mockFile, JIRA_MOCK_FILE) through the same interface as the
+// Jira client. Queries are evaluated structurally (environment / keywords / linked keys) instead of by running JQL.
+// The agent's replay (AI1b) uses a file of its own: Jira as it was when a resolved ticket came in.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SKILL_DIR } from './config.mjs';
 import { stem, stemSet } from './text.mjs';
 
-export function createMockSource() {
-  const data = JSON.parse(readFileSync(join(SKILL_DIR, 'fixtures', 'mock-jira.json'), 'utf8'));
+export function createMockSource(cfg = {}) {
+  const data = JSON.parse(readFileSync(cfg.mockFile || join(SKILL_DIR, 'fixtures', 'mock-jira.json'), 'utf8'));
   const hydrate = (i) => ({
     url: `${data.baseUrl}/browse/${i.key}`,
     project: i.key.split('-')[0],

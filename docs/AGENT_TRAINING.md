@@ -83,6 +83,8 @@ The analysis scenarios above check one ticket at a time. Two more evals check wh
 | Prior art of suggested tickets: is a suggestion already a ticket, fixed, or new? | `demo/prior-art-cases.json` | `node demo/score-prior-art.mjs` | none (no AI) |
 | Prior art of reported tickets: duplicate, fixed on main, genuinely new | `expected.priorArt` in `demo/scenarios.json` (`struttura-again`, `lab-decimal-again`, `annullate-filter`) | `new-ticket.mjs --scenario …`, then `score-run.mjs` | a normal run |
 | Recurrence: the analysis cites the knowledge entry of the earlier bug | `expected.knowledgeEntry` (`struttura` → DEM-5) | `score-run.mjs`; shown as n/a until the entry is on main | a normal run |
+| Replay on history (AI1b): every resolved bug a person fixed is analysed again as it came in, on the code before its fix with Jira frozen as it was, and compared with the real fix (files, component, owner, "already known?") | the real fix in git: no key to write | `node agent/replay.mjs --project DEM` (dry run; `--yes`) | one analysis per ticket |
+| How often the agent was right in real work (AI1): analysis vs the later change, fix and documentation PR outcomes, review vs outcome | what happened afterwards | `node agent/accuracy.mjs` | none (no AI) |
 
 The Ask eval writes its runs to `<project state>/ask-eval/`, so they are not taken for real questions, and saves the scored answers in `agent/state/ask-eval/<time>.json`.
 

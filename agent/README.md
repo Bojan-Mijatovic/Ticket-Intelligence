@@ -64,6 +64,7 @@ The command-line tools take the project from the ticket key (`LAB-7` → MediLab
 | `node agent/insights.mjs` | hotspot map in the terminal (`--json`, `--recommend`, `--review` runs the AI review of the app) | no |
 | `node agent/ask.mjs "question"` | ask the knowledge base (sourced answer or "not found") | no |
 | `node agent/accuracy.mjs` | how often the agent was right, per project (`--project DEM`, `--rows`, `--json`) | no |
+| `node agent/replay.mjs --project DEM` | replay resolved bugs a person fixed as they came in, and compare with the real fix (dry run; `--yes`, `--limit`, `--only`, `--max-cost`) | no |
 | `node agent/mail-test.mjs` / `DEM-7` / `DEM-7 --dry-run` | send a test email, or the "analysis ready" email of a saved analysis, to `MAIL_TO` | no |
 | `node --test agent/test` | unit tests of the agent's plain-code parts | no |
 
@@ -418,6 +419,18 @@ The input is one **graph** of the project (`lib/git-graph.mjs`, GG0 of [docs/GIT
 Only a prediction made **before** the change counts: an analysis run after the ticket's change was on main is listed as skipped. Every number says what it is out of, and the notes say what could not be measured and why. One snapshot a day is kept in `<project state>/accuracy/snapshots.json` for the trend.
 
 From 2026-11-13 on, the events also record the model of each run (`meta.model`), and the cost of fixes and documentation (`fix-proposed` and `documented` carry `meta`).
+
+### Replay on resolved history
+
+Until people fix tickets the agent analysed, the live numbers cannot test the analysis. `node agent/replay.mjs --project DEM` fills that gap from history. It runs the analysis again on every resolved bug a person fixed, as if the bug had just come in, and compares the result with the real fix by the same rules as above.
+
+| Hidden from the run | How |
+|---|---|
+| the fix and everything after it | a clone at the fix's parent: branch `main` only, no remote, no tags, objects pruned. The clone is refused if `git log --all` still finds a commit starting with the ticket's key |
+| the knowledge entry of the bug | it is not in that clone (it was written later) |
+| what Jira learned later | a frozen Jira (`<state>/replay-work/<KEY>/jira.json`) served by the skill's offline source (`JIRA_MOCK=1`, `JIRA_MOCK_FILE`). It holds the ticket as reported (no comments, status, resolution, assignee, links or attachments) and the tickets that existed then, without comments. "Existed then" goes by git time (a change before the fix; with no change, a lower number), because the demo's Jira dates are all from one day and its numbers are not in time order |
+
+Linked apps are left out, and the replay needs git: SVN shows later revisions from the server. The command is a dry run by default (candidates and estimated cost); `--yes` runs it, with `--limit`, `--only DEM-5,DEM-22`, `--again` and `--max-cost` (default $10). Each result is kept in `<state>/replay/<KEY>.json`. `accuracy.mjs` and the Graph tab show the replays under **Replay**, apart from the live numbers. The frozen Jira file is stored locally only; the skill masks personal data before the model reads anything (R-02).
 
 ### Graph tab
 

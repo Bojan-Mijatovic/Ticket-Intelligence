@@ -35,6 +35,7 @@ import { loadProjects, peerCheckouts, teamOf } from './lib/projects.mjs';
 import { loadGraph, readSuitePullRequests } from './lib/git-graph.mjs';
 import { recordAccuracy, scoreAccuracy } from './lib/accuracy.mjs';
 import { laneLayout } from './lib/graph-lanes.mjs';
+import { readReplays } from './lib/replay.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const all = loadProjects(HERE);
@@ -350,7 +351,7 @@ async function graphCached(p, refresh = false) {
   if (!refresh && hit && Date.now() - hit.at < 120_000) return hit.data;
   if (refresh || !suitePrsCache || Date.now() - suitePrsCache.at >= 120_000) suitePrsCache = { at: Date.now(), prs: readSuitePullRequests(all.projects.filter((x) => existsSync(x.repoDir))) };
   const graph = await loadGraph({ project: p, eventsDir: rootState, jira, suitePrs: suitePrsCache.prs });
-  const acc = scoreAccuracy(graph, { rules: p.cfg.insights?.components ?? [] });
+  const acc = scoreAccuracy(graph, { rules: p.cfg.insights?.components ?? [], replays: readReplays(p.stateDir) });
   const data = { graph, accuracy: { ...acc, trend: recordAccuracy(p.stateDir, acc) } };
   graphCache.set(p.key, { at: Date.now(), data });
   return data;
