@@ -354,6 +354,11 @@ test('J7: the reporter is asked when a report about code does not tell what is w
   // BIL-23 with ft-5: the type says bug in code, the code question no code change; one of them is enough.
   assert.deepEqual(askReporter(ans('bug in code', 'no code change', ['steps', 'expected', 'environment'])), { missing: ['steps', 'expected', 'environment'] });
   assert.deepEqual(askReporter(ans('system support', 'needs code', ['expected'])), { missing: ['expected'] });
+  // W-95, "Verificare per favore.": no type is sure (system support 24 %), so it counts as unclear and is asked; the
+  // same answers with a sure type are not.
+  const vagueType = (p) => ({ ...ans('system support', 'no code change', ['steps', 'expected', 'screen', 'environment']), type: { choice: 'system support', p } });
+  assert.equal(askReporter(vagueType(0.24)).missing.length, 4);
+  assert.equal(askReporter(vagueType(0.8)), null);
   assert.deepEqual(askReporter(ans('unclear', 'no code change', ['steps', 'expected', 'screen', 'environment'])).missing.length, 4);
   // W-114 with ft-4, "Something is wrong with the doses, please check.": unclear, not code, no code change, all sure;
   // it goes to the reporter, never down the light path. A complete how-to question still takes it.

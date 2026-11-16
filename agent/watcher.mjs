@@ -268,7 +268,13 @@ const isBusyWith = (key) => status.processing?.key === key || status.queue.some(
 const S1 = policy.system1 ?? {};
 const system1Answers = new Map();
 const system1Resolved = new Map();
-function askSystem1(issue) {
+// J4: the known-issue tests this watcher has queued, `KEY|ENTRY`: a second run of the same ticket does not run them again.
+const knownTested = new Set();
+/**
+ * @param {boolean} [o.byPerson] a run a person started (Run again, Analyze now): the question to the reporter is not
+ *   drafted again, since the person has seen it and chose to go on (LAB-31 got the same question twice, 2026-11-16)
+ */
+function askSystem1(issue, { byPerson = false } = {}) {
   if (system1.mode === 'off') return;
   const p = all.ofTicket(issue.key);
   const started = Date.now();
@@ -294,11 +300,12 @@ function askSystem1(issue) {
         missing: missingInfo(a.answers, Number(S1.askReporterThreshold ?? 0.6)),
         askReporter: ask ? { mode: askMode, hold: askMode === 'draft' && S1.askReporterHold === true } : null,
       });
-      if (ask && askMode === 'draft') {
+      if (ask && askMode === 'draft' && !byPerson) {
         events.emit('draft', { key: issue.key, kind: 'ask-reporter', text: `Question to the reporter: the report does not tell ${ask.missing.map((f) => MISSING_WORDS[f]).join(', ')}`, why: 'System 1 (J7): drafted from a template; a person sends it as a Jira comment', body: askReporterText({ missing: ask.missing, text: a.text }) });
       }
       // J4: a known issue with a regression test: its test runs on main as the next job (no model, a few minutes).
-      if (entry?.test && (S1.knownTest ?? 'auto') === 'auto') {
+      if (entry?.test && (S1.knownTest ?? 'auto') === 'auto' && !knownTested.has(`${issue.key}|${entry.key}`)) {
+        knownTested.add(`${issue.key}|${entry.key}`);
         status.queue.unshift({ kind: 'known-test', key: issue.key, entry: entry.key, project: p.key });
         events.emit('known-test', { key: issue.key, entry: entry.key, status: 'queued', text: `the regression test of ${entry.key} is queued to run on main` });
         pushStatus();
@@ -386,7 +393,7 @@ async function rerun(key) {
   // A person asked for the full flow: System 1 still answers (shown), but its light path and hold are skipped.
   status.queue.push({ ...issue, kind: 'analyze', skipGate: true });
   events.emit('queued', { key, text: issue.summary, url: jira.browseUrl(key), priority: issue.priority, reporter: issue.reporter, rerun: true });
-  askSystem1(issue);
+  askSystem1(issue, { byPerson: true });
   pushStatus();
   drain();
 }
@@ -403,7 +410,7 @@ async function decideHeld(key, action) {
     await jira.labels(key, { remove: [L.held] });
     status.queue.push({ ...issue, kind: 'analyze', skipGate: true });
     events.emit('queued', { key, text: issue.summary, url: jira.browseUrl(key), priority: issue.priority, rerun: true });
-    askSystem1(issue);
+    askSystem1(issue, { byPerson: true });
     pushStatus();
     drain();
     return { queued: true };

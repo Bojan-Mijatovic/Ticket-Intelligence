@@ -196,12 +196,16 @@ export const missingInfo = (answers, threshold = 0.6) => Object.keys(COMPLETE).f
  * those two alone never ask; when it asks, it asks for everything that is missing. { missing } or null.
  * About code when either the type or the code question says so: a report that does not tell what is wrong often
  * splits them (BIL-23, "Mi dà errore quando stampo la ricevuta": bug in code 56 %, no code change 64 %, 2026-11-16).
+ * Unclear when the type says so, or when no type reaches UNSURE_TYPE: "Verificare per favore." got system support at
+ * 24 % (W-95). On ft-5's saved answers this asked one report more and no one without need.
  */
+export const UNSURE_TYPE = 0.4;
 export function askReporter(answers, threshold = 0.6) {
   const missing = missingInfo(answers, threshold);
   if (!missing.includes('expected') && !missing.includes('screen')) return null;
   const aboutCode = answers?.code?.choice === 'needs code' || CODE_TYPES.has(answers?.type?.choice);
-  return aboutCode || answers?.type?.choice === 'unclear' ? { missing } : null;
+  const unclear = answers?.type?.choice === 'unclear' || (typeof answers?.type?.p === 'number' && answers.type.p < UNSURE_TYPE);
+  return aboutCode || unclear ? { missing } : null;
 }
 const IT_WORDS = new Set(['il', 'la', 'che', 'non', 'per', 'una', 'del', 'della', 'è', 'con', 'si', 'mi', 'dà', 'ho', 'nel', 'alla', 'va', 'funziona', 'errore', 'quando', 'sono', 'più']);
 const EN_WORDS = new Set(['the', 'is', 'not', 'and', 'of', 'to', 'it', 'with', 'when', 'does', 'doesn', 'we', 'my', 'on', 'for', 'this', 'error', 'works', 'working', 'please']);

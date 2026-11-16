@@ -218,8 +218,8 @@ The pilot gives two new tickets every working day, each with an answer key. It i
 | J4 known issue in other words + its test | built and verified live (FR-79): LAB-30 → LAB-8 (85 %), its regression test run on main and passed (`knownTest: auto`). LAB-8 recognised in 5 of 6 new reports; LAB-29 missed |
 | J5 Ask router | built and live (FR-80), `askRouter: auto`: "who" questions answered in about a second when the component is at 0.7 or more |
 | J6 privacy check | built (FR-81), in shadow. With `ft-2` it would have held 46 of 185 real tickets that name nobody; with `ft-5`, none of the 60 held out. **Not ready for `auto` yet**: the three real texts with a name are all in the training rows, so catching a name in a real ticket is not measured on unseen ones |
-| J2 light path, J3 queue order | built (FR-78), in shadow; `draft` and `auto` are ready behind the policy switch |
-| J7 ask the reporter (WF1) | built (FR-82), in shadow: 204 reports labelled by hand, 16 half-written bug reports added, the question from a template (IT/EN). With `ft-5`: what is wrong 96 %, where 92 % on unseen rows; asked in 7 of the 10 cases a person marked, never without need. **Verified live** (BIL-23, BIL-24) after one fix of the rule |
+| J2 light path, J3 queue order | built (FR-78), in shadow. `draft` **verified live** (DEM-49: held, a person chose the light path, triage comment and `ai-triaged` in 1 s, no analysis); `auto` is ready behind the policy switch |
+| J7 ask the reporter (WF1) | built (FR-82), in shadow: 204 reports labelled by hand, 16 half-written bug reports added, the question from a template (IT/EN). With `ft-5`: what is wrong 96 %, where 92 % on unseen rows; asked in 8 of the 10 cases a person marked, never without need. **Verified live** in shadow (BIL-23, BIL-24) and in `draft` with the hold (LAB-31, BIL-25: held, the question in Drafts in the report's language, **Analyze now** releases it) |
 | J8b retrain with a check | built (FR-83): `agent/system1-train.mjs` (data → fine-tune → evaluate both → accept only if not worse), `--nightly`, keep-awake, reload without a restart, labels from Claude's analyses, a stable split; the Impact panel with the calibration. The nightly task is ready (`schedule.ps1 -Register`) but **not registered**: it takes about four hours of CPU a night |
 | J9 presentation | built (FR-84): the tour's **System 1 chapter** (8 steps, checked in a browser) and the backup Q&A slide |
 
@@ -541,3 +541,21 @@ Also measured on the full test:
 Claude's own reply draft for BIL-23 asked the reporter for the same things, after a 91-second analysis that ended with low confidence. Asked before the analysis, the reporter could have answered while the ticket waited.
 
 One wrong answer: System 1 named **BIL-9** ("amounts as 22.5 instead of 22,50 €") as BIL-24's known issue, at 95 %. BIL-24 is about an exemption on a second visit; both only speak of receipts and amounts. BIL-9 has no regression test, so nothing ran. The known-issue question needs harder "none of these" examples: reports about the same screen and other faults.
+
+### J7 and J2 in `draft`, live (2026-11-16)
+
+The policy was set to `askReporter: draft`, `askReporterHold: true` and `lightPath: draft` for the test, then back to shadow. Five new tickets with the label `system1-demo`:
+
+| Ticket | Text | System 1 | What happened |
+|---|---|---|---|
+| LAB-31 | "The results are wrong again, please check." | unclear 44 %; no steps, not what is wrong, no where or when | held (`ai-held`), the question in Drafts **in English**; **Analyze now** removed the label and the analysis ran (58 s, low confidence) |
+| FAR-22 | "Quando provo a erogare il farmaco mi dà errore." | bug in code 54 %; tells what was done 82 %, **tells what is wrong 67 %** | no question; analysed (54 s, low confidence), and Claude's draft reply asked the reporter for the details. A miss of the model: BIL-23's "mi dà errore quando stampo" was "not what is wrong" at 82 %. For the next training's data |
+| DEM-49 | "Come si annulla una prenotazione già confermata? …" | user question 95 %, not code 94 % | held with **Light path / Analyze anyway**; a person chose the light path: the triage comment in Jira, `ai-triaged`, done in 1 s, no analysis and no owner notice |
+| BIL-25 | "C'è un problema alla cassa, controllate per favore." | unclear 78 %; type, side and code all say not code (90–94 %) | **not** offered the light path, because the report does not tell what is wrong (the W-114 rule, live). Held with the question in Italian; **Analyze now** queued the analysis (52 s, low confidence) |
+
+Two defects found and fixed:
+
+- **The same question twice.** **Analyze now** (and **Run again**) asks System 1 again, and it drafted the question to the reporter a second time, and queued the known issue's regression test again (LAB-31, LAB-15's test 20 s after it had passed). A run a person starts no longer drafts the question, and a known issue's test runs once per ticket in a watcher's life. BIL-25 then had one question.
+- **An unsure type.** "Verificare per favore." (W-95) got system support at 24 % and was not asked, because only "unclear" counted as unclear. Now no type at 40 % or more counts as unclear too. On `ft-5`'s saved answers this asks 8 of the 10 marked reports instead of 7, none without need, and the light path catches 13 of 28 instead of 14: the one it lost is W-95, which should go to the reporter.
+
+Still missed: W-111 "Da ieri la prenotazione non va" (System 1: tells what is wrong, 88 %) and W-115 "We get error 500" (names the screen, 56 %). Both are data for the next training, with FAR-22.

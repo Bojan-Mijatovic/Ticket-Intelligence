@@ -22,6 +22,7 @@ os.environ.setdefault("USE_TF", "0")
 
 CODE = {"bug in code", "change request", "new requirement"}  # lib/system1.mjs CODE_TYPES
 MISSING_OF = {"steps": "no steps", "expected": "not what is wrong", "screen": "no screen", "environment": "no where or when"}
+UNSURE_TYPE = 0.4  # lib/system1.mjs UNSURE_TYPE: no type this sure counts as unclear
 
 
 def asks(missing, about):
@@ -36,7 +37,8 @@ def would_ask(x):
         return None
     missing = {q for q, o in MISSING_OF.items() if a[q]["choice"] == o and a[q]["p"] >= 0.6}
     about = a.get("code", {}).get("choice") == "needs code" or a.get("type", {}).get("choice") in CODE
-    return asks(missing, about or a.get("type", {}).get("choice") == "unclear")
+    unclear = a.get("type", {}).get("choice") == "unclear" or a.get("type", {}).get("p", 1) < UNSURE_TYPE
+    return asks(missing, about or unclear)
 
 
 def ece(pairs, bins=5):
