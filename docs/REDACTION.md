@@ -38,7 +38,7 @@ Plain-code pages (Insights, the dashboard's lists) show Jira as it is: they run 
 - **Screenshots.** Images cannot be masked. With `redaction.attachments: "skip"` in `~/.claude/skills/analyze-ticket/config.json` they are not downloaded (the analysis says so). Recommended for company tickets; the demo keeps them.
 - **Names the rule cannot see**: one word ("Andrea called"), all capitals ("COSTA ANDREA"), uncommon first names, names inside identifiers. `redaction-audit.mjs` lists the capitalised pairs it left, for a person to check.
 - **The repository itself.** The analysis can read the code, the git history and `docs/knowledge` with its own tools. Masking cannot reach what is in the repository: commit messages and documentation must be kept free of personal data. The knowledge lint enforces it for `docs/knowledge`; for commit messages it is a team rule (the demo history had one: LAB-19's fix commit names a test patient).
-- **What the model writes back** (Jira comments, documentation) contains placeholders, never the real values, because it never saw them.
+- **What the model writes back** (Jira comments, documentation, the Teams messages) contains placeholders, never the real values, because it never saw them. A name the masking missed is the exception: the model saw it and may repeat it, and the Teams message carries the same handoff text as the internal Jira comment, to a channel. Seen on DEM-48: an uncommon name (Ruairi Szczepanski) passed the masking and appeared in the handoff. Until the masking catches uncommon names, the team channel must be internal, like the Jira comment.
 
 ## Settings
 
@@ -61,6 +61,10 @@ node --test agent/test/redact.test.mjs                # the rules, including no 
 - **Audit of 88 tickets:** masked the test patients (Bianchi Laura, Rossi Mario, Fontana Chiara) and the doctor's name of LAB-24. Found and fixed on the way: a tester (Elena Conti) masked because she is not a git author → `staff`; "Davide Greco's" (possessive) and "Mijatović" written with a combining accent taken for unknown people; a drug's AIC code taken for a phone number. After the fixes: no false alarm.
 - **Knowledge lint with the name rule:** one real finding, LAB-19's entry named two patients (written before the redaction existed); fixed (MediLab PR #6). All four knowledge bases: no findings.
 - **Quality with masking on:** LAB-19 analysed with its patient names masked: right cause, owner (Francesca Lombardi), high confidence, "already documented" found; no name in the result. Ask eval LAB 8/8; BIL 2/3 (the cross-app answer was right and cited DEM-17, but not BIL-4: a variation in the sources chosen, not caused by the masking).
+
+## Measured on the pilot (2026-11-16)
+
+The pilot ([PILOT.md](PILOT.md)) quotes synthetic patients in every bug report, a quarter of them with uncommon first names on purpose, and scores the masking on each one: **11 of 15** quoted identifiers masked over five tickets. Fiscal codes and phone numbers were always masked; the misses are names the list does not know ("Ferrara Iolanda").
 
 ## Decisions still needed
 

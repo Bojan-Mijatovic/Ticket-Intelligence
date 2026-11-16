@@ -1,6 +1,6 @@
 # Roadmap: after the POC
 
-Status: **Planned** · Date: 2026-11-04 · Owner: Bojan Mijatović
+Status: **In progress**: #4, #5 and #6 done, #2 mostly; #1 and #3 deferred · Date: 2026-11-04, updated 2026-11-16 · Owner: Bojan Mijatović
 
 The POC is complete: a new ticket is analyzed, reproduced with a browser test, fixed and opened as a draft PR with no human action, and a ticket moved to Done is documented (see [DEMO_SCENARIO.md](DEMO_SCENARIO.md)). This roadmap adds eight features. Each feature lets the agent do more on its own, or shows team leads and management what it does and what it is worth.
 
@@ -23,6 +23,8 @@ Two rules from the POC still apply:
 | 8 | Reply to the customer after merge | Support, customer | "Fixed in …" reply drafted (or posted) when the PR is merged | 0.5 d | B |
 
 Total: about 6–7 working days. These are estimates for one developer working with Claude Code.
+
+**Teams without approval is done (2026-11-16).** The owner gets the handoff in a real channel with an @mention and why it is them, and a second card, **fix ready for review**, with the PR (T4–T6 of [GIT_GRAPH.md](GIT_GRAPH.md), through the Workflows webhook). #1 still needs more: a webhook only posts, so Approve and Reject need a Teams app or a Power Automate flow that waits for the answer.
 
 ### Order and dependencies
 

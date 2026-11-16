@@ -22,6 +22,8 @@ Only one watcher runs at a time: a second start stops with the PID of the runnin
 
 `--replace` does not stop the running watcher in the middle of a job (`lib/replace.mjs`). It tells it to start nothing new (`POST /api/drain`), waits until it is idle (`GET /api/busy`: an analysis, a fix, a documentation run, a known-issue test, an app review, recommendations, a documentation merge), and stops it then, saying what it waits for. After 15 minutes (`--wait <minutes>`) it gives up and the running watcher goes back to work; `--force` stops it at once, losing its work in progress. Jobs that were only queued are found again in Jira by the new watcher.
 
+**The watcher keeps answering while it works.** The heavy reads (Insights, the Graph tab with its accuracy, Impact, the knowledge base list) run git and gh hundreds of times; they run in worker threads (`lib/heavy-worker.mjs`, one per project and job, cached as before), the regression guard's fetches are asynchronous, and the app branches on the dashboard are read from the HEAD files. Before this, opening Impact held every request for up to 16 s, again and again for a minute, and on a busy machine the pilot's 5-second check took the watcher for dead. Now a status answers within 30 ms throughout.
+
 Open http://localhost:7070, then create a ticket in the Jira project. The agent picks it up within `pollSeconds` (or at once with **Check now**).
 
 On the dashboard:
@@ -169,7 +171,7 @@ The pilot's tickets come in this way, one more example with every analysis. The 
 
 A refused checkpoint stays in `state/system1/models/` for a person to look at.
 
-**Where things are.** `agent.config.json` → `system1` holds `port` (7071), `python`, `hfHome`, `checkpoint`, `timeoutSeconds` (60), `startTimeoutSeconds` and `waitSeconds`. `checkpoint` is used only until `system1-train.mjs` has accepted one: then `state/system1/models/current.json` names it. The data, the models and the results are in `state/system1/`, outside git. `demo/system1/written-tickets.json` holds the written tickets the training needs, because the demo's Jira has only tickets about code. Beside it:
+**Where things are.** `agent.config.json` → `system1` holds `port` (7071), `python`, `hfHome`, `checkpoint`, `timeoutSeconds` (60), `startTimeoutSeconds` (300: the model took 125 s to load while a training ran, over the former 120 s, and the dashboard said "off" until a person reloaded it; 10–40 s otherwise) and `waitSeconds`. A ticket that comes before the server is ready gets no System 1 answer and goes on as before. `checkpoint` is used only until `system1-train.mjs` has accepted one: then `state/system1/models/current.json` names it. The data, the models and the results are in `state/system1/`, outside git. `demo/system1/written-tickets.json` holds the written tickets the training needs, because the demo's Jira has only tickets about code. Beside it:
 
 - `known-reworded.json`: known issues in other words;
 - `ask-intents.json` and `ask-components.json`: Ask questions with their intent and component;

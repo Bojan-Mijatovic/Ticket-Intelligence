@@ -75,7 +75,9 @@ flowchart TD
 | Accuracy from production (AI1) and replay on history (AI1b) | done |
 | Insights, app review, suggested tickets | done |
 | Ask over one app and the suite | done |
-| Teams: owner message, @mention, "fix ready" | done; the team's own channel needs its webhook |
+| Teams: owner message with an @mention and why this person, then "fix ready" with the PR | done, seen on real pilot tickets (VAX-21, VAX-17); the team's own channel needs its webhook |
+| A live demo on the pilot: reserved cases, `demo/preflight.mjs --teams` ([DEMO_SCENARIO.md](DEMO_SCENARIO.md) section 9) | ready; one rehearsal to go |
+| Restart without losing work (`--replace` waits for the running job), a watcher that keeps answering while it works | done |
 | Impact (WF5) and ticket lanes (G1, G1b) | done |
 | System 1: known issue (J4), Ask router (J5) | live |
 | System 1: question to the reporter (J7, WF1), light path (J2), queue order (J3), privacy (J6) | in shadow: they say what they would do |

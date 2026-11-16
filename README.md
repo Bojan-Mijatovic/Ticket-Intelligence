@@ -57,7 +57,7 @@ The script copies both skills to `~/.claude/skills/`, so they work in every proj
 
 ## Autonomous agent
 
-`agent/` runs the analysis on its own: it watches a Jira project, analyzes every new ticket headless, posts the analysis to Jira, notifies the most suitable person and shows everything live on a dashboard. A new ticket is analyzed and commented on in about a minute, with no human start.
+`agent/` runs the analysis on its own: it watches a Jira project, analyzes every new ticket headless, posts the analysis to Jira, notifies the most suitable person and shows everything live on a dashboard. A new ticket is analyzed and commented on in about a minute, with no human start. The person is told in a Teams channel, with an @mention and why it is them, and again when the fix is ready (a Workflows webhook; [agent/README.md](agent/README.md#notifications)). On the pilot the whole way, from the report to a verified draft PR and both Teams messages, took about five minutes ([docs/PILOT.md](docs/PILOT.md)).
 
 ```
 node agent/watcher.mjs        # dashboard on http://localhost:7070

@@ -115,6 +115,9 @@ Results:
 | bug not reproduced | no page helper or mock endpoint for that page | test harness |
 | fix touches too much | no rule about scope | skill instructions + `CLAUDE.md` ("smallest change, no refactoring") |
 | low confidence on a clear ticket | description too vague, or evidence not found | ticket template for reporters |
+| right fix, "independent checks failed" | an existing test asserts the bug itself (LAB-24: the results smoke test validated with the pre-filled signature); the analysis did not list it in `supersedes`, so the fix may not change it (2026-11-10 and 2026-11-16; fixed by hand, MediLab #8) | skill instructions: look for tests that assert the reported behaviour and name them in `supersedes` (`proposeFixWhen.allowSupersededTestUpdates`) |
+| fix and its test pass, the user still sees the bug | the new browser test runs against a mock API more lenient than the real backend (VAX-19: the mock includes the last day, the backend did not) | AI review (it caught this one: "needs changes"); test harness: the mock follows the backend's contract |
+| a regression test that guards nothing | a later change "adjusted" the earlier fix's test so CI passed (VAX-15 on VAX-13's test) | regression guard (A1) alerts on the commit; restore the test (MediVax #13) |
 
 ## At work (GitHub Copilot)
 

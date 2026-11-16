@@ -77,6 +77,7 @@ B. REPORTED BY A PERSON (Jira → watcher → analysis)
 | F14 | **"People who know it" duplicates the Insights knowledge map and goes stale**, and lists the Ticket Intelligence Agent as a person (Insights deliberately does not). | the entries on MediAgenda |
 | F15 | **Not measured.** `score-run.mjs` scores analysis and fix. Ask has two acceptance questions; nothing checks whether the analysis recognizes a documented recurrence. | `docs/AGENT_TRAINING.md`, ROADMAP #6 |
 | F23 | **The demo reset throws knowledge away.** `reset-demo.mjs` closes every agent PR, documentation included, and deletes its branch: on MediAgenda 7 of 9 documentation PRs are closed unmerged; LAB-23's (#3) is closed with its branch left. | `demo/reset-demo.mjs:10,60`; `gh pr list` (found in K2) |
+| F24 | **Documentation PRs conflict with each other.** Written from the same `main`, several of them change the same lines: the top of the index, a component's owners line and the top of its **Known issues**. After the first merge GitHub refuses the others, and merging them needs a person (2026-11-16, the pilot's VAX-16, 17, 19 and 21). |
 
 **New tickets and prior art**
 
@@ -135,6 +136,12 @@ Phase 0 sets the baseline. Phases 1–4 then change **one lever at a time**, re-
 - **Acceptance:** LAB-23's entry can be merged from the dashboard; a PR that changes anything else is never merged.
 - **Built 2026-11-12** (FR-48): `agent/lib/docs-prs.mjs` (tested in `agent/test/docs-prs.test.mjs`), `GET /api/knowledge`, `POST /api/knowledge/merge`, **Insights → Knowledge base**, `mergeDocs: draft` in `policy.json`. Checked live: MediLab lists LAB-23 (#3) as "closed, not merged" with **Reopen and merge…**; MediAgenda shows 2 documented tickets on main. The merge itself waits for a person's click (the decision of section 8).
 - **Found while building it (F23):** LAB-23's PR was not waiting for review: it was **closed without merging** (its branch is still there). On MediAgenda 7 of 9 documentation PRs are closed unmerged and only 2 merged: `demo/reset-demo.mjs` closes every agent PR, documentation included, and deletes the branches, so the knowledge of every rehearsal is thrown away. Proposal (with K4): the reset keeps `docs/*` PRs and branches by default (`--drop-docs` to discard them), because knowledge is meant to outlive a rehearsal.
+
+**K22. Documentation PRs merge in any order** · 0.5 d · F24
+- Several documentation PRs written from the same `main` conflict when merged one after another: each adds a row at the top of the index in `docs/knowledge/README.md`, and in the component file each rewrites the owners line (**People who know it**) and adds its entry at the top of **Known issues**. GitHub refuses the second one, and the dashboard's **Merge** says so (409).
+- The fix: before merging, `docs-prs.mjs merge()` brings the branch up to date with `main` and merges the knowledge files entry by entry, as it was done by hand on 2026-11-16: index rows kept from both sides and sorted by ticket key (newest first); one owners line with the people and tickets of both; one **Known issues** heading with each entry once, newest ticket first. The result must pass the lint (K5) before it is pushed; anything it cannot place stays a conflict for a person.
+- **Acceptance:** four documentation PRs of one component, opened from the same `main`, merge from the dashboard one after another with no conflict and no lost or doubled entry.
+- **Found 2026-11-16 (pilot, [PILOT.md](PILOT.md)):** VAX-16, VAX-21, VAX-17 and VAX-19 were documented from the same `main`; after the first merge the other three conflicted. A first automatic "keep both sides" doubled the owners line and the heading in `scadenze.md`; resolved by hand, then linted clean.
 
 **K3. Unreviewed knowledge is readable, labelled** · 0.5 d · F3
 - `agent/lib/knowledge.mjs` → `pendingEntries(repoDir)`: entries on `origin/docs/*` branches that are not on `main` (`git diff --name-only origin/main...origin/docs/<KEY> -- docs/knowledge`, then `git show`). Ask and the analysis get them as **unreviewed**; an answer that relies on one says so.
@@ -313,7 +320,7 @@ It measures correct verdicts, false duplicates (target 0 on (e)) and cost.
 
 ```
 Phase 0  K16 Jira health ─ K1 eval baseline (+ K21 cases)
-Phase 1  K2 review loop ─ K3 pending readable ─ K4 coverage + backfill
+Phase 1  K2 review loop ─ K22 merge in any order ─ K3 pending readable ─ K4 coverage + backfill
 Phase 2  K5 format + lint ──┬─ K6 one component name ─ K7 freshness
 Phase 3  K8 search plan ────┴─ K9 knowledge first ─ K10 honest failures ─ K11 suite
 Phase 4  K12 feedback + gaps ─ K13 fix/review use it ─ K14 conventions ─ (K15 FAQ)
@@ -328,12 +335,12 @@ K5 comes before K4's backfill runs in bulk, so the backfilled entries already ha
 | Phase | Items | Effort |
 |---|---|---|
 | 0 | K16, K1, K21 | 1.5 d |
-| 1 | K2, K3, K4 | 2 d |
+| 1 | K2, K22, K3, K4 | 2.5 d |
 | 2 | K5, K6, K7 | 2.5 d |
 | 3 | K8, K9, K10, K11 | 3.5 d |
 | 4 | K12, K13, K14 (K15 later) | 2 d |
 | 5 | K17, K18, K19, K20 | 4 d |
-| | **Total** | **about 15.5 days** |
+| | **Total** | **about 16 days** |
 
 Biggest effect for the least work: **K16 → K1 → K2 → K4 → K5 → K10 → K17 + K19** (about 6 days). After these, a Jira outage is visible, the knowledge base fills up, gets merged and has a gate, Ask stops hiding failures, and no suggested ticket is created for a problem that is already open, being fixed or fixed.
 

@@ -49,7 +49,7 @@ When a ticket is resolved, the cause and fix are recorded in the project's own d
 - code analysis on git and SVN projects;
 - on-demand use from Claude Code and GitHub Copilot (the tool used at work);
 - an autonomous agent that watches a Jira project and posts internal analyses;
-- a live dashboard; notifications to Teams (simulated in the POC);
+- a live dashboard; notifications to Teams (simulated in the POC; since 2026-11-16 a real channel through a Workflows webhook, checked on a test tenant);
 - documentation of resolved tickets in the repository (`docs/knowledge/`).
 
 **Out of scope for now:**

@@ -14,7 +14,7 @@ Every case has an **answer key**: the commit that broke the code, the file, and 
 |---|---|---|
 | working days at 10:00 and 15:00 (`agent.config.json` → `VAX.pilot`) | a developer's change is pushed to MediVax `main`: a Jira story (Done) and one commit by the developer. Inside the change is a bug. First the existing tests of that side run (Maven, or `ng build` and Playwright), as CI would. A case they catch is dropped | `demo/pilot.mjs` (plain code) |
 | 1 to 3 hours later | a user reports the symptom in Jira as a `[BE]` or `[FE]` bug, quoting a patient the way real tickets do (name, fiscal code, sometimes birth date, phone, health card) | `demo/pilot.mjs` |
-| within minutes | analysis, "already known?", reproduction test, bisect, fix, draft PR, AI review: the agent does what it does for any ticket | the agent (watcher) |
+| within minutes | analysis, "already known?", reproduction test, bisect, fix, draft PR, AI review: the agent does what it does for any ticket. The owner gets a Teams message with an @mention and why it is them, and a second one when the fix is ready (when a channel is set up) | the agent (watcher) |
 | later | merge or close the PR | a person |
 | at the next tick after the merge | the ticket moves to Done, as the team would close it once its fix is on `main`; the agent then documents it, and the entry names the fix's regression test | `demo/pilot.mjs` |
 | within 2 minutes of every push | the regression guard (A1) checks the commit: does it touch an earlier fix, do that fix's tests still pass | the agent (watcher) |
@@ -102,9 +102,28 @@ The app itself: `node demo/run-mediagenda.mjs --project VAX` (backend :8084, fro
 
 The first case found a defect in the bisect, now fixed. For a regression, the analysis gave the breaking commit as `priorArt.commit`, the field meant for the earlier fix, and the bisect plan dropped that commit's parent. Both readings are now covered.
 
+## Results after five cases (2026-11-16)
+
+`node demo/pilot.mjs status`: **5 of 5** analysed, and for every one the files, the breaking commit, the owner, a verified fix PR and an exact bisect were right. The regression guard caught the one regression before its ticket and raised no false alarm on the other pushes. Masking: 11 of 15 quoted identifiers (the misses are uncommon first names, on purpose). Model cost: $11.82 for the five.
+
+| Case | Ticket | What happened |
+|---|---|---|
+| hpv-26 | VAX-16 | a 26-year-old refused the second HPV dose: the age check had become `>=` in a "comments only" commit (VAX-14). Fix PR #5 |
+| due-last-day-again | VAX-17 | the regression of VAX-13. The first fix run stopped on `EBUSY` (a killed `cmd.exe` left the real process holding the worktree; `killTree` fixed that). Run again on 2026-11-16: the analysis named VAX-15 (`5bf4f30`) as the change that brought it back, the bisect confirmed it in 39 s, fix PR #8 |
+| week-sunday | VAX-19 | on a Sunday Scadenze showed the next week. Fix PR #6 was right for the page, but the **AI review said "needs changes"**: the patient in the ticket would still be missing, because the backend left out the last day (VAX-17), and the new browser test passed only because the mock API includes it. So #6 was merged only together with #8 |
+| interval-from-first | VAX-21 | the next dose counted from the first dose. The whole flow with no one starting anything, measured from the report: handoff in Teams to @Irene Fabbri at 1:58 ("Why you: She authored VAX-20 (6e8e6e1), the regression"), bisect to that commit at 3:56, **fix ready for review** with PR #7 at 5:19 |
+
+**Merging.** Each fix was merged only after a merge check: a throwaway worktree of the current `main` with the fix branches merged in, and every backend test, the frontend build and every browser test run on that result (as CI would). VAX-21 and VAX-16 together: 26 backend tests; VAX-17 and VAX-19 together: 27 backend tests, the build and 10 browser tests. The guard then cleared every merge commit. The pilot moved the tickets to Done and the agent documented them.
+
+**What the pilot taught.**
+- A fix PR can be closed by mistake ("ok", then Close instead of Merge: #7). Its branch stays, so it can be reopened.
+- The AI review catches what the tests cannot: a test passing against a mock that is more lenient than the real backend (#6).
+- A regression whose author "adjusted" the earlier fix's test so CI passed (VAX-15) leaves that test unable to guard anything. Its first version was restored by hand (PR #13): it passes on the fixed `main` and fails on the code before the VAX-17 fix.
+- Several documentation PRs written from the same `main` conflict when merged one after another: the index in `docs/knowledge/README.md`, and in the component file the owners line and the top of "Known issues". They were resolved by hand, keeping every entry ([KNOWLEDGE_PLAN.md](KNOWLEDGE_PLAN.md), K22).
+
 ## Costs and limits
 
-- **Cost.** About $1 to $2 of model use per case (analysis, fix, review), so $40 to $80 a month at two cases a working day. Planting, reporting and scoring use no AI.
+- **Cost.** About $1 to $2.50 of model use per case (analysis, fix, review; $11.82 for the first five), so $40 to $100 a month at two cases a working day. Planting, reporting and scoring use no AI.
 - **The bugs are ours.** They are realistic: each one passes the existing tests, and the ticket describes only the symptom. But we designed them, so the pilot measures the agent on bugs we know. A real project measures the bugs we do not know.
 - **A person still merges.** A fix PR left open leaves its bug on `main`. Later cases still apply if they change other code.
 - **One machine.** The schedule, the watcher and the apps run on this machine, until the team machine of decision 6 in AUTONOMY_AND_NEXT exists.

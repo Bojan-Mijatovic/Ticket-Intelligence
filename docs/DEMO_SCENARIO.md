@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Defined and approved by Bojan Mijatović (2026-11-04); fully implemented and rehearsed (DEM-10, 2026-11-04). Live Teams variant on MediVax added 2026-11-16 (section 9), not rehearsed yet |
+| **Status** | Defined and approved by Bojan Mijatović (2026-11-04); fully implemented and rehearsed (DEM-10, 2026-11-04). Live Teams variant on MediVax added 2026-11-16 (section 9): built and measured on a real pilot ticket, not rehearsed yet (see its Readiness table) |
 | **Owner** | Bojan Mijatović |
 | **Length** | 15 minutes (9 min live flow + questions) |
 | **Audience** | team leads, developers, support, management |
@@ -94,7 +94,11 @@ Then `node agent/watcher.mjs --replace` and `node demo/preflight.mjs`.
 | What about patient data? | Must be redacted before analysis and only approved AI services used; this is a precondition for company tickets (see risks R-02). |
 | What if it's wrong? | It only writes an internal comment labelled as AI analysis; confidence is shown; humans decide. Low-confidence results don't notify anyone. |
 | Does it work with our SVN projects / Copilot? | Yes: SVN is supported and tested on a local repository; Copilot uses the same skill format and is the next thing to validate at work. |
-| What does it cost? | ~1 minute and ~10 agent turns per ticket (about $0.70 API-equivalent; included in seat-based subscriptions). |
+| What does it cost? | ~1 minute and ~10 agent turns per ticket (about $0.70 API-equivalent; included in seat-based subscriptions). Measured on the pilot: $1 to $2.50 per bug including the reproduction, the fix and the AI review ($11.82 for five). |
+| Does it work with our Teams? | Yes, through a Workflows webhook in a standard channel: about 10 minutes for the channel's owner, no IT. Shown here on a test tenant. Approving a fix from Teams needs a Teams app (IT), so for now the buttons open the PR and Jira. |
+| How does it know who should get it? | From the history: who wrote and changed that code, and for a regression who made the change that broke it. The card says why ("Why you: authored VAX-20, the regression"). On the pilot the owner was right 5 times out of 5. |
+| Does patient data end up in Teams? | The Teams message carries the same text as the internal Jira comment, written from the masked ticket. The masking catches most identifiers but not every uncommon name (11 of 15 on the pilot), which is why company tickets wait for R-02. |
+| What if the agent is restarted in the middle? | A restart waits for the running job (an analysis, a fix, a review) and then takes over; queued tickets are found again in Jira. |
 
 ## 9. Live variant: a real Teams channel and the MediVax pilot
 
@@ -175,3 +179,30 @@ On stage, with **Run ticket**, both cards come about a minute sooner.
 ### After the demo
 
 Merge or close the draft PR. After a merge, the next pilot tick moves the ticket to Done and the agent documents it, as for any pilot case. The schedule then goes on by itself: the case is reported, so nothing is in flight.
+
+Merge only after a merge check, as for the pilot's fixes ([PILOT.md](PILOT.md), *Merging*): the fix branch on the current `main` with every test run on the result. If the PR is closed by mistake, its branch stays: reopen it.
+
+### Readiness (2026-11-16)
+
+| What | State | Evidence |
+|---|---|---|
+| Teams channel, webhook from this machine | ready | `teams-test.mjs` posts; a GET to the webhook answers `TriggerRequestMethodNotValid` (preflight) |
+| @mention of the owner | ready, not yet confirmed on the phone | the card for Marta Ricci and the cards for Irene Fabbri arrived; nobody has yet checked that the phone of the mentioned person rings |
+| The card: Why you, Where, Confidence (T5) and "fix ready" (T6) | ready | VAX-21 and VAX-17, real pilot tickets, both cards with no one starting anything |
+| The whole scene, timed | measured once, not rehearsed | VAX-21: handoff at 1:58 from the report, PR and "fix ready" at 5:19 (above) |
+| The reserved cases | ready | `late-today` and `lot-expiry-iso` pass `pilot.mjs check`; the schedule never takes them |
+| Watcher | ready | current code, a status within 30 ms while it works; a restart waits for the running job |
+| `node demo/preflight.mjs --teams` | GO but for the reserved case | it is pushed on the morning of the demo, on purpose |
+| Fallback DEM-46 | ready | its Teams message came 61 and 74 s after the pick, twice |
+| The private laptop, the room's network, the recording | not done | only possible on the day before |
+| The test tenant | a 30-day trial from 2026-11-16 | a demo after mid-December needs one paid month |
+
+### The rehearsal
+
+One full run of this section before the demo, with a case that is **not** reserved, so that both reserved cases stay for the day:
+
+1. The morning of the rehearsal: `node demo/pilot.mjs plant --case card-booster-label` (Tommaso Bruno, frontend: the influenza booster shows as "Dose 2"). It is in flight, so the schedule reports it by itself 1 to 3 hours later: rehearse before that, or the schedule reports it first.
+2. `node demo/preflight.mjs --teams`. For the rehearsal its two pilot lines say NO-GO, since this case is not reserved ("a reserved case is pushed") and is in flight ("no other case in flight"); every other line must be green.
+3. The phone signed in as Tommaso Bruno, the private laptop on `support-triage`.
+4. The script from 0:00: `node demo/pilot.mjs report --case card-booster-label`, **Run ticket**, the two cards, the PR. Note the real times against the script's.
+5. Afterwards: merge the PR after a merge check, as after a real demo; the pilot then documents it.
