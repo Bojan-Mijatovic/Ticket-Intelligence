@@ -35,7 +35,7 @@ def would_ask(x):
     if not all(q in a for q in MISSING_OF):
         return None
     missing = {q for q, o in MISSING_OF.items() if a[q]["choice"] == o and a[q]["p"] >= 0.6}
-    about = (a["code"]["choice"] == "needs code") if "code" in a else a.get("type", {}).get("choice") in CODE
+    about = a.get("code", {}).get("choice") == "needs code" or a.get("type", {}).get("choice") in CODE
     return asks(missing, about or a.get("type", {}).get("choice") == "unclear")
 
 

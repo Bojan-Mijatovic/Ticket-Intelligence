@@ -194,11 +194,13 @@ export const missingInfo = (answers, threshold = 0.6) => Object.keys(COMPLETE).f
  * J7: whether to ask the reporter: a report about code, or an unclear one, that does not tell what is wrong or where.
  * Most good bug reports of the demo name no environment and many need no steps ("the Ricevute page shows 22.5"), so
  * those two alone never ask; when it asks, it asks for everything that is missing. { missing } or null.
+ * About code when either the type or the code question says so: a report that does not tell what is wrong often
+ * splits them (BIL-23, "Mi dà errore quando stampo la ricevuta": bug in code 56 %, no code change 64 %, 2026-11-16).
  */
 export function askReporter(answers, threshold = 0.6) {
   const missing = missingInfo(answers, threshold);
   if (!missing.includes('expected') && !missing.includes('screen')) return null;
-  const aboutCode = answers?.code ? answers.code.choice === 'needs code' : CODE_TYPES.has(answers?.type?.choice);
+  const aboutCode = answers?.code?.choice === 'needs code' || CODE_TYPES.has(answers?.type?.choice);
   return aboutCode || answers?.type?.choice === 'unclear' ? { missing } : null;
 }
 const IT_WORDS = new Set(['il', 'la', 'che', 'non', 'per', 'una', 'del', 'della', 'è', 'con', 'si', 'mi', 'dà', 'ho', 'nel', 'alla', 'va', 'funziona', 'errore', 'quando', 'sono', 'più']);

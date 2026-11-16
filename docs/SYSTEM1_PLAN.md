@@ -213,14 +213,14 @@ The pilot gives two new tickets every working day, each with an answer key. It i
 | Step | State |
 |---|---|
 | J0 spike | done (2026-11-13) |
-| J8a first fine-tune | done: `ft-1` (four intake questions), then `ft-2` (all eight questions), the current checkpoint. `ft-4` (twelve questions, real privacy texts, Ask components, labels from the analyses) refused on 2026-11-16; `ft-5` in training. See section 12 |
+| J8a first fine-tune | done: `ft-1` (four intake questions), then `ft-2` (all eight questions). `ft-4` (twelve questions, real privacy texts, Ask components, labels from the analyses) refused; **`ft-5`, the current checkpoint since 2026-11-16**, no question worse than `ft-2` on unseen rows. See section 12 |
 | J1 intake card in shadow | done (FR-77); first live test with ten tickets that are not about code |
 | J4 known issue in other words + its test | built and verified live (FR-79): LAB-30 → LAB-8 (85 %), its regression test run on main and passed (`knownTest: auto`). LAB-8 recognised in 5 of 6 new reports; LAB-29 missed |
 | J5 Ask router | built and live (FR-80), `askRouter: auto`: "who" questions answered in about a second when the component is at 0.7 or more |
-| J6 privacy check | built (FR-81), in shadow. **Not ready for `auto`**: with `ft-2` it would hold 46 of 185 real tickets that name nobody |
+| J6 privacy check | built (FR-81), in shadow. With `ft-2` it would have held 46 of 185 real tickets that name nobody; with `ft-5`, none of the 60 held out. **Not ready for `auto` yet**: the three real texts with a name are all in the training rows, so catching a name in a real ticket is not measured on unseen ones |
 | J2 light path, J3 queue order | built (FR-78), in shadow; `draft` and `auto` are ready behind the policy switch |
-| J7 ask the reporter (WF1) | built (FR-82), in shadow: 204 reports labelled by hand, 16 half-written bug reports added, the question from a template (IT/EN). `ft-4` learnt its questions (what is wrong and where: 95 % on unseen rows) but was refused on two other questions; **waits for `ft-5`** |
-| J8b retrain with a check | built (FR-83): `agent/system1-train.mjs` (data → fine-tune → evaluate both → accept only if not worse), `--nightly`, keep-awake, reload without a restart, labels from Claude's analyses, a stable split; the Impact panel with the calibration. The nightly task is ready (`schedule.ps1 -Register`) but **not registered**: it takes three hours of CPU a night |
+| J7 ask the reporter (WF1) | built (FR-82), in shadow: 204 reports labelled by hand, 16 half-written bug reports added, the question from a template (IT/EN). With `ft-5`: what is wrong 96 %, where 92 % on unseen rows; asked in 7 of the 10 cases a person marked, never without need. **Verified live** (BIL-23, BIL-24) after one fix of the rule |
+| J8b retrain with a check | built (FR-83): `agent/system1-train.mjs` (data → fine-tune → evaluate both → accept only if not worse), `--nightly`, keep-awake, reload without a restart, labels from Claude's analyses, a stable split; the Impact panel with the calibration. The nightly task is ready (`schedule.ps1 -Register`) but **not registered**: it takes about four hours of CPU a night |
 | J9 presentation | built (FR-84): the tour's **System 1 chapter** (8 steps, checked in a browser) and the backup Q&A slide |
 
 The light path stays in shadow until two weeks of the pilot show no ticket about code among those it would skip.
@@ -503,3 +503,41 @@ On the full test, J7 would ask the reporter in 7 of the 10 cases a person marked
 `ft-5` is the same data plus these 16 tickets, trained for four epochs like `ft-2`. It is judged on the full test for the light path and on the clean test against `ft-2`. The clean test is rebuilt from the new test rows: `test-clean2.jsonl`.
 
 The keep-awake helper stopped about an hour into `ft-4`; the laptop stayed awake because it was in use. A helper started with `Start-Process` lasted to the end, so `system1-train.mjs` now starts it that way.
+
+### J8a, fourth run: `ft-5`, accepted (2026-11-16)
+
+`ft-5` is `ft-4`'s data plus the 16 tickets for W-96, trained for four epochs. Training took 4 h 20 min with `laya-train`'s own before/after evaluation: 1,899 items, mean loss 0.75 → 0.27 → 0.10 → 0.02. The two evaluations took another 35 minutes.
+
+- **Full test (253 rows):** the light path catches 14 of 28 tickets that are not about code and skips none about code. W-96 is now a change request (60 %), on the frontend.
+- **Clean test (99 rows):** the test rows whose text `ft-2` never saw, rebuilt from the new split (`test-clean2.jsonl`).
+
+| Question | `ft-5` | `ft-2` |
+|---|---|---|
+| what is wrong (J7) | 96 % | 54 % |
+| where (J7) | 92 % | 33 % |
+| privacy | 100 % | 65 % |
+| Ask intent | 93 % | 86 % |
+| Ask component ("who" questions) | 80 % | 70 % |
+| needs code | 85 % | 79 % |
+| type | 69 % | 62 % |
+| side | 61 % | 56 % |
+| component | 70 % | 70 % |
+| known issue | 81 % | 81 % |
+| urgency | 58 % | 58 % |
+
+No question is worse, so `ft-5` became current (`state/system1/models/current.json`) and the watcher serves it.
+
+Also measured on the full test:
+
+- J7 would ask the reporter in 7 of the 10 cases a person marked, and never without need.
+- The privacy question held none of the 60 real texts that name nobody.
+- LAB-8 in other words: 3 of 4. The Serbian sentence went to LAB-15 at 40 %, below the threshold, so nothing would happen.
+
+**J7 live.** Two new BIL tickets (label `system1-demo`):
+
+- **BIL-23**, "Errore in cassa / Mi dà errore quando stampo la ricevuta.". System 1 saw that the report does not tell what is wrong (82 %), how, or when, but **did not ask**: the type said bug in code (56 %), the code question no code change (64 %), and the rule believed only the code question. **Fixed:** about code when either says so. The same rule scored again on the saved answers (`eval.py --rescore`) asks no one more on the held-out rows. On BIL-23's recorded answers it now asks, in Italian, for the message, what was done, and where and when, "Ci basta il numero, non il nome del paziente".
+- **BIL-24**, a complete report with the receipt number, the desk, the time and the amounts: no question. Right.
+
+Claude's own reply draft for BIL-23 asked the reporter for the same things, after a 91-second analysis that ended with low confidence. Asked before the analysis, the reporter could have answered while the ticket waited.
+
+One wrong answer: System 1 named **BIL-9** ("amounts as 22.5 instead of 22,50 €") as BIL-24's known issue, at 95 %. BIL-24 is about an exemption on a second visit; both only speak of receipts and amounts. BIL-9 has no regression test, so nothing ran. The known-issue question needs harder "none of these" examples: reports about the same screen and other faults.
