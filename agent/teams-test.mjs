@@ -6,10 +6,17 @@
 //   node agent/teams-test.mjs --mention "Marta Ricci"   the message @mentions that person (T4): checks TEAMS_MENTIONS
 //                                                       or TEAMS_MENTION_DOMAIN for them
 //   node agent/teams-test.mjs --mention "Marta Ricci" --fix   the second message instead, "fix ready for review" (T6)
+//   --ticket DEM-46   Open in Jira opens that ticket (and --fix links its pull request when the agent opened one).
+//                     Without it a test has no ticket: its buttons open Jira's and GitHub's home pages, and it says so.
 
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../.claude/skills/analyze-ticket/scripts/lib/config.mjs';
 import { mentionFor, notifyFixReady, notifyOwner, teamsInfo } from './lib/notify.mjs';
+import { loadProjects } from './lib/projects.mjs';
 
+const all = loadProjects(dirname(fileURLToPath(import.meta.url))); // a ticket's fix record: <stateDir>/work/<KEY>/fix.json
 const cfg = loadConfig(); // also loads the .env files into process.env
 const info = teamsInfo();
 if (!info.live) {
@@ -33,24 +40,40 @@ if (person && !upn) {
   process.exit(1);
 }
 
-const jiraUrl = cfg.baseUrl || 'https://www.atlassian.com/software/jira';
+const ti = process.argv.indexOf('--ticket');
+const ticket = ti > 0 ? String(process.argv[ti + 1] ?? '').trim().toUpperCase() : '';
+if (ti > 0 && !/^[A-Z][A-Z0-9_]+-\d+$/.test(ticket)) {
+  console.log('Usage: node agent/teams-test.mjs --ticket DEM-46');
+  process.exit(1);
+}
+const base = String(cfg.baseUrl || '').replace(/\/+$/, '');
+const jiraUrl = ticket && base ? `${base}/browse/${ticket}` : base || 'https://www.atlassian.com/software/jira';
+const prOf = (key) => {
+  try {
+    return JSON.parse(readFileSync(join(all.ofTicket(key).stateDir, 'work', key, 'fix.json'), 'utf8')).prUrl ?? null;
+  } catch {
+    return null;
+  }
+};
+const prUrl = (ticket && prOf(ticket)) || 'https://github.com/';
+const where = ticket ? `the buttons open ${ticket}${prUrl === 'https://github.com/' ? ' (no pull request of the agent for it: the PR button opens GitHub)' : ' and its pull request'}` : "no ticket: the buttons open Jira's and GitHub's home pages (add --ticket DEM-46 for a real one)";
 const n = process.argv.includes('--fix')
   ? await notifyFixReady({
-    key: 'TEST',
+    key: ticket || 'TEST',
     url: jiraUrl,
-    prUrl: 'https://github.com/',
-    title: 'A test: when the agent has a verified fix, this message says so, with the pull request to review.',
+    prUrl,
+    title: `A test: when the agent has a verified fix, this message says so, with the pull request to review. Here ${where}.`,
     to: person || 'the team',
     checks: { e2e: { ok: true, skipped: false, passed: 9, failed: 0 }, build: { ok: true, skipped: false } },
     bisect: { status: 'found', bad: { short: 'ad0251f', author: 'Tommaso Bruno', ticket: 'VAX-18' } },
   })
   : await notifyOwner({
-    key: 'TEST',
+    key: ticket || 'TEST',
     url: jiraUrl,
     title: 'Test message from Ticket Intelligence',
     handoff: person
-      ? { to: person, message: `If ${person} got a notification, the agent can @mention owners in this channel. Nothing to do.` }
-      : { to: 'the team', message: 'If you can read this, the agent can post owner messages to this channel. Nothing to do.' },
+      ? { to: person, message: `If ${person} got a notification, the agent can @mention owners in this channel. Nothing to do. A test: ${where}.` }
+      : { to: 'the team', message: `If you can read this, the agent can post owner messages to this channel. Nothing to do. A test: ${where}.` },
     confidence: 'high',
     escalate: null,
     // What a real card adds (T5), so the test looks like one.
