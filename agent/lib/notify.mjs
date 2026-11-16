@@ -10,8 +10,31 @@ export function teamsInfo(env = process.env) {
   return { live: Boolean(String(env.TEAMS_WEBHOOK_URL ?? '').trim()), channelUrl: /^https:\/\//i.test(link) ? link : null };
 }
 
+/**
+ * The Teams sign-in name (UPN) to @mention for an owner, or null (T4 of docs/GIT_GRAPH.md). TEAMS_MENTIONS names
+ * people one by one ("Marta Ricci=marta.ricci@contoso.com; Luca Bianchi=l.bianchi@contoso.com"); TEAMS_MENTION_DOMAIN
+ * gives everyone else first.last@domain, accents dropped, but only to a name of two to four capitalised words ("the
+ * team" gets none). Without either, nobody is mentioned. A wrong UPN is not refused by the webhook, which answers 202
+ * before the workflow runs: the workflow fails afterwards and the message never reaches the channel.
+ */
+export function mentionFor(name, env = process.env) {
+  const who = String(name ?? '').trim().replace(/\s+/g, ' ');
+  if (!who) return null;
+  for (const entry of String(env.TEAMS_MENTIONS ?? '').split(/[;\n]/)) {
+    const at = entry.lastIndexOf('=');
+    if (at < 0) continue;
+    const upn = entry.slice(at + 1).trim();
+    if (entry.slice(0, at).trim().replace(/\s+/g, ' ').toLowerCase() === who.toLowerCase() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(upn)) return upn;
+  }
+  const domain = String(env.TEAMS_MENTION_DOMAIN ?? '').trim().replace(/^@/, '');
+  if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(domain) || !/^\p{Lu}[\p{L}'’.-]*( \p{Lu}[\p{L}'’.-]*){1,3}$/u.test(who)) return null;
+  const local = who.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/['’]/g, '').split(' ').map((w) => w.replace(/[^a-z0-9-]/g, '')).filter(Boolean).join('.');
+  return local ? `${local}@${domain.toLowerCase()}` : null;
+}
+
 export async function notifyOwner({ key, url, title, handoff, confidence, escalate }) {
   const webhook = String(process.env.TEAMS_WEBHOOK_URL ?? '').trim();
+  const upn = mentionFor(handoff.to);
   const card = {
     to: handoff.to,
     title: `${key}: ${title}`,
@@ -19,9 +42,12 @@ export async function notifyOwner({ key, url, title, handoff, confidence, escala
     url,
     confidence,
     escalate: escalate?.yes ? escalate.reason : null,
+    ...(upn && webhook ? { mentioned: true } : {}), // Teams was asked to @mention the owner; the UPN itself stays here
   };
   if (!webhook) return { channel: 'dashboard', card };
 
+  // The mention: the <at> text in the card and the entity that ties it to the person must match exactly.
+  const at = `<at>${handoff.to}</at>`;
   const adaptive = {
     type: 'message',
     attachments: [
@@ -32,12 +58,13 @@ export async function notifyOwner({ key, url, title, handoff, confidence, escala
           type: 'AdaptiveCard',
           version: '1.4',
           body: [
-            { type: 'TextBlock', text: `For ${handoff.to}`, weight: 'Bolder', size: 'Small', color: 'Accent' },
+            { type: 'TextBlock', text: `For ${upn ? at : handoff.to}`, weight: 'Bolder', size: 'Small', color: 'Accent' },
             { type: 'TextBlock', text: card.title, weight: 'Bolder', size: 'Medium', wrap: true },
             { type: 'TextBlock', text: handoff.message, wrap: true },
             ...(card.escalate ? [{ type: 'TextBlock', text: `Escalation: ${card.escalate}`, wrap: true, color: 'Attention' }] : []),
           ],
           actions: [{ type: 'Action.OpenUrl', title: 'Open in Jira', url }],
+          ...(upn ? { msteams: { entities: [{ type: 'mention', text: at, mentioned: { id: upn, name: handoff.to } }] } } : {}),
         },
       },
     ],

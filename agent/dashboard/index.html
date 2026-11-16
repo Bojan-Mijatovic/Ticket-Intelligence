@@ -861,7 +861,7 @@ const jiraLink = (key) => h('a', { href: jiraHref(key), target: '_blank' }, key)
 /** An owner's message as Teams shows it; "Open in Teams" when it was posted and the channel's link is known. */
 function teamsCard(m) {
   const channelUrl = m.channel === 'teams' ? status?.teams?.channelUrl : null;
-  return h('div', { class: 'card' }, h('div', { class: 'to' }, `@${m.to}`), h('div', { class: 'ct' }, m.title), h('div', {}, m.message),
+  return h('div', { class: 'card' }, h('div', { class: 'to' }, `@${m.to}${m.mentioned && m.channel === 'teams' ? ' · mentioned in Teams' : ''}`), h('div', { class: 'ct' }, m.title), h('div', {}, m.message),
     m.escalate ? h('div', { class: 'esc' }, `Escalation: ${m.escalate}`) : null,
     m.channel === 'failed' ? h('div', { class: 'esc' }, `Not posted to Teams${m.error ? `: ${m.error}` : ''}`) : null,
     h('div', { class: 'actions', style: 'margin-top:8px' }, m.url ? h('a', { href: m.url, target: '_blank' }, 'Open in Jira ↗') : null,

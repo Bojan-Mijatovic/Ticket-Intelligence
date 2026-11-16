@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { notifyOwner, teamsInfo } from '../lib/notify.mjs';
+import { mentionFor, notifyOwner, teamsInfo } from '../lib/notify.mjs';
 
 const MSG = { key: 'DEM-40', url: 'https://jira.example/browse/DEM-40', title: 'Red background', handoff: { to: 'Marta Ricci', message: 'Please take a look' }, confidence: 'high', escalate: { yes: false } };
 const realFetch = globalThis.fetch;
@@ -41,6 +41,42 @@ test('with a webhook an Adaptive Card is posted to the channel', async () => {
   assert.equal(card.contentType, 'application/vnd.microsoft.card.adaptive');
   assert.equal(card.content.body[1].text, 'DEM-40: Red background');
   assert.deepEqual(card.content.actions, [{ type: 'Action.OpenUrl', title: 'Open in Jira', url: MSG.url }]);
+});
+
+test('mentionFor: a named person first, then first.last@domain for a person name, nobody without a setting', () => {
+  assert.equal(mentionFor('Marta Ricci', {}), null, 'no setting, no mention');
+  const env = { TEAMS_MENTION_DOMAIN: 'MediAgendaTest.onmicrosoft.com', TEAMS_MENTIONS: 'Luca  Bianchi = l.bianchi@corp.example ; Bad Entry=not-an-email' };
+  assert.equal(mentionFor('Marta Ricci', env), 'marta.ricci@mediagendatest.onmicrosoft.com');
+  assert.equal(mentionFor('luca bianchi', env), 'l.bianchi@corp.example', 'a named person wins, whatever the case and spacing');
+  assert.equal(mentionFor('Bad Entry', env), 'bad.entry@mediagendatest.onmicrosoft.com', 'an entry without a valid address falls back to the domain');
+  assert.equal(mentionFor('Niccolò D’Angelo', env), 'niccolo.dangelo@mediagendatest.onmicrosoft.com', 'accents and apostrophes dropped');
+  for (const role of ['the team', 'IT support / network administrator', 'Marta', 'Reporter (to be named)', '', null]) assert.equal(mentionFor(role, env), null, `${role} is not a person`);
+  assert.equal(mentionFor('Marta Ricci', { TEAMS_MENTION_DOMAIN: 'not a domain' }), null);
+  assert.equal(mentionFor('Marta Ricci', { TEAMS_MENTION_DOMAIN: '@contoso.com' }), 'marta.ricci@contoso.com');
+});
+
+test('a mention: the <at> text in the card and the entity with the UPN match, and the dashboard only learns that there was one', async () => {
+  process.env.TEAMS_WEBHOOK_URL = 'https://hook.example/workflows/1';
+  process.env.TEAMS_MENTION_DOMAIN = 'contoso.onmicrosoft.com';
+  let sent = null;
+  globalThis.fetch = async (url, opts) => {
+    sent = JSON.parse(opts.body);
+    return new Response('', { status: 202 });
+  };
+  const n = await notifyOwner(MSG);
+  const content = sent.attachments[0].content;
+  assert.equal(content.body[0].text, 'For <at>Marta Ricci</at>');
+  assert.deepEqual(content.msteams.entities, [{ type: 'mention', text: '<at>Marta Ricci</at>', mentioned: { id: 'marta.ricci@contoso.onmicrosoft.com', name: 'Marta Ricci' } }]);
+  assert.equal(n.card.mentioned, true);
+  assert.ok(!JSON.stringify(n.card).includes('contoso'), 'the UPN is not in the event');
+
+  const team = await notifyOwner({ ...MSG, handoff: { to: 'the team', message: 'x' } });
+  assert.equal(sent.attachments[0].content.body[0].text, 'For the team');
+  assert.equal(sent.attachments[0].content.msteams, undefined);
+  assert.equal(team.card.mentioned, undefined);
+
+  delete process.env.TEAMS_WEBHOOK_URL;
+  assert.equal((await notifyOwner(MSG)).card.mentioned, undefined, 'nothing posted, nobody mentioned');
 });
 
 test('a channel that refuses or does not answer does not stop the ticket: the message stays on the dashboard, with why', async () => {
