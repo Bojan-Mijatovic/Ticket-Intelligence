@@ -146,6 +146,21 @@ It only warns about System 1 and a running training. Then the private laptop goe
 
 The pilot's tickets so far: analysis in about a minute, the Teams message right after it (61–74 s from pick to message, measured 2026-11-16), and the draft PR about 4 minutes after the ticket (VAX-13: 259 s).
 
+**The whole scene, measured on a real pilot ticket** (VAX-21, 2026-11-16, nobody starting anything; times from the report):
+
+| | |
+|---|---|
+| 0:00 | the nurse's report (3 of 3 patient identifiers masked) |
+| 1:07 | picked (the one-minute wait for edits; **Run ticket** skips it) |
+| 1:57 | analysis: high confidence, owner Irene Fabbri, a regression of VAX-5 |
+| 1:58 | **Teams 1**: For @Irene Fabbri, Why you: "She authored VAX-20 (6e8e6e1), the regression" |
+| 3:33 | the backend test reproduces the bug |
+| 3:56 | bisect: broken by 6e8e6e1 (VAX-20, Irene Fabbri), in 22 s |
+| 5:15 | draft PR #7, 24 backend tests green |
+| 5:19 | **Teams 2**: fix ready for review, @Irene Fabbri, Review the pull request |
+
+On stage, with **Run ticket**, both cards come about a minute sooner.
+
 ### If something goes wrong
 
 | Problem | Fallback |
