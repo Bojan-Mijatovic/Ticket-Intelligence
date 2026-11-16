@@ -315,7 +315,10 @@ export async function processTicket({ issue, cfg, policy, jira, events, repoDir,
     if (auto('notifyOwner') && !(realOwner && confidentEnough)) {
       events.emit('skipped', { key, text: `no notification: ${realOwner ? `${result.confidence} confidence` : 'no clear owner'}` });
     } else if (auto('notifyOwner')) {
-      const n = await notifyOwner({ key, url: jira.browseUrl(key), title: result.title ?? issue.summary, handoff: result.handoff, confidence: result.confidence, escalate: result.escalate });
+      // The owner's "why" only when the message goes to that owner (a handoff may name someone else).
+      const sameName = (a, b) => String(a ?? '').normalize('NFD').replace(/\p{M}/gu, '').trim().toLowerCase() === String(b ?? '').normalize('NFD').replace(/\p{M}/gu, '').trim().toLowerCase();
+      const why = sameName(result.owner?.name, result.handoff.to) ? result.owner?.why : null;
+      const n = await notifyOwner({ key, url: jira.browseUrl(key), title: result.title ?? issue.summary, handoff: result.handoff, confidence: result.confidence, escalate: result.escalate, why, where: result.files?.[0] ?? null });
       const to = result.handoff.to;
       const text = n.channel === 'teams' ? `Teams message to ${to}` : n.channel === 'failed' ? `Teams message to ${to} not posted (${n.error}); shown on the dashboard only` : `Teams (simulated) message to ${to}`;
       events.emit('notified', { key, text, card: n.card, channel: n.channel, ...(n.error ? { error: n.error } : {}) });

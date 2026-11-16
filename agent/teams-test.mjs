@@ -41,6 +41,8 @@ const n = await notifyOwner({
     : { to: 'the team', message: 'If you can read this, the agent can post owner messages to this channel. Nothing to do.' },
   confidence: 'high',
   escalate: null,
+  // What a real card adds (T5), so the test looks like one.
+  ...(person ? { why: 'A test: here the agent says why it chose you, e.g. "Authored ad0251f (VAX-18), the suspect change in dates.ts".', where: 'frontend/src/app/shared/utils/dates.ts:35' } : {}),
 });
 if (n.channel === 'teams') {
   console.log(`Posted (HTTP ${n.status}). It appears in the channel within a few seconds, sent "via Workflows" by the account that created the workflow.`);

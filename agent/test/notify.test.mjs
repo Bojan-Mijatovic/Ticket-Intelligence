@@ -82,6 +82,26 @@ test('a mention: the <at> text in the card and the entity with the UPN match, an
   assert.equal((await notifyOwner(MSG)).card.mentioned, undefined, 'nothing posted, nobody mentioned');
 });
 
+test('T5: the card says why this person, where, and how sure; the dashboard gets the same', async () => {
+  process.env.TEAMS_WEBHOOK_URL = 'https://hook.example/workflows/1';
+  let sent = null;
+  globalThis.fetch = async (url, opts) => {
+    sent = JSON.parse(opts.body);
+    return new Response('', { status: 202 });
+  };
+  const why = 'Authored ad0251f (VAX-18), the suspect change in dates.ts, and the frontend e2e tests for Scadenze (VAX-9).';
+  const n = await notifyOwner({ ...MSG, why, where: 'frontend/src/app/shared/utils/dates.ts:35' });
+  const facts = sent.attachments[0].content.body.find((b) => b.type === 'FactSet').facts;
+  assert.deepEqual(facts, [{ title: 'Why you', value: why }, { title: 'Where', value: 'frontend/src/app/shared/utils/dates.ts:35' }, { title: 'Confidence', value: 'high' }]);
+  assert.deepEqual([n.card.why, n.card.where], [why, 'frontend/src/app/shared/utils/dates.ts:35']);
+
+  await notifyOwner({ ...MSG, why: 'x '.repeat(200) });
+  const long = sent.attachments[0].content.body.find((b) => b.type === 'FactSet').facts[0].value;
+  assert.ok(long.length <= 240 && long.endsWith('…'), 'a long reason is cut at a word');
+  await notifyOwner({ ...MSG, confidence: null });
+  assert.equal(sent.attachments[0].content.body.find((b) => b.type === 'FactSet'), undefined, 'no empty FactSet');
+});
+
 test('a channel that refuses or does not answer does not stop the ticket: the message stays on the dashboard, with why', async () => {
   process.env.TEAMS_WEBHOOK_URL = 'https://hook.example/workflows/1';
   globalThis.fetch = async () => new Response('{"error":{"code":"DirectApiAuthorizationRequired"}}', { status: 401 });

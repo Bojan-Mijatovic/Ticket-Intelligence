@@ -38,7 +38,17 @@ export function mentionFor(name, env = process.env) {
   return local ? `${local}@${domain.toLowerCase()}` : null;
 }
 
-export async function notifyOwner({ key, url, title, handoff, confidence, escalate }) {
+const clip = (s, n) => {
+  const t = String(s ?? '').replace(/\s+/g, ' ').trim();
+  return t.length > n ? `${t.slice(0, n - 1).replace(/\s+\S*$/, '')}…` : t;
+};
+
+/**
+ * @param {string} [p.why]    why this person (the analysis' owner.why, when the message goes to that owner): in the
+ *                            pilot, "Authored ad0251f (VAX-18), the suspect change in dates.ts" (T5)
+ * @param {string} [p.where]  the first file the analysis names, with its line
+ */
+export async function notifyOwner({ key, url, title, handoff, confidence, escalate, why = null, where = null }) {
   const webhook = String(process.env.TEAMS_WEBHOOK_URL ?? '').trim();
   const upn = mentionFor(handoff.to);
   const card = {
@@ -48,12 +58,16 @@ export async function notifyOwner({ key, url, title, handoff, confidence, escala
     url,
     confidence,
     escalate: escalate?.yes ? escalate.reason : null,
+    why: why ? clip(why, 240) : null,
+    where: where ? clip(where, 120) : null,
     ...(upn && webhook ? { mentioned: true } : {}), // Teams was asked to @mention the owner; the UPN itself stays here
   };
   if (!webhook) return { channel: 'dashboard', card };
 
   // The mention: the <at> text in the card and the entity that ties it to the person must match exactly.
   const at = `<at>${handoff.to}</at>`;
+  // T5: why this person, where to look, how sure: what the owner asks first.
+  const facts = [card.why && { title: 'Why you', value: card.why }, card.where && { title: 'Where', value: card.where }, confidence && { title: 'Confidence', value: String(confidence) }].filter(Boolean);
   const adaptive = {
     type: 'message',
     attachments: [
@@ -67,6 +81,7 @@ export async function notifyOwner({ key, url, title, handoff, confidence, escala
             { type: 'TextBlock', text: `For ${upn ? at : handoff.to}`, weight: 'Bolder', size: 'Small', color: 'Accent' },
             { type: 'TextBlock', text: card.title, weight: 'Bolder', size: 'Medium', wrap: true },
             { type: 'TextBlock', text: handoff.message, wrap: true },
+            ...(facts.length ? [{ type: 'FactSet', spacing: 'Medium', facts }] : []),
             ...(card.escalate ? [{ type: 'TextBlock', text: `Escalation: ${card.escalate}`, wrap: true, color: 'Attention' }] : []),
           ],
           actions: [{ type: 'Action.OpenUrl', title: 'Open in Jira', url }],
