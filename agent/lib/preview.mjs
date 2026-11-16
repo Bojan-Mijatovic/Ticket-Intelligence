@@ -4,6 +4,8 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { readFileSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 const TICKET_BRANCH = /^[A-Z][A-Z0-9_]+-\d+$/;
 const git = (cwd, args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -15,8 +17,23 @@ const tryGit = (cwd, args) => {
   }
 };
 
-/** The branch the application clone is on (what :4200 shows). */
+/**
+ * The branch the application clone is on (what :4200 shows), read from the .git HEAD file. The watcher asks it for
+ * every project on each status request, and one git process each took up to 0.7 s on a busy Windows machine, all
+ * of it blocking the watcher: on 2026-11-16 a status took over 5 s and the pilot's check took the watcher for dead.
+ * Anything unusual (no .git, a packed or symbolic HEAD) still asks git.
+ */
 export function currentBranch(repoDir) {
+  try {
+    let gitDir = join(repoDir, '.git');
+    if (statSync(gitDir).isFile()) gitDir = resolve(repoDir, readFileSync(gitDir, 'utf8').match(/^gitdir:\s*(.+)$/m)[1].trim()); // a worktree
+    const head = readFileSync(join(gitDir, 'HEAD'), 'utf8').trim();
+    const ref = head.match(/^ref: refs\/heads\/(.+)$/);
+    if (ref) return ref[1];
+    if (/^[0-9a-f]{40,64}$/.test(head)) return 'HEAD'; // detached, as git rev-parse --abbrev-ref says
+  } catch {
+    /* not read from the file: git decides */
+  }
   return tryGit(repoDir, ['rev-parse', '--abbrev-ref', 'HEAD']) ?? 'unknown';
 }
 
