@@ -8,11 +8,13 @@
 // A ticket is picked when it is in one of the projects, not Done, created within lookbackHours, and has none of the
 // agent's labels (ai-analyzing, ai-analyzed, ai-failed) nor the opt-out label (no-ai). One queue for all projects.
 
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Worker } from 'node:worker_threads';
+import { promisify } from 'node:util';
 import { createEventLog } from './lib/events.mjs';
 import { createJira } from './lib/jira-actions.mjs';
 import { createJiraHealth } from './lib/jira-health.mjs';
@@ -24,7 +26,7 @@ import { knowledgeGaps, readAsks } from './lib/gaps.mjs';
 import { processTicket, triageTicket } from './lib/pipeline.mjs';
 import { currentBranch, previewBranch } from './lib/preview.mjs';
 import { reviewPullRequest } from './lib/review.mjs';
-import { buildInsights, readRecommendations, savedAnalyses, writeRecommendations } from './lib/insights.mjs';
+import { readRecommendations, savedAnalyses, writeRecommendations } from './lib/insights.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
 import { createSuggested, readCreated, suggestTickets } from './lib/suggestions.mjs';
 import { suiteInsights } from './lib/suite.mjs';
@@ -32,11 +34,8 @@ import { askQuestion } from './lib/ask.mjs';
 import { recordedAsks, recordedRuns, system1Privacy, system1Runs } from './lib/tour.mjs';
 import { attachMailUpdates } from './lib/mail-updates.mjs';
 import { loadProjects, peerCheckouts, teamOf } from './lib/projects.mjs';
-import { loadGraph, readSuitePullRequests } from './lib/git-graph.mjs';
-import { readBlameOrigins, recordAccuracy, scoreAccuracy } from './lib/accuracy.mjs';
 import { laneLayout } from './lib/graph-lanes.mjs';
 import { teamsInfo } from './lib/notify.mjs';
-import { readReplays } from './lib/replay.mjs';
 import { impactOf } from './lib/impact.mjs';
 import { guardCommit } from './lib/regression-guard.mjs';
 import { askReporter, askReporterText, createSystem1, currentCheckpoint, describeAnswers, fastAnswer, intentQuestion, knownEntries, knownIssue, knownTestVerdict, missingInfo, nextIndex, questionsFor, stillNamesSomeone, system1Report } from './lib/system1.mjs';
@@ -466,6 +465,7 @@ async function drain() {
 // tests run on it (lib/regression-guard.mjs, policy regressionGuard). The first look at a project only records where
 // its main is. A guard runs in the queue like any job, so its tests never overlap a fix's.
 
+const execFileAsync = promisify(execFile);
 const GUARD_SECONDS = Number(cfg.guardSeconds ?? 120);
 const AGENT_DIR = HERE;
 const guardFile = (p) => join(p.stateDir, 'guard.json');
@@ -489,11 +489,12 @@ async function checkMains() {
   checkingMains = true;
   try {
     for (const p of all.projects.filter((x) => WATCHED.includes(x.key))) {
-      const git = (args) => execFileSync('git', args, { cwd: p.repoDir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60_000 }).trim();
+      // Not execFileSync: five fetches from GitHub every two minutes held the watcher up for 5-7 s each time.
+      const git = async (args) => (await execFileAsync('git', args, { cwd: p.repoDir, encoding: 'utf8', timeout: 60_000, windowsHide: true })).stdout.trim();
       let head;
       try {
-        git(['fetch', '-q', 'origin', 'main']);
-        head = git(['rev-parse', 'origin/main']);
+        await git(['fetch', '-q', 'origin', 'main']);
+        head = await git(['rev-parse', 'origin/main']);
       } catch {
         continue; // no git remote (SVN) or offline
       }
@@ -505,7 +506,7 @@ async function checkMains() {
       }
       writeFileSync(guardFile(p), JSON.stringify({ head, at: new Date().toISOString() }));
       if (!seen || seen === head) continue;
-      const shas = git(['rev-list', '--first-parent', '--reverse', `${seen}..${head}`]).split('\n').filter(Boolean).slice(-20);
+      const shas = (await git(['rev-list', '--first-parent', '--reverse', `${seen}..${head}`])).split('\n').filter(Boolean).slice(-20);
       for (const sha of shas) status.queue.push({ kind: 'guard', project: p.key, sha, key: null });
     }
   } catch (e) {
@@ -589,11 +590,38 @@ function priorArtSourcesOf(p, refresh = false) {
 }
 const suggestionsOf = (p, data, review, refresh = false) =>
   suggestTickets({ insights: data, review, rules: p.cfg.insights?.components ?? [], created: readCreated(p.stateDir), project: p.key, priorArtSources: priorArtSourcesOf(p, refresh), gaps: knowledgeGaps(readAsks(p.stateDir)) });
+/**
+ * A heavy read in a worker thread (lib/heavy-worker.mjs), so that the watcher keeps answering meanwhile. The same
+ * job for the same project runs once: a second caller gets the first one's answer.
+ */
+const heavyRuns = new Map();
+function runHeavy(job, key, extra = {}) {
+  const id = `${job}:${key}`;
+  if (heavyRuns.has(id)) return heavyRuns.get(id);
+  const run = new Promise((resolveRun, rejectRun) => {
+    const w = new Worker(new URL('./lib/heavy-worker.mjs', import.meta.url), { workerData: { job, key, agentDir: HERE, eventsDir: rootState, ...extra } });
+    let answered = false;
+    w.once('message', (m) => {
+      answered = true;
+      if (m.ok) resolveRun(m);
+      else rejectRun(Object.assign(new Error(m.error), m.status ? { status: m.status } : {}));
+    });
+    w.once('error', (e) => {
+      answered = true;
+      rejectRun(e);
+    });
+    w.once('exit', (code) => {
+      if (!answered) rejectRun(new Error(`the ${job} worker for ${key} stopped (exit ${code}) without an answer`));
+    });
+  }).finally(() => heavyRuns.delete(id));
+  heavyRuns.set(id, run);
+  return run;
+}
+
 async function insightsCached(p, refresh = false) {
   const hit = insightsCache.get(p.key);
   if (!refresh && hit && Date.now() - hit.at < 120_000) return hit.data;
-  const peers = all.projects.filter((x) => x.key !== p.key).map((x) => ({ key: x.key, name: x.name, repoDir: x.repoDir }));
-  const data = await buildInsights({ repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira, peers });
+  const { data } = await runHeavy('insights', p.key);
   insightsCache.set(p.key, { at: Date.now(), data });
   return data;
 }
@@ -642,12 +670,12 @@ let suitePrsCache = null;
 async function graphCached(p, refresh = false) {
   const hit = graphCache.get(p.key);
   if (!refresh && hit && Date.now() - hit.at < 120_000) return hit.data;
-  if (refresh || !suitePrsCache || Date.now() - suitePrsCache.at >= 120_000) suitePrsCache = { at: Date.now(), prs: readSuitePullRequests(all.projects.filter((x) => existsSync(x.repoDir))) };
-  const graph = await loadGraph({ project: p, eventsDir: rootState, jira, suitePrs: suitePrsCache.prs });
-  const acc = scoreAccuracy(graph, { rules: p.cfg.insights?.components ?? [], replays: readReplays(p.stateDir), origins: readBlameOrigins(p.stateDir) });
-  const data = { graph, accuracy: { ...acc, trend: recordAccuracy(p.stateDir, acc) } };
-  graphCache.set(p.key, { at: Date.now(), data });
-  return data;
+  // The suite's PRs are read once for all projects (in the first worker) and kept for two minutes.
+  const prsFresh = !refresh && suitePrsCache && Date.now() - suitePrsCache.at < 120_000;
+  const r = await runHeavy('graph', p.key, { suitePrs: prsFresh ? suitePrsCache.prs : null });
+  if (r.suitePrs) suitePrsCache = { at: Date.now(), prs: r.suitePrs };
+  graphCache.set(p.key, { at: Date.now(), data: r.data });
+  return r.data;
 }
 const queryOf = (req) => new URL(req.url, 'http://localhost').searchParams;
 const readyProject = (sel) => {
@@ -956,7 +984,7 @@ const server = createServer(async (req, res) => {
     try {
       const p = readyProject({ project: queryOf(req).get('project') });
       const hit = knowledgeCache.get(p.key);
-      const data = hit && Date.now() - hit.at < 60_000 && queryOf(req).get('refresh') !== '1' ? hit.data : await createDocsPrs({ repoDir: p.repoDir }).list();
+      const data = hit && Date.now() - hit.at < 60_000 && queryOf(req).get('refresh') !== '1' ? hit.data : (await runHeavy('knowledge', p.key)).data; // gh, in a worker
       knowledgeCache.set(p.key, { at: Date.now(), data });
       // KB1: the last run of the known issues' regression tests (agent/knowledge-tests.mjs), when there is one.
       let tests = null;
