@@ -2,12 +2,15 @@
 // channel. Without it, the notification is only recorded as an event and shown on the dashboard as a Teams-style card.
 
 /**
- * What the dashboard may know about Teams: whether messages go to a real channel, and the channel's link
- * (TEAMS_CHANNEL_URL, "Get link to channel" in Teams) for "Open in Teams". Never the webhook address: it is a secret.
+ * What the dashboard may know about Teams: whether messages go to a real channel, the channel's link
+ * (TEAMS_CHANNEL_URL, "Get link to channel" in Teams) for "Open in Teams", and whether owners are @mentioned. Never
+ * the webhook address, which is a secret, nor anyone's sign-in name.
  */
 export function teamsInfo(env = process.env) {
   const link = String(env.TEAMS_CHANNEL_URL ?? '').trim();
-  return { live: Boolean(String(env.TEAMS_WEBHOOK_URL ?? '').trim()), channelUrl: /^https:\/\//i.test(link) ? link : null };
+  const live = Boolean(String(env.TEAMS_WEBHOOK_URL ?? '').trim());
+  const mentions = live && Boolean(String(env.TEAMS_MENTION_DOMAIN ?? '').trim() || String(env.TEAMS_MENTIONS ?? '').trim());
+  return { live, channelUrl: /^https:\/\//i.test(link) ? link : null, mentions };
 }
 
 /**

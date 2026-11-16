@@ -740,7 +740,7 @@ function render() {
     h('span', { class: 'avatar', style: 'background:linear-gradient(135deg,var(--accent),var(--teams))' }, '✦'),
     h('div', {}, h('div', { class: 'who' }, h('b', {}, 'Ticket Intelligence'), ` · ${ago(m.at)}`), teamsCard(m)))) : [h('div', { class: 'empty' }, 'Handoff messages to owners appear here.')]));
   const teamsLive = status?.teams?.live || teams.some((m) => m.channel === 'teams');
-  $('#teams-mode').textContent = teamsLive ? 'live channel (webhook)' : 'simulated channel: no Teams webhook set';
+  $('#teams-mode').textContent = teamsLive ? `live channel (webhook)${status?.teams?.mentions ? ' · @mentions the owner' : ''}` : 'simulated channel: no Teams webhook set';
   const channelUrl = status?.teams?.channelUrl ?? null;
   $('#teams-open').hidden = !channelUrl;
   if (channelUrl) $('#teams-open').href = channelUrl;

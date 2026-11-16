@@ -11,10 +11,11 @@ afterEach(() => {
 });
 
 test('teamsInfo: whether the channel is live and its link, never the webhook address', () => {
-  assert.deepEqual(teamsInfo({}), { live: false, channelUrl: null });
-  const info = teamsInfo({ TEAMS_WEBHOOK_URL: 'https://secret.example/hook?sig=abc', TEAMS_CHANNEL_URL: 'https://teams.microsoft.com/l/channel/19%3Aabc/support-triage' });
-  assert.deepEqual(info, { live: true, channelUrl: 'https://teams.microsoft.com/l/channel/19%3Aabc/support-triage' });
-  assert.ok(!JSON.stringify(info).includes('secret'));
+  assert.deepEqual(teamsInfo({}), { live: false, channelUrl: null, mentions: false });
+  const info = teamsInfo({ TEAMS_WEBHOOK_URL: 'https://secret.example/hook?sig=abc', TEAMS_CHANNEL_URL: 'https://teams.microsoft.com/l/channel/19%3Aabc/support-triage', TEAMS_MENTION_DOMAIN: 'contoso.onmicrosoft.com' });
+  assert.deepEqual(info, { live: true, channelUrl: 'https://teams.microsoft.com/l/channel/19%3Aabc/support-triage', mentions: true });
+  assert.ok(!/secret|contoso/.test(JSON.stringify(info)), 'neither the webhook nor a sign-in domain');
+  assert.equal(teamsInfo({ TEAMS_MENTION_DOMAIN: 'contoso.onmicrosoft.com' }).mentions, false, 'nobody is mentioned without a channel');
   assert.equal(teamsInfo({ TEAMS_WEBHOOK_URL: '  ', TEAMS_CHANNEL_URL: 'javascript:alert(1)' }).live, false);
   assert.equal(teamsInfo({ TEAMS_CHANNEL_URL: 'javascript:alert(1)' }).channelUrl, null, 'only an https link is shown');
 });

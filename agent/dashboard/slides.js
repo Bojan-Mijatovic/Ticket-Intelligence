@@ -229,7 +229,7 @@
           <div class="calls">${a.linked?.length ? `calls <b>${esc(list(a.linked.map(name)))}</b>` : 'called by the others'}</div></div>`).join('')}
       </div>
       <div class="ts-grid" style="margin-top:16px">
-        <div class="ts-card" data-r="2"><h3>Real services</h3><p>A real Jira Cloud project per app, real git repositories on GitHub, real draft pull requests. Teams messages are simulated.</p></div>
+        <div class="ts-card" data-r="2"><h3>Real services</h3><p>A real Jira Cloud project per app, real git repositories on GitHub, real draft pull requests. ${c.teams?.live ? `Owner messages go to a real Teams channel${c.teams.mentions ? ' and @mention the owner' : ''}.` : 'Teams messages are simulated.'}</p></div>
         <div class="ts-card" data-r="2"><h3>Real-looking bugs</h3><p>Each one brought in by a later change, with a trace in Jira. The answer keys are hidden from the agent; every run is scored.</p></div>
         <div class="ts-card" data-r="3"><h3>Today</h3><p>The cases are real runs of the agent, shown again with their real timings; a recorded run is replayed faster and marked <b>REPLAY</b>. Nothing is started or paid now.</p></div>
       </div>`;
@@ -291,13 +291,13 @@
       ${c?.full ? '' : `<div class="ts-goal" data-r="3"><b>Next:</b> approval straight from Teams · a night shift with a morning digest · release notes ·
         a reply to the customer after the merge · redaction of patient data before company tickets.</div>`}`,
 
-    tech: () => `
+    tech: (c) => `
       <div class="kick">Technologies</div>
       <h1>What it is made of</h1>
       <div class="ts-grid">
         <div class="ts-card" data-r="1"><h3>AI</h3><p><b>Claude Code</b> CLI, headless (<code>claude -p</code>)</p><p><b>Claude Sonnet</b> for the analysis, <b>Claude Opus</b> for the fix, review and Ask</p><p>Agent Skills: <code>SKILL.md</code>, also read by GitHub Copilot</p></div>
         <div class="ts-card" data-r="1"><h3>The agent</h3><p><b>Node.js</b> 20, plain ES modules, no npm dependencies</p><p>A watcher, a policy file, a live dashboard (HTML, server-sent events)</p><p>Runs on one Windows workstation</p></div>
-        <div class="ts-card" data-r="2"><h3>Integrations</h3><p><b>Jira Cloud</b> REST API v2</p><p><b>git</b> (worktrees per ticket) and <b>SVN</b> 1.14</p><p><b>GitHub</b> through <code>gh</code>: draft pull requests and reviews</p><p>Teams: simulated in the POC</p></div>
+        <div class="ts-card" data-r="2"><h3>Integrations</h3><p><b>Jira Cloud</b> REST API v2</p><p><b>git</b> (worktrees per ticket) and <b>SVN</b> 1.14</p><p><b>GitHub</b> through <code>gh</code>: draft pull requests and reviews</p><p>${c?.teams?.live ? `<b>Teams</b> through a Workflows webhook: an Adaptive Card in a channel${c.teams.mentions ? ', @mentioning the owner' : ''}` : 'Teams: simulated in the POC'}</p></div>
         <div class="ts-card" data-r="2"><h3>The demo apps</h3><p><b>Angular</b> 18 · <b>Spring Boot</b> 3.3 on Java 21</p><p>H2 with Flyway migrations</p><p><b>Playwright</b> 1.64 browser tests · <b>JUnit</b> with Maven 3.9</p></div>
         <div class="ts-card" data-r="3"><h3>Insights</h3><p>Plain code over git, Jira and the analyses: blame, churn, hotspots, bus factor. No AI, no cost.</p></div>
         <div class="ts-card" data-r="3"><h3>This presentation</h3><p>The dashboard itself, with the browser's own speech synthesis (Web Speech API): free, nothing leaves the machine.</p></div>

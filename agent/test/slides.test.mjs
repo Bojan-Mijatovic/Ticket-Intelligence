@@ -73,3 +73,12 @@ test("System 1's privacy slide: the ticket, the answer and the analysis' first s
   assert.doesNotMatch(html, /He says more/);
   assert.equal(slides.system1Privacy(ctx('tour')), '');
 });
+
+test('Teams on the slides: simulated without a channel; a real channel, with the @mention, when the dashboard has one', () => {
+  assert.match(slides.setup(ctx('tour')), /Teams messages are simulated/);
+  assert.match(slides.tech(), /Teams: simulated in the POC/, 'no context: as before');
+  const live = { ...ctx('tour'), teams: { live: true, mentions: true } };
+  assert.match(slides.setup(live), /Owner messages go to a real Teams channel and @mention the owner\./);
+  assert.match(slides.tech(live), /Workflows webhook: an Adaptive Card in a channel, @mentioning the owner/);
+  assert.match(slides.setup({ ...ctx('tour'), teams: { live: true, mentions: false } }), /real Teams channel\./);
+});

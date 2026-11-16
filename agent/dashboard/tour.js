@@ -403,7 +403,7 @@
       { ch: 'Case 1', stage: 'analyze', when: () => R(k), target: () => rowOf(k, 'Likely cause'),
         say: () => `${did(k, 'picked') && did(k, 'analyzed') ? `After ${duration(secs(k, 'picked', 'analyzed'))}, the` : 'The'} result is in, validated by the watcher: the likely cause with its confidence, the exact files and lines, and the owner, ${R(k).owner?.name ?? 'the right person'}. Here, with ${R(k).confidence} confidence: ${firstSentence(noParens(R(k).likelyCause))} All of it is posted as an internal comment in Jira.` },
       { ch: 'Case 1', stage: 'analyze', when: () => did(k, 'notified'), go: (my) => moveTo($('#teams'), my, { x: 0.5, y: 0.3 }), target: () => $('#teams')?.closest('aside'),
-        say: () => `${R(k)?.owner?.name ?? 'The owner'} gets a handoff message in Teams, simulated here. Anything for the customer, like a reply to the reporter, waits below as a draft until a person approves it: that is the policy.` },
+        say: () => `${R(k)?.owner?.name ?? 'The owner'} gets a handoff message in Teams, ${status?.teams?.live ? `shown here in the replay; a new ticket's message goes to the team's channel${status.teams.mentions ? ' and @mentions the owner, whose phone rings' : ''}` : 'simulated here'}. Anything for the customer, like a reply to the reporter, waits below as a draft until a person approves it: that is the policy.` },
       { ch: 'Case 1', when: () => did(k, 'reproduced'), play: playUntil(k, 'reproduced'), go: (my) => (rps.has(k) ? moveTo(ticketEl(k), my, { x: 0.3, y: 0.8 }) : true), target: () => boxOf(k, '🛠') ?? ticketEl(k),
         say: () => (side(k) === 'backend'
           ? 'Then it goes further: it writes a backend test from the ticket and runs it with Maven. The watcher runs it again on its own, and it must fail on the current code. It does: the bug is reproduced, with proof.'
@@ -461,6 +461,7 @@
       apps: projects().map((p) => ({ key: p.key, name: p.name, role: String(p.description ?? ROLE[p.key] ?? '').split(/[;:]/)[0], linked: p.linked ?? [] })),
       cases: [k1, k2].filter(Boolean).map(caseFacts),
       system1: s1,
+      teams: { live: Boolean(status?.teams?.live), mentions: Boolean(status?.teams?.mentions) },
     };
 
     const opening = [
