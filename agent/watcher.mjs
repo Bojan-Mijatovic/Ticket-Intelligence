@@ -27,6 +27,7 @@ import { processTicket, triageTicket } from './lib/pipeline.mjs';
 import { currentBranch, previewBranch } from './lib/preview.mjs';
 import { reviewPullRequest } from './lib/review.mjs';
 import { readRecommendations, savedAnalyses, writeRecommendations } from './lib/insights.mjs';
+import { waitUntilIdle } from './lib/replace.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
 import { createSuggested, readCreated, suggestTickets } from './lib/suggestions.mjs';
 import { suiteInsights } from './lib/suite.mjs';
@@ -97,10 +98,31 @@ if (previous?.pid && previous.pid !== process.pid && alive(previous.pid)) {
     console.error('To restart it with the current code: node agent/watcher.mjs --replace');
     process.exit(1);
   }
+  // Its work in progress first (lib/replace.mjs): an analysis, a fix, a documentation run, an app review. --force stops
+  // it at once, as before; --wait <minutes> changes how long to wait (15 by default).
+  if (!process.argv.includes('--force')) {
+    const at = process.argv.indexOf('--wait');
+    const minutes = at > 0 && Number(process.argv[at + 1]) >= 0 ? Number(process.argv[at + 1]) : 15;
+    const w = await waitUntilIdle({ base: `http://localhost:${cfg.dashboardPort}`, waitMs: minutes * 60_000, log: (t) => console.log(t) });
+    if (!w.idle) {
+      console.error(`The running watcher (PID ${previous.pid}) is still busy after ${minutes} min: ${w.what.join(', ')}. It was not replaced and goes on working.`);
+      console.error('To stop it anyway: node agent/watcher.mjs --replace --force (its work in progress is lost), or wait longer: --wait <minutes>');
+      process.exit(1);
+    }
+    if (w.waitedMs > 0) {
+      // The job is done, but its answer may still be on its way to whoever started it (an app review's caller got
+      // nothing in the first live test): two seconds before the stop.
+      await new Promise((r) => setTimeout(r, 2000));
+      console.log(`The running watcher finished its work (${Math.round(w.waitedMs / 1000)} s).`);
+    }
+  }
   process.kill(previous.pid);
   for (let i = 0; i < 50 && alive(previous.pid); i++) await new Promise((r) => setTimeout(r, 100));
   console.log(`Stopped the previous watcher (PID ${previous.pid}).`);
 }
+
+// Set by a new watcher started with --replace (POST /api/drain): no new job starts, the running one finishes.
+let draining = false;
 
 const events = createEventLog(join(rootState, 'events.jsonl'));
 const jira = createJira();
@@ -411,8 +433,8 @@ async function documentTicket(issue, p) {
 
 async function drain() {
   // While Jira is unavailable the queue waits: every step of a ticket reads or writes Jira. The poll that sees Jira
-  // again calls drain().
-  if (status.processing || !status.queue.length || status.jira.ok === false) return;
+  // again calls drain(). A watcher about to be replaced (POST /api/drain) starts nothing new.
+  if (draining || status.processing || !status.queue.length || status.jira.ok === false) return;
   // J3: tickets to analyze by System 1's urgency ('auto'), or only say which it would take first ('shadow').
   const order = S1.queueOrder ?? 'shadow';
   const best = order === 'off' ? 0 : nextIndex(status.queue, (k) => system1Resolved.get(k)?.answers);
@@ -761,6 +783,27 @@ const server = createServer(async (req, res) => {
   if (path === '/api/status') {
     refreshBranches();
     return json(res, 200, status);
+  }
+  // For a new watcher started with --replace (lib/replace.mjs): what this one is in the middle of, and a stop to new
+  // jobs while it finishes. Queued jobs stay queued: the new watcher finds the tickets again in Jira.
+  if (req.method === 'GET' && path === '/api/busy') {
+    const what = [
+      status.processing && `${status.processing.kind ?? 'job'} ${status.processing.key ?? ''}`.trim(),
+      reviewing && `AI review of ${reviewing}`,
+      recommending && 'hotspot recommendations',
+      mergingDocs && 'a documentation merge',
+    ].filter(Boolean);
+    return json(res, 200, { busy: what.length > 0, what, draining });
+  }
+  if (req.method === 'POST' && path === '/api/drain') {
+    const body = await readBody(req);
+    draining = body.on !== false;
+    events.emit('replacing', { text: draining ? 'a new watcher is waiting to replace this one: no new job starts until it does' : 'the replacement gave up: back to work' });
+    if (!draining) drain();
+    return json(res, 200, { ok: true, draining });
+  }
+  if (draining && req.method === 'POST' && ['/api/insights/review', '/api/insights/recommend', '/api/knowledge/merge', '/api/run'].includes(path)) {
+    return json(res, 503, { ok: false, error: 'this watcher is about to be replaced by a newer one: try again in a minute' });
   }
   // Evidence screenshots: /evidence/<KEY>/before.png|after.png (only these names, only from the project's state/work).
   // The dashboard adds ?<timestamp> to bust the cache, so the path is matched without the query string.

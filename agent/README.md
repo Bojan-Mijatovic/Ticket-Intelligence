@@ -15,10 +15,12 @@ Jira project ──poll──▶ watcher ──▶ headless agent (claude -p + a
 
 ```
 node agent/watcher.mjs              # start
-node agent/watcher.mjs --replace    # restart: stops the running watcher first (needed after a code change)
+node agent/watcher.mjs --replace    # restart: the running watcher finishes its work first, then stops (needed after a code change)
 ```
 
 Only one watcher runs at a time: a second start stops with the PID of the running one (`state/watcher.pid`). After changing anything in `agent/` (except the dashboard page, which is read on every request), restart with `--replace`; `demo/preflight.mjs` reports a watcher that runs older code.
+
+`--replace` does not stop the running watcher in the middle of a job (`lib/replace.mjs`). It tells it to start nothing new (`POST /api/drain`), waits until it is idle (`GET /api/busy`: an analysis, a fix, a documentation run, a known-issue test, an app review, recommendations, a documentation merge), and stops it then, saying what it waits for. After 15 minutes (`--wait <minutes>`) it gives up and the running watcher goes back to work; `--force` stops it at once, losing its work in progress. Jobs that were only queued are found again in Jira by the new watcher.
 
 Open http://localhost:7070, then create a ticket in the Jira project. The agent picks it up within `pollSeconds` (or at once with **Check now**).
 
