@@ -24,6 +24,7 @@ Everything is **read-only** until you approve. The only write actions are the Ji
 
 | Document | Purpose |
 |---|---|
+| [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) | **start here**: the whole flow on one page, the workflows covered, and what works on git, SVN and in Copilot |
 | [docs/PROBLEM_BRIEF.md](docs/PROBLEM_BRIEF.md) | the problem, who it affects, goals, scope, success metrics |
 | [SPEC.md](SPEC.md) | functional requirements, architecture, interfaces, security, validation status |
 | [docs/DEMO_SCENARIO.md](docs/DEMO_SCENARIO.md) | demo script, setup checklist, fallbacks, reset |
@@ -34,6 +35,11 @@ Everything is **read-only** until you approve. The only write actions are the Ji
 | [docs/AGENT_TRAINING.md](docs/AGENT_TRAINING.md) | how the agent is improved: levers, scenarios with a known answer (`demo/scenarios.json`), scoring (`demo/score-run.mjs`) |
 | [docs/SUITE.md](docs/SUITE.md) | the four linked demo apps (MediAgenda, MediLab, MediFarma, MediBill): ports, APIs between them, people, cross-project demo tickets; and MediVax, the pilot |
 | [docs/PILOT.md](docs/PILOT.md) | the pilot: MediVax with synthetic patients, a hidden bug and its report every working day, scored against an answer key |
+| [docs/AUTONOMY_AND_NEXT.md](docs/AUTONOMY_AND_NEXT.md) | what the AI does on its own, what makes it a system, the proposals and the one plan with its status |
+| [docs/GIT_GRAPH.md](docs/GIT_GRAPH.md) | the graph of git, the ticket lanes, bisect and the regression guard |
+| [docs/KNOWLEDGE_PLAN.md](docs/KNOWLEDGE_PLAN.md) | the knowledge base: format, documentation on Done, Ask |
+| [docs/SYSTEM1_PLAN.md](docs/SYSTEM1_PLAN.md) | System 1: the local decision model in front of Claude, its plan and results |
+| [docs/REDACTION.md](docs/REDACTION.md) | how personal data is masked before any model reads a ticket |
 
 ## Installation (once)
 
@@ -67,7 +73,8 @@ Copilot in VS Code supports the same skill format (`SKILL.md`) and reads skills 
 
 - The scripts are plain Node commands, so Copilot runs them in the terminal just like Claude does. By default Copilot asks before every terminal command; you can allow `node` commands in the VS Code setting `chat.tools.terminal.autoApprove`.
 - The quality of the analysis depends on the model selected in Copilot (Claude models can be selected too).
-- Not yet tested inside Copilot itself. The format and commands are the same, so the first run at work is the real test.
+- Not yet tested inside Copilot itself: Copilot is not installed on the development machine. The format and commands are the same, so the first run at work is the real test; [docs/COPILOT_TEST.md](docs/COPILOT_TEST.md) is the plan (about an hour). Re-checked 2026-11-16: the skills installed in `~/.claude/skills` match the repository (`install.mjs` does not delete files an older version had: `scripts/lib/git.mjs` is left over there, unused).
+- Only the two skills run in Copilot. The autonomous agent (watcher, System 1, dashboard) runs the Claude Code CLI headless. What works where: [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md#7-where-it-runs-git-svn-and-github-copilot).
 
 ## Git and SVN
 
@@ -242,7 +249,7 @@ The agent also takes into account who committed to the component. The ticket's r
 ## Limitations
 
 - Tested on demo data in a real Jira Cloud. Not yet run inside GitHub Copilot, and not against Jira Server/Data Center.
-- SVN: the analysis is tested against a local (`file://`) repository (`demo/mediagenda-svn`, 2026-11-09: same components, people and related tickets as the git copy); a real server needs cached credentials. `/document-ticket` on SVN is tested in `patch` mode (2026-11-09, DEM-5: three docs/knowledge files, the patch applies to a fresh checkout, nothing committed); `direct` and `branch` (which write to the server) are not tested yet; the autonomous agent's fixes, pull requests and Insights are git only so far. A working copy inside a git repository is read as SVN (the nearer repository wins).
+- SVN: the analysis is tested against a local (`file://`) repository (`demo/mediagenda-svn`, 2026-11-09: same components, people and related tickets as the git copy); a real server needs cached credentials. `/document-ticket` on SVN is tested in `patch` mode (2026-11-09, DEM-5: three docs/knowledge files, the patch applies to a fresh checkout, nothing committed); `direct` and `branch` (which write to the server) are not tested yet. Re-checked 2026-11-16 on the demo working copy: `ticket.mjs analyze` finds the components, people and knowledge files. In the autonomous agent, the analysis and the ticket lanes work on SVN; the automatic fix, pull requests, AI review, bisect, the regression guard, the KB1 tests, Insights and the replay are git only so far ([the full table](docs/HOW_IT_WORKS.md#7-where-it-runs-git-svn-and-github-copilot)). A working copy inside a git repository is read as SVN (the nearer repository wins).
 - The search covers the last 365 days and at most 10 related tickets (`lookbackDays`, `maxRelated` in `config.json`).
 - Commits that don't mention a Jira key can't be reliably linked to a ticket.
 - Pull requests are opened automatically only on GitHub (`gh`). For GitLab, Bitbucket and Azure DevOps the skill gives the link or the steps.
@@ -253,5 +260,5 @@ The agent also takes into account who committed to the component. The ticket's r
 |---|---|
 | 2 | Confluence as an additional documentation source, if you use it |
 | 3 | Input from Teams and email (Microsoft Graph): a bot recognizes a ticket in a message and starts the analysis |
-| 3 | Sending the handoff message directly to the recommended person |
-| 4 | Automatic `/document-ticket` when a ticket moves to Done (a service that watches Jira) |
+| 3 | ~~Sending the handoff message directly to the recommended person~~: done in the agent, a Teams message in the team's channel that @mentions the person |
+| 4 | ~~Automatic `/document-ticket` when a ticket moves to Done~~: done in the agent ([agent/README.md](agent/README.md#done--documentation)) |

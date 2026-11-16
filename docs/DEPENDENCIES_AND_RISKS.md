@@ -31,7 +31,8 @@
 | Jira Cloud sandbox `bojanmijatovic.atlassian.net`, project DEM | available | POC |
 | Jira API token (the sandbox owner's account, stored in the per-user `.env`) | available | POC |
 | Company Jira project + service account | **missing** | MVP on real tickets |
-| Teams channel + Workflows webhook | **not possible now** (no test channel); notifications simulated on the dashboard | real notifications |
+| Teams channel + Workflows webhook | checked on a test Microsoft 365 tenant (2026-11-16): owner messages, @mentions and "fix ready" arrive in a real channel. The team's own channel still needs its webhook, created by a person there; without it, notifications are simulated on the dashboard | real notifications |
+| GitHub Copilot licence (VS Code, agent mode) | **not on this machine**; the skills are not yet run inside Copilot ([COPILOT_TEST.md](COPILOT_TEST.md)) | the skills in Copilot at work |
 | GitHub repository for the demo app | available: private repo Bojan-Mijatovic/MediAgenda | real draft PRs *(planned)* |
 | Approved AI service for company ticket data | **open** | any use on company tickets |
 
