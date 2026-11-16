@@ -121,7 +121,13 @@ Added 2026-11-16. The same message, with two changes: the owner's message arrive
 - [ ] `node demo/pilot.mjs plant --case late-today`. Tommaso's change goes to MediVax `main` (a Jira story, Done, and one commit), and within 2 minutes the regression guard checks it. The schedule now pushes nothing else and does not report this case: no unplanned ticket comes during the demo.
 - [ ] *(optional, check in the rehearsal)* the app on :4204 shows the new `main` and the bug on a patient's card.
 
-**30 minutes before:** as in section 3, plus the private laptop on the channel at 125 % zoom with *Do not disturb* on, and the dashboard's Teams panel saying **live channel (webhook)**.
+**30 minutes before:** `node demo/preflight.mjs --teams` says **GO**. It checks, without posting anything:
+- Jira, the Claude CLI and GitHub;
+- the MediVax clone and the watcher: on current code, answering within a second;
+- Teams: the channel is live with @mentions, the webhook answers from this network (a GET, which the workflow refuses without running), and the owner has an account to mention;
+- the pilot: the reserved case is pushed, and nothing else is in flight.
+
+It only warns about System 1 and a running training. Then the private laptop goes on the channel at 125 % zoom with *Do not disturb* on, and the dashboard's Teams panel says **live channel (webhook) · @mentions the owner**.
 
 ### Script
 
