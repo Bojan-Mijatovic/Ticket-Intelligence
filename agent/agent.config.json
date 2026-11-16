@@ -34,7 +34,7 @@
   "_baseline": "Impact (WF5): the minutes each step takes the team WITHOUT the agent. Team estimates, not measurements, and the Impact tab says so. Hours saved = these minus the measured time, for a ticket's first analysis in a week, merged fixes and merged documentation.",
   "baseline": { "analysisMinutes": 45, "reproduceMinutes": 60, "fixMinutes": 180, "docsMinutes": 30 },
   "_system1": "System 1 (docs/SYSTEM1_PLAN.md): the local decision model. python and hfHome come from node demo/get-tools.mjs --only uv,laya; checkpoint is a fine-tuned model (agent/README.md, System 1). The server answers on 127.0.0.1:port only. Whether it is asked: policy.json system1.intake.",
-  "system1": { "port": 7071, "python": "../tools/laya-env/Scripts/python.exe", "hfHome": "../tools/hf", "checkpoint": "state/system1/models/ft-1", "timeoutSeconds": 60, "startTimeoutSeconds": 120, "waitSeconds": 12, "tour": { "runs": ["LAB-26", "LAB-30"], "privacy": "DEM-48", "ask": { "project": "BIL", "question": "Who knows the exemption code best?" } } },
+  "system1": { "port": 7071, "python": "../tools/laya-env/Scripts/python.exe", "hfHome": "../tools/hf", "checkpoint": "state/system1/models/ft-1", "timeoutSeconds": 60, "startTimeoutSeconds": 300, "_startTimeoutSeconds": "125 s to load while a training ran on 2026-11-16 (10-40 s otherwise); a ticket that comes before the server is ready gets no System 1 answer", "waitSeconds": 12, "tour": { "runs": ["LAB-26", "LAB-30"], "privacy": "DEM-48", "ask": { "project": "BIL", "question": "Who knows the exemption code best?" } } },
   "fixTimeoutMinutes": 15,
   "bisectMinutes": 12,
   "guardSeconds": 120,

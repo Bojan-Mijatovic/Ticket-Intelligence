@@ -24,11 +24,13 @@ export function teamsInfo(env = process.env) {
 export function mentionFor(name, env = process.env) {
   const who = String(name ?? '').trim().replace(/\s+/g, ' ');
   if (!who) return null;
+  // The same person is written "Bojan Mijatović" in one commit and "Bojan Mijatovic" in another.
+  const same = (s) => s.normalize('NFD').replace(/\p{M}/gu, '').trim().replace(/\s+/g, ' ').toLowerCase();
   for (const entry of String(env.TEAMS_MENTIONS ?? '').split(/[;\n]/)) {
     const at = entry.lastIndexOf('=');
     if (at < 0) continue;
     const upn = entry.slice(at + 1).trim();
-    if (entry.slice(0, at).trim().replace(/\s+/g, ' ').toLowerCase() === who.toLowerCase() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(upn)) return upn;
+    if (same(entry.slice(0, at)) === same(who) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(upn)) return upn;
   }
   const domain = String(env.TEAMS_MENTION_DOMAIN ?? '').trim().replace(/^@/, '');
   if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(domain) || !/^\p{Lu}[\p{L}'’.-]*( \p{Lu}[\p{L}'’.-]*){1,3}$/u.test(who)) return null;

@@ -49,6 +49,8 @@ test('mentionFor: a named person first, then first.last@domain for a person name
   const env = { TEAMS_MENTION_DOMAIN: 'MediAgendaTest.onmicrosoft.com', TEAMS_MENTIONS: 'Luca  Bianchi = l.bianchi@corp.example ; Bad Entry=not-an-email' };
   assert.equal(mentionFor('Marta Ricci', env), 'marta.ricci@mediagendatest.onmicrosoft.com');
   assert.equal(mentionFor('luca bianchi', env), 'l.bianchi@corp.example', 'a named person wins, whatever the case and spacing');
+  const named = { TEAMS_MENTIONS: 'Bojan Mijatović=bojan@corp.example' };
+  assert.deepEqual([mentionFor('Bojan Mijatovic', named), mentionFor('Bojan Mijatović', named)], ['bojan@corp.example', 'bojan@corp.example'], 'with or without the accent');
   assert.equal(mentionFor('Bad Entry', env), 'bad.entry@mediagendatest.onmicrosoft.com', 'an entry without a valid address falls back to the domain');
   assert.equal(mentionFor('Niccolò D’Angelo', env), 'niccolo.dangelo@mediagendatest.onmicrosoft.com', 'accents and apostrophes dropped');
   for (const role of ['the team', 'IT support / network administrator', 'Marta', 'Reporter (to be named)', '', null]) assert.equal(mentionFor(role, env), null, `${role} is not a person`);

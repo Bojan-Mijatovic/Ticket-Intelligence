@@ -102,7 +102,7 @@ Added 2026-11-16. The same message, with two changes: the owner's message arrive
 
 **Why MediVax and not MediAgenda.** A pilot bug comes with a developer's change, so the owner is known: the developer who made it, named by the analysis in 4 of 4 pilot tickets. MediAgenda's ownership now leans towards the presenter: 12 commits on its `main` are his merges, and DEM-43, the same report as DEM-42, was handed to him instead of Sara Colombo. MediVax also adds a step the audience remembers: the agent names the commit that broke the code and who made it, and the bisect confirms it.
 
-**The case.** `late-today` (frontend, Tommaso Bruno): "a dose due today is marked *in ritardo*". The spare is `lot-expiry-iso` (frontend, Tommaso Bruno): "the lot expiry is shown as 2026-11-30". Both are in `reserve` (`agent.config.json` → `VAX.pilot`), so the schedule never pushes or reports them.
+**The case.** `late-today` (frontend, Tommaso Bruno): "a dose due today is marked *in ritardo*". The spare is `lot-expiry-iso` (frontend, Tommaso Bruno): "the lot expiry is shown as 2026-11-30". Both are in `reserve` (`agent.config.json` → `VAX.pilot`), so the schedule never pushes or reports them. Both passed `node demo/pilot.mjs check` on 2026-11-16: they apply to `main`, and the build and the 9 browser tests miss them.
 
 ### Setup
 
