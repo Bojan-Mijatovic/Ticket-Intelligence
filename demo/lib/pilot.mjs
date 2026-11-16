@@ -41,23 +41,29 @@ export function applyEdits(read, edits) {
 /**
  * What a tick should do now. One case is in flight at a time: a new change is pushed only after the previous bug
  * was reported. Working days only, from the configured hours (local time), up to `perDay` changes a day.
+ * `reserve` lists cases kept for a live demo: the schedule never pushes or reports them, a person does
+ * (plant --case, report --case). One pushed by hand is in flight like any other, so the schedule pushes nothing
+ * else until its bug is reported: no unplanned ticket comes during the demo.
  * @returns {{ plant: object|null, report: object[], why: string }}
  */
 export function nextActions({ runs, cases, now = new Date(), cfg = {} }) {
-  const { perDay = 2, hours = [10, 15], reportAfterMinutes = [60, 180], lastHour = 18 } = cfg;
-  const report = runs.filter((r) => r.status === 'planted' && now - Date.parse(r.plantedAt) >= reportDelayMinutes(r.id, reportAfterMinutes) * 60_000);
+  const { perDay = 2, hours = [10, 15], reportAfterMinutes = [60, 180], lastHour = 18, reserve = [] } = cfg;
+  const reserved = new Set(reserve);
+  const report = runs.filter((r) => r.status === 'planted' && !reserved.has(r.case) && now - Date.parse(r.plantedAt) >= reportDelayMinutes(r.id, reportAfterMinutes) * 60_000);
   const workday = now.getDay() >= 1 && now.getDay() <= 5;
   const today = localDay(now);
   const plantedToday = runs.filter((r) => r.plantedAt && localDay(new Date(r.plantedAt)) === today).length;
   const inFlight = runs.some((r) => r.status === 'planted');
   // A case is taken once; one the tests caught ("failed") is not retried on every tick (plant --case retries it).
   const used = new Set(runs.map((r) => r.case));
-  const next = cases.find((c) => !used.has(c.id)) ?? null;
+  const next = cases.find((c) => !used.has(c.id) && !reserved.has(c.id)) ?? null;
+  const left = cases.filter((c) => !used.has(c.id) && reserved.has(c.id)).map((c) => c.id);
   let why;
   if (!workday) why = 'not a working day';
   else if (plantedToday >= perDay) why = `${plantedToday} change(s) pushed today already`;
   else if (now.getHours() < (hours[plantedToday] ?? hours.at(-1)) || now.getHours() >= lastHour) why = `next change from ${hours[plantedToday] ?? hours.at(-1)}:00`;
-  else if (inFlight) why = 'a case is waiting to be reported';
+  else if (inFlight) why = runs.some((r) => r.status === 'planted' && !reserved.has(r.case)) ? 'a case is waiting to be reported' : 'a reserved case is pushed: report it by hand (report --case)';
+  else if (!next && left.length) why = `only reserved cases are left (${left.join(', ')}): add cases to demo/src/medivax/pilot-cases.mjs`;
   else if (!next) why = 'every case of the catalog has been used: add cases to demo/src/medivax/pilot-cases.mjs';
   else return { plant: next, report, why: `push ${next.id}` };
   return { plant: null, report, why };

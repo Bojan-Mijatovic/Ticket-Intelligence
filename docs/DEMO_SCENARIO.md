@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Defined and approved by Bojan Mijatović (2026-11-04); fully implemented and rehearsed (DEM-10, 2026-11-04) |
+| **Status** | Defined and approved by Bojan Mijatović (2026-11-04); fully implemented and rehearsed (DEM-10, 2026-11-04). Live Teams variant on MediVax added 2026-11-16 (section 9), not rehearsed yet |
 | **Owner** | Bojan Mijatović |
 | **Length** | 15 minutes (9 min live flow + questions) |
 | **Audience** | team leads, developers, support, management |
@@ -95,3 +95,61 @@ Then `node agent/watcher.mjs --replace` and `node demo/preflight.mjs`.
 | What if it's wrong? | It only writes an internal comment labelled as AI analysis; confidence is shown; humans decide. Low-confidence results don't notify anyone. |
 | Does it work with our SVN projects / Copilot? | Yes: SVN is supported and tested on a local repository; Copilot uses the same skill format and is the next thing to validate at work. |
 | What does it cost? | ~1 minute and ~10 agent turns per ticket (about $0.70 API-equivalent; included in seat-based subscriptions). |
+
+## 9. Live variant: a real Teams channel and the MediVax pilot
+
+Added 2026-11-16. The same message, with two changes: the owner's message arrives in a **real Teams channel** and @mentions them, so their phone rings in the room, and the bug comes from the **MediVax pilot** ([PILOT.md](PILOT.md)).
+
+**Why MediVax and not MediAgenda.** A pilot bug comes with a developer's change, so the owner is known: the developer who made it, named by the analysis in 4 of 4 pilot tickets. MediAgenda's ownership now leans towards the presenter: 12 commits on its `main` are his merges, and DEM-43, the same report as DEM-42, was handed to him instead of Sara Colombo. MediVax also adds a step the audience remembers: the agent names the commit that broke the code and who made it, and the bisect confirms it.
+
+**The case.** `late-today` (frontend, Tommaso Bruno): "a dose due today is marked *in ritardo*". The spare is `lot-expiry-iso` (frontend, Tommaso Bruno): "the lot expiry is shown as 2026-11-30". Both are in `reserve` (`agent.config.json` → `VAX.pilot`), so the schedule never pushes or reports them.
+
+### Setup
+
+**Two laptops.** The work laptop runs everything: the watcher and dashboard, the MediVax app (:4204), Jira and GitHub. The private laptop only shows Teams: the test tenant's team *MediAgenda Support*, channel `support-triage`. It can be on a guest network or a phone hotspot. Tommaso Bruno is signed in on a phone (or in a private browser window) with the channel's notifications on.
+
+**The test tenant** is a Microsoft 365 Business Basic trial: 30 days from sign-up, so a demo after that needs one paid month. Users are `first.last@<tenant>.onmicrosoft.com`, all members of the team, the presenter included. The work laptop's `.env` has `TEAMS_WEBHOOK_URL`, `TEAMS_MENTION_DOMAIN` and, for **Open in Teams**, `TEAMS_CHANNEL_URL` ([agent/README.md](../agent/README.md#notifications)).
+
+**The day before**
+- [ ] From the network of the presentation room: `node agent/teams-test.mjs --mention "Tommaso Bruno"`. The message arrives, his name is highlighted and his phone rings.
+- [ ] `node demo/pilot.mjs status`: no case in flight. If `Next:` says a case waits to be reported, report it now (`node demo/pilot.mjs report`), so that its ticket is not processed during the demo.
+- [ ] `node demo/pilot.mjs check --case late-today` shows ✓: the change still applies to `main` and the existing tests miss it. If ✗, use `lot-expiry-iso`.
+- [ ] A full run recorded as a fallback.
+- [ ] No System 1 training running on the work laptop: it slows the machine, and the System 1 server then takes minutes to start.
+
+**The morning of the demo** (at least an hour before)
+- [ ] `node demo/pilot.mjs plant --case late-today`. Tommaso's change goes to MediVax `main` (a Jira story, Done, and one commit), and within 2 minutes the regression guard checks it. The schedule now pushes nothing else and does not report this case: no unplanned ticket comes during the demo.
+- [ ] *(optional, check in the rehearsal)* the app on :4204 shows the new `main` and the bug on a patient's card.
+
+**30 minutes before:** as in section 3, plus the private laptop on the channel at 125 % zoom with *Do not disturb* on, and the dashboard's Teams panel saying **live channel (webhook)**.
+
+### Script
+
+| Time | Presenter does | Audience sees | Talking point |
+|---|---|---|---|
+| 0:00 | Dashboard, Graph tab, MediVax | this morning's commit on `main` by Tommaso Bruno, its story Done, the regression guard clear | "A small change this morning. The tests are green, CI is green. The bug is inside." |
+| 0:30 | Runs `node demo/pilot.mjs report --case late-today`, then opens the new ticket in Jira | a nurse's report, priority High: a patient's name, fiscal code, birth date and phone | "This is what support gets. Nobody assigns it, nobody starts anything." |
+| 0:45 | Dashboard: types the key in **Run ticket** (skips the one-minute wait for edits) | the ticket queued, then analyzing; the patient's identifiers masked | "The patient's data never reaches the model." |
+| ~2:00 | Waits | the analysis: cause, the breaking commit and its story, owner Tommaso Bruno, high confidence | "It found which change broke it, and who made it." |
+| ~2:00 | Turns to the private laptop or the phone | the card in `support-triage`: **For @Tommaso Bruno**, the handoff, **Open in Jira**; Tommaso's phone rings | "Tommaso knows, with the context, about a minute after the report. Nobody forwarded anything." |
+| ~2:30 | Dashboard | the bisect confirms the commit in seconds | "Not a guess: it replayed the history with the test." |
+| ~4:00–6:00 | Dashboard | the reproduction test red on the current code, then the fix green, before and after screenshots, a draft PR | "And a tested fix, waiting for a person." |
+| ~6:30 | Opens the PR on GitHub | two commits (failing test, then fix), the diff, the verification table | "Merging is always a human decision." |
+| 7:00 | Questions | | |
+
+The pilot's tickets so far: analysis in about a minute, the Teams message right after it (61–74 s from pick to message, measured 2026-11-16), and the draft PR about 4 minutes after the ticket (VAX-13: 259 s).
+
+### If something goes wrong
+
+| Problem | Fallback |
+|---|---|
+| No Teams message | the dashboard's Teams panel shows the card and, if the channel refused it, why. Then **↻ Run again** on DEM-46 (owner Marta Ricci; message in 61–74 s, twice on 2026-11-16) |
+| The name in the card is plain text, no phone rings | Teams does not know that sign-in name: the message still arrives. Point at the card; check the user in the tenant afterwards |
+| The owner is not Tommaso | a talking point: the analysis says why. The presenter is a member of the team, so if it names him his own phone rings |
+| `late-today` no longer applies (`check` ✗) | `lot-expiry-iso`, same steps |
+| The private laptop has no network | phone hotspot; or show the dashboard's Teams panel, which holds the same card |
+| Anything else | section 6, or the recording |
+
+### After the demo
+
+Merge or close the draft PR. After a merge, the next pilot tick moves the ticket to Done and the agent documents it, as for any pilot case. The schedule then goes on by itself: the case is reported, so nothing is in flight.

@@ -53,6 +53,17 @@ test('the schedule: working days, from the configured hours, one case in flight,
   assert.match(nextActions({ runs: reported, cases, now: at('2026-11-16T12:00:00'), cfg }).why, /from 15:00/);
   assert.equal(nextActions({ runs: reported, cases, now: at('2026-11-16T15:01:00'), cfg }).plant.id, 'b');
   assert.match(nextActions({ runs: [...reported, { id: 'b#1', case: 'b', status: 'reported', plantedAt: at('2026-11-17T10:00:00').toISOString() }], cases, now: at('2026-11-17T15:00:00'), cfg }).why, /every case/);
+
+  // A case reserved for a live demo: never pushed or reported by the schedule; pushed by hand, it holds the others.
+  const keep = { ...cfg, reserve: ['a'] };
+  assert.equal(nextActions({ runs: [], cases, now: at('2026-11-16T10:05:00'), cfg: keep }).plant.id, 'b', 'the reserved case is skipped');
+  const byHand = [{ id: 'a#1', case: 'a', status: 'planted', plantedAt: at('2026-11-16T08:00:00').toISOString() }];
+  const held = nextActions({ runs: byHand, cases, now: at('2026-11-16T15:30:00'), cfg: keep });
+  assert.deepEqual([held.plant, held.report.length], [null, 0], 'not reported by the schedule, and nothing else is pushed');
+  assert.match(held.why, /reserved case is pushed: report it by hand/);
+  const onlyReserved = [{ id: 'b#1', case: 'b', status: 'reported', plantedAt: at('2026-11-13T10:00:00').toISOString() }];
+  assert.match(nextActions({ runs: onlyReserved, cases, now: at('2026-11-16T10:05:00'), cfg: keep }).why, /only reserved cases are left \(a\)/);
+
   const d = reportDelayMinutes('x#1', [60, 180]);
   assert.ok(d >= 60 && d <= 180);
   assert.equal(reportDelayMinutes('x#1', [60, 180]), d, 'fixed per run');

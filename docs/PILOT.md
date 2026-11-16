@@ -89,6 +89,8 @@ node demo/pilot.mjs tick                   what the schedule runs every 30 minut
 node demo/pilot.mjs schedule --install     install the schedule (--remove to stop the pilot)
 ```
 
+**Cases kept for a live demo.** `reserve` in `agent.config.json` → `VAX.pilot` lists cases the schedule never pushes or reports (now `late-today` and `lot-expiry-iso`). A person pushes one with `plant --case` on the morning of a demo and reports it with `report --case` on stage. Until then it is the case in flight, so the schedule pushes nothing else: no unplanned ticket comes during the demo. The steps are in [DEMO_SCENARIO.md](DEMO_SCENARIO.md#9-live-variant-a-real-teams-channel-and-the-medivax-pilot), section 9.
+
 The app itself: `node demo/run-mediagenda.mjs --project VAX` (backend :8084, frontend :4204). Repository: `Bojan-Mijatovic/MediVax` (private), built by `node demo/make-project.mjs medivax` from `demo/src/medivax/`. Jira project: VAX.
 
 ## First results (2026-11-13)

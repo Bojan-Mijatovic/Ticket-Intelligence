@@ -141,7 +141,7 @@
       "backendTestDir": "backend/src/test/java/com/medivax/regression",
       "askExamples": ["When is the next dose of a series due?", "Until which day can a lot be used?", "Which bugs did the patient search have, and why?", "Who knows the dose rules best?"],
       "_pilot": "The pilot (demo/pilot.mjs tick, every 30 min): on working days, perDay changes with a hidden bug are pushed to main at the given hours, and the bug is reported in Jira reportAfterMinutes later. Scores against the answer key: node demo/pilot.mjs status.",
-      "pilot": { "perDay": 2, "hours": [10, 15], "reportAfterMinutes": [60, 180] },
+      "pilot": { "perDay": 2, "hours": [10, 15], "reportAfterMinutes": [60, 180], "reserve": ["late-today", "lot-expiry-iso"], "_reserve": "cases kept for a live demo: the schedule never pushes or reports them; a person does (docs/PILOT.md, Live demo)" },
       "insights": {
         "components": [
           { "name": "Pazienti", "paths": ["frontend/src/app/features/patients/patient-search", "backend/src/main/java/com/medivax/patient/"] },
