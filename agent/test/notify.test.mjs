@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { mentionFor, notifyOwner, teamsInfo } from '../lib/notify.mjs';
+import { mentionFor, notifyFixReady, notifyOwner, teamsInfo } from '../lib/notify.mjs';
 
 const MSG = { key: 'DEM-40', url: 'https://jira.example/browse/DEM-40', title: 'Red background', handoff: { to: 'Marta Ricci', message: 'Please take a look' }, confidence: 'high', escalate: { yes: false } };
 const realFetch = globalThis.fetch;
@@ -100,6 +100,39 @@ test('T5: the card says why this person, where, and how sure; the dashboard gets
   assert.ok(long.length <= 240 && long.endsWith('…'), 'a long reason is cut at a word');
   await notifyOwner({ ...MSG, confidence: null });
   assert.equal(sent.attachments[0].content.body.find((b) => b.type === 'FactSet'), undefined, 'no empty FactSet');
+});
+
+test('T6: "fix ready" @mentions the owner again, with the PR first, what was checked and the commit that broke it', async () => {
+  const FIX = {
+    key: 'VAX-21', url: 'https://jira.example/browse/VAX-21', prUrl: 'https://github.example/MediVax/pull/9', title: 'VAX-21: A dose due today is on time, not late', to: 'Tommaso Bruno',
+    checks: { e2e: { ok: true, skipped: false, passed: 10, failed: 0 }, build: { ok: true, skipped: false }, backend: { ok: true, skipped: true } },
+    bisect: { status: 'found', bad: { short: 'ab12cd3', author: 'Tommaso Bruno', ticket: 'VAX-20' } },
+  };
+  delete process.env.TEAMS_WEBHOOK_URL;
+  const shown = await notifyFixReady(FIX);
+  assert.deepEqual([shown.channel, shown.card.kind, shown.card.mentioned], ['dashboard', 'fix', undefined]);
+
+  process.env.TEAMS_WEBHOOK_URL = 'https://hook.example/workflows/1';
+  process.env.TEAMS_MENTION_DOMAIN = 'contoso.onmicrosoft.com';
+  let sent = null;
+  globalThis.fetch = async (url, opts) => {
+    sent = JSON.parse(opts.body);
+    return new Response('', { status: 202 });
+  };
+  const n = await notifyFixReady(FIX);
+  const content = sent.attachments[0].content;
+  assert.equal(content.body[0].text, 'For <at>Tommaso Bruno</at>');
+  assert.equal(content.msteams.entities[0].mentioned.id, 'tommaso.bruno@contoso.onmicrosoft.com');
+  assert.equal(content.body[1].text, 'VAX-21: fix ready for review');
+  assert.deepEqual(content.body.find((b) => b.type === 'FactSet').facts, [
+    { title: 'Checked', value: 'a new test failed before the fix and passes after it; 10 browser tests pass; the build passes' },
+    { title: 'Broken by', value: 'ab12cd3 (VAX-20) by Tommaso Bruno' },
+  ]);
+  assert.deepEqual(content.actions.map((a) => a.title), ['Review the pull request', 'Open in Jira']);
+  assert.deepEqual([n.channel, n.card.prUrl, n.card.mentioned], ['teams', FIX.prUrl, true]);
+
+  await notifyFixReady({ ...FIX, bisect: { status: 'older' }, checks: { backend: { ok: true, skipped: false, passed: 22 } } });
+  assert.deepEqual(sent.attachments[0].content.body.find((b) => b.type === 'FactSet').facts, [{ title: 'Checked', value: 'a new test failed before the fix and passes after it; 22 backend tests pass' }], 'no culprit without a found bisect');
 });
 
 test('a channel that refuses or does not answer does not stop the ticket: the message stays on the dashboard, with why', async () => {

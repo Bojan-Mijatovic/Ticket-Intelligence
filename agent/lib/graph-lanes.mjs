@@ -7,10 +7,13 @@ const prNo = (url) => Number(String(url ?? '').match(/\/pull\/(\d+)/)?.[1]) || n
 const riskTone = (text) => (/risk high|needs-changes/i.test(text) ? 'bad' : /risk medium/i.test(text) ? 'warn' : 'ok');
 
 // The steps a lane shows, in the words of a person reading the history. Chatty events (picked, commented) are left
-// out; the commits are rows of the main line. The owner's Teams message is a row: the dashboard opens its card.
+// out; the commits are rows of the main line. The owner's Teams messages are rows (the handoff, then "fix ready"):
+// the dashboard opens their cards.
+const teamsTone = (text) => (/not posted/.test(text) ? 'bad' : 'teams');
 const STEP = {
   analyzed: { tone: 'info', label: (s) => `Analysed · ${s.text}` },
-  notified: { tone: (text) => (/not posted/.test(text) ? 'bad' : 'teams'), label: (s) => `✉ ${s.text}` },
+  notified: { tone: teamsTone, label: (s) => `✉ ${s.text}` },
+  'fix-notified': { tone: teamsTone, label: (s) => `✉ ${s.text}` },
   duplicate: { tone: 'warn', label: (s) => s.text },
   'prior-art': { tone: 'warn', label: (s) => s.text },
   'fix-skipped': { tone: 'muted', label: (s) => s.text.replace(/^no automatic fix:/i, 'No automatic fix:') },

@@ -5,9 +5,10 @@
 //   node agent/teams-test.mjs
 //   node agent/teams-test.mjs --mention "Marta Ricci"   the message @mentions that person (T4): checks TEAMS_MENTIONS
 //                                                       or TEAMS_MENTION_DOMAIN for them
+//   node agent/teams-test.mjs --mention "Marta Ricci" --fix   the second message instead, "fix ready for review" (T6)
 
 import { loadConfig } from '../.claude/skills/analyze-ticket/scripts/lib/config.mjs';
-import { mentionFor, notifyOwner, teamsInfo } from './lib/notify.mjs';
+import { mentionFor, notifyFixReady, notifyOwner, teamsInfo } from './lib/notify.mjs';
 
 const cfg = loadConfig(); // also loads the .env files into process.env
 const info = teamsInfo();
@@ -32,18 +33,29 @@ if (person && !upn) {
   process.exit(1);
 }
 
-const n = await notifyOwner({
-  key: 'TEST',
-  url: cfg.baseUrl || 'https://www.atlassian.com/software/jira',
-  title: 'Test message from Ticket Intelligence',
-  handoff: person
-    ? { to: person, message: `If ${person} got a notification, the agent can @mention owners in this channel. Nothing to do.` }
-    : { to: 'the team', message: 'If you can read this, the agent can post owner messages to this channel. Nothing to do.' },
-  confidence: 'high',
-  escalate: null,
-  // What a real card adds (T5), so the test looks like one.
-  ...(person ? { why: 'A test: here the agent says why it chose you, e.g. "Authored ad0251f (VAX-18), the suspect change in dates.ts".', where: 'frontend/src/app/shared/utils/dates.ts:35' } : {}),
-});
+const jiraUrl = cfg.baseUrl || 'https://www.atlassian.com/software/jira';
+const n = process.argv.includes('--fix')
+  ? await notifyFixReady({
+    key: 'TEST',
+    url: jiraUrl,
+    prUrl: 'https://github.com/',
+    title: 'A test: when the agent has a verified fix, this message says so, with the pull request to review.',
+    to: person || 'the team',
+    checks: { e2e: { ok: true, skipped: false, passed: 9, failed: 0 }, build: { ok: true, skipped: false } },
+    bisect: { status: 'found', bad: { short: 'ad0251f', author: 'Tommaso Bruno', ticket: 'VAX-18' } },
+  })
+  : await notifyOwner({
+    key: 'TEST',
+    url: jiraUrl,
+    title: 'Test message from Ticket Intelligence',
+    handoff: person
+      ? { to: person, message: `If ${person} got a notification, the agent can @mention owners in this channel. Nothing to do.` }
+      : { to: 'the team', message: 'If you can read this, the agent can post owner messages to this channel. Nothing to do.' },
+    confidence: 'high',
+    escalate: null,
+    // What a real card adds (T5), so the test looks like one.
+    ...(person ? { why: 'A test: here the agent says why it chose you, e.g. "Authored ad0251f (VAX-18), the suspect change in dates.ts".', where: 'frontend/src/app/shared/utils/dates.ts:35' } : {}),
+  });
 if (n.channel === 'teams') {
   console.log(`Posted (HTTP ${n.status}). It appears in the channel within a few seconds, sent "via Workflows" by the account that created the workflow.`);
   if (upn) {

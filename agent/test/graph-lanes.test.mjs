@@ -90,3 +90,10 @@ test('the owner\'s Teams message is a row of the lane, with its card', () => {
   assert.deepEqual([row.text, row.tone, row.card.to, row.channel], ['✉ Teams (simulated) message to Marta Ricci', 'teams', 'Marta Ricci', 'dashboard']);
   assert.equal(rows.find((r) => r.type === 'analyzed').card, undefined);
 });
+
+test('T6: the "fix ready" message is a second Teams row of the lane, with its card', () => {
+  const card = { kind: 'fix', to: 'Marta Ricci', title: 'DEM-40: fix ready for review', prUrl: 'https://github.example/pr/24', tests: 'a new test failed before the fix and passes after it' };
+  const g = graph({ events: [ev(10, 'fix-notified', 'DEM-40', { text: 'Teams message to Marta Ricci: fix ready for review', card, channel: 'teams' })] });
+  const row = laneLayout(g, { ticket: 'DEM-40' }).rows.find((r) => r.type === 'fix-notified');
+  assert.deepEqual([row.text, row.tone, row.card.prUrl, row.channel], ['✉ Teams message to Marta Ricci: fix ready for review', 'teams', 'https://github.example/pr/24', 'teams']);
+});

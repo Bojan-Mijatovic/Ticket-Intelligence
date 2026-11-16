@@ -181,7 +181,7 @@ export function readPullRequests(repoDir, { since = null, max = 500 } = {}) {
 }
 
 // The agent's steps shown on a ticket's lane, in the order they happen.
-const LANE = new Set(['picked', 'analyzed', 'commented', 'notified', 'duplicate', 'prior-art', 'fix-skipped', 'reproduced', 'bisected', 'guard', 'verified', 'pr', 'fix-proposed', 'fix-failed', 'reviewed', 'resolved', 'documented', 'doc-failed', 'docs-merged', 'failed']);
+const LANE = new Set(['picked', 'analyzed', 'commented', 'notified', 'fix-notified', 'duplicate', 'prior-art', 'fix-skipped', 'reproduced', 'bisected', 'guard', 'verified', 'pr', 'fix-proposed', 'fix-failed', 'reviewed', 'resolved', 'documented', 'doc-failed', 'docs-merged', 'failed']);
 
 /**
  * @param {object} p
@@ -297,7 +297,7 @@ export function buildGraph({ project, vcsKind, commits, events, prs = [], suiteC
       t.steps.push({
         at: e.at, type: e.type, text: String(e.text ?? '').slice(0, 200), url: e.url ?? null,
         // The owner's Teams message, so the lane can open it as it was sent (or shown, without a webhook).
-        ...(e.type === 'notified' && e.card ? { card: e.card, channel: e.channel ?? null } : {}),
+        ...((e.type === 'notified' || e.type === 'fix-notified') && e.card ? { card: e.card, channel: e.channel ?? null } : {}),
       });
     }
   }

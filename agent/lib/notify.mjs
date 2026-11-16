@@ -64,11 +64,63 @@ export async function notifyOwner({ key, url, title, handoff, confidence, escala
   };
   if (!webhook) return { channel: 'dashboard', card };
 
-  // The mention: the <at> text in the card and the entity that ties it to the person must match exactly.
-  const at = `<at>${handoff.to}</at>`;
   // T5: why this person, where to look, how sure: what the owner asks first.
   const facts = [card.why && { title: 'Why you', value: card.why }, card.where && { title: 'Where', value: card.where }, confidence && { title: 'Confidence', value: String(confidence) }].filter(Boolean);
-  const adaptive = {
+  const body = [
+    { type: 'TextBlock', text: card.title, weight: 'Bolder', size: 'Medium', wrap: true },
+    { type: 'TextBlock', text: handoff.message, wrap: true },
+    ...(facts.length ? [{ type: 'FactSet', spacing: 'Medium', facts }] : []),
+    ...(card.escalate ? [{ type: 'TextBlock', text: `Escalation: ${card.escalate}`, wrap: true, color: 'Attention' }] : []),
+  ];
+  return { ...(await post(webhook, adaptiveCard({ to: handoff.to, upn, body, actions: [{ type: 'Action.OpenUrl', title: 'Open in Jira', url }] }))), card };
+}
+
+/**
+ * T6: the second message, when the fix is ready. The same owner, @mentioned again, with the draft PR, what was checked
+ * and the commit that broke it when the bisect found one. Sent only after a verified draft PR: the fix flow stops
+ * before opening one otherwise.
+ * @param {object} p.checks  the fix's independent checks (fix.mjs): e2e, build, backend
+ * @param {object} [p.bisect]  the bisect's result (bisect.mjs): status 'found' with bad { short, author, ticket }
+ */
+export async function notifyFixReady({ key, url, prUrl, title, to, checks = {}, bisect = null }) {
+  const webhook = String(process.env.TEAMS_WEBHOOK_URL ?? '').trim();
+  const upn = mentionFor(to);
+  const ran = (c) => c && !c.skipped;
+  const tests = [
+    'a new test failed before the fix and passes after it',
+    ran(checks.e2e) && `${checks.e2e.passed} browser tests ${checks.e2e.ok ? 'pass' : 'FAIL'}`,
+    ran(checks.backend) && `${checks.backend.passed ?? 'the'} backend tests ${checks.backend.ok ? 'pass' : 'FAIL'}`,
+    ran(checks.build) && `the build ${checks.build.ok ? 'passes' : 'FAILS'}`,
+  ].filter(Boolean).join('; ');
+  const bad = bisect?.status === 'found' ? bisect.bad : null;
+  const broke = bad ? `${bad.short}${bad.ticket ? ` (${bad.ticket})` : ''}${bad.author ? ` by ${bad.author}` : ''}` : null;
+  const card = {
+    kind: 'fix',
+    to,
+    title: `${key}: fix ready for review`,
+    message: clip(title, 200),
+    url,
+    prUrl,
+    tests,
+    broke,
+    ...(upn && webhook ? { mentioned: true } : {}),
+  };
+  if (!webhook) return { channel: 'dashboard', card };
+  const facts = [{ title: 'Checked', value: tests }, broke && { title: 'Broken by', value: broke }].filter(Boolean);
+  const body = [
+    { type: 'TextBlock', text: card.title, weight: 'Bolder', size: 'Medium', wrap: true, color: 'Good' },
+    { type: 'TextBlock', text: card.message, wrap: true },
+    { type: 'FactSet', spacing: 'Medium', facts },
+    { type: 'TextBlock', text: 'A draft: nothing is merged until a person reviews it.', wrap: true, isSubtle: true, size: 'Small' },
+  ];
+  const actions = [prUrl && { type: 'Action.OpenUrl', title: 'Review the pull request', url: prUrl }, { type: 'Action.OpenUrl', title: 'Open in Jira', url }].filter(Boolean);
+  return { ...(await post(webhook, adaptiveCard({ to, upn, body, actions }))), card };
+}
+
+/** An Adaptive Card for a person, @mentioned when they have a Teams account: the <at> text and its entity must match. */
+function adaptiveCard({ to, upn, body, actions }) {
+  const at = `<at>${to}</at>`;
+  return {
     type: 'message',
     attachments: [
       {
@@ -77,28 +129,25 @@ export async function notifyOwner({ key, url, title, handoff, confidence, escala
           $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
           type: 'AdaptiveCard',
           version: '1.4',
-          body: [
-            { type: 'TextBlock', text: `For ${upn ? at : handoff.to}`, weight: 'Bolder', size: 'Small', color: 'Accent' },
-            { type: 'TextBlock', text: card.title, weight: 'Bolder', size: 'Medium', wrap: true },
-            { type: 'TextBlock', text: handoff.message, wrap: true },
-            ...(facts.length ? [{ type: 'FactSet', spacing: 'Medium', facts }] : []),
-            ...(card.escalate ? [{ type: 'TextBlock', text: `Escalation: ${card.escalate}`, wrap: true, color: 'Attention' }] : []),
-          ],
-          actions: [{ type: 'Action.OpenUrl', title: 'Open in Jira', url }],
-          ...(upn ? { msteams: { entities: [{ type: 'mention', text: at, mentioned: { id: upn, name: handoff.to } }] } } : {}),
+          body: [{ type: 'TextBlock', text: `For ${upn ? at : to}`, weight: 'Bolder', size: 'Small', color: 'Accent' }, ...body],
+          actions,
+          ...(upn ? { msteams: { entities: [{ type: 'mention', text: at, mentioned: { id: upn, name: to } }] } } : {}),
         },
       },
     ],
   };
-  // A channel that does not answer must not stop the ticket: the message is still shown on the dashboard, with why.
+}
+
+/** Posts a card. A channel that does not answer must not stop the ticket: the caller shows it on the dashboard, with why. */
+async function post(webhook, adaptive) {
   try {
     const res = await fetch(webhook, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(adaptive), signal: AbortSignal.timeout(15_000) });
     if (!res.ok) {
       const said = (await res.text().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 160);
-      return { channel: 'failed', card, status: res.status, error: `Teams webhook -> ${res.status}${said ? ` ${said}` : ''}` };
+      return { channel: 'failed', status: res.status, error: `Teams webhook -> ${res.status}${said ? ` ${said}` : ''}` };
     }
-    return { channel: 'teams', card, status: res.status };
+    return { channel: 'teams', status: res.status };
   } catch (e) {
-    return { channel: 'failed', card, status: null, error: `Teams webhook: ${e.name === 'TimeoutError' ? 'no answer in 15 s' : e.message}` };
+    return { channel: 'failed', status: null, error: `Teams webhook: ${e.name === 'TimeoutError' ? 'no answer in 15 s' : e.message}` };
   }
 }

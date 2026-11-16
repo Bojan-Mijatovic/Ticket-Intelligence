@@ -137,10 +137,11 @@ It only warns about System 1 and a running training. Then the private laptop goe
 | 0:30 | Runs `node demo/pilot.mjs report --case late-today`, then opens the new ticket in Jira | a nurse's report, priority High: a patient's name, fiscal code, birth date and phone | "This is what support gets. Nobody assigns it, nobody starts anything." |
 | 0:45 | Dashboard: types the key in **Run ticket** (skips the one-minute wait for edits) | the ticket queued, then analyzing; the patient's identifiers masked | "The patient's data never reaches the model." |
 | ~2:00 | Waits | the analysis: cause, the breaking commit and its story, owner Tommaso Bruno, high confidence | "It found which change broke it, and who made it." |
-| ~2:00 | Turns to the private laptop or the phone | the card in `support-triage`: **For @Tommaso Bruno**, the handoff, **Open in Jira**; Tommaso's phone rings | "Tommaso knows, with the context, about a minute after the report. Nobody forwarded anything." |
+| ~2:00 | Turns to the private laptop or the phone | the card in `support-triage`: **For @Tommaso Bruno**, the handoff, then **Why you** (his own commit), **Where** (file and line), **Confidence**, and **Open in Jira**; Tommaso's phone rings | "Tommaso knows, with the context and why it is him, about a minute after the report. Nobody forwarded anything." |
 | ~2:30 | Dashboard | the bisect confirms the commit in seconds | "Not a guess: it replayed the history with the test." |
 | ~4:00–6:00 | Dashboard | the reproduction test red on the current code, then the fix green, before and after screenshots, a draft PR | "And a tested fix, waiting for a person." |
-| ~6:30 | Opens the PR on GitHub | two commits (failing test, then fix), the diff, the verification table | "Merging is always a human decision." |
+| right after | The private laptop or the phone | a second card: **fix ready for review**, what was checked, **Broken by** the commit, **Review the pull request**; the phone rings again | "The same person, the same channel: now with the fix to review." |
+| ~6:30 | Opens the PR from the card's button | two commits (failing test, then fix), the diff, the verification table | "Merging is always a human decision." |
 | 7:00 | Questions | | |
 
 The pilot's tickets so far: analysis in about a minute, the Teams message right after it (61–74 s from pick to message, measured 2026-11-16), and the draft PR about 4 minutes after the ticket (VAX-13: 259 s).

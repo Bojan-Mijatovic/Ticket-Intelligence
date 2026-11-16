@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { bisectJira } from './bisect.mjs';
 import { reproduceAndFix } from './fix.mjs';
 import { analysisCheckout, createWorkspace, startDevServer } from './workspace.mjs';
-import { notifyOwner } from './notify.mjs';
+import { notifyFixReady, notifyOwner } from './notify.mjs';
 import { publishFix } from './publish.mjs';
 import { compare as compareSystem1, describeCompare, triageComment } from './system1.mjs';
 
@@ -174,6 +174,13 @@ async function maybeFix({ issue, result, cfg, policy, jira, events, repoDir, sta
     const { ws: _ws, ...saved } = fix;
     writeFileSync(join(stateDir, 'work', key, 'fix.json'), JSON.stringify({ ...saved, prUrl: pub.prUrl, at: new Date().toISOString() }, null, 2));
     events.emit('fix-proposed', { key, text: `draft PR ready: ${fix.title}`, url: pub.prUrl, checks: fix.checks, files: fix.fix.files, meta: fix.meta });
+    // T6: the owner hears that the fix is ready, in the same channel as the first message. Never throws (notify.mjs).
+    if (pub.prUrl && policy.actions.notifyFixReady === 'auto' && isPersonName(result.handoff?.to)) {
+      const to = result.handoff.to;
+      const n = await notifyFixReady({ key, url: jira.browseUrl(key), prUrl: pub.prUrl, title: fix.title, to, checks: fix.checks, bisect: fix.bisect });
+      const text = n.channel === 'teams' ? `Teams message to ${to}: fix ready for review` : n.channel === 'failed' ? `Teams message to ${to} not posted (${n.error}); shown on the dashboard only` : `Teams (simulated) message to ${to}: fix ready for review`;
+      events.emit('fix-notified', { key, text, card: n.card, channel: n.channel, ...(n.error ? { error: n.error } : {}) });
+    }
     return Boolean(pub.prUrl);
   } catch (e) {
     events.emit('fix-failed', { key, text: `${e.stage ? `${e.stage}: ` : ''}${e.message}`, checks: e.checks });
