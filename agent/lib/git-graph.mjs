@@ -34,6 +34,16 @@ export function keysIn(text, prefixes) {
   return [...new Set((String(text ?? '').match(re) ?? []).map((k) => k.toUpperCase()))];
 }
 
+/**
+ * What a commit message says about each ticket it mentions: the line that starts with the key ("DEM-32: Test …", as
+ * in a knowledge refresh), else the first line that names it, shortened. Key → line.
+ */
+export function mentionLines(message, keys) {
+  const lines = String(message ?? '').split(/\r?\n/).map((l) => l.trim().replace(/^[-*•]\s+/, '')).filter(Boolean);
+  const names = (k) => new RegExp(`\\b${k}\\b`, 'i');
+  return Object.fromEntries(keys.map((k) => [k, (lines.find((l) => l.toUpperCase().startsWith(`${k}:`)) ?? lines.find((l) => names(k).test(l)) ?? '').slice(0, 200)]));
+}
+
 /** The key a commit subject starts with ("DEM-5: …", "[DEM-5] …"), or null. */
 export function leadKey(subject, prefixes) {
   if (!prefixes.length) return null;
@@ -191,6 +201,8 @@ export function buildGraph({ project, vcsKind, commits, events, prs = [], suiteC
   const nodes = commits.map((c) => {
     const lead = leadKey(c.subject, prefixes);
     const docsOnly = c.files.length > 0 && c.files.every((f) => f.startsWith(docsDir));
+    const message = `${c.subject}\n${c.body ?? ''}`;
+    const mentions = keysIn(message, prefixes).filter((k) => k !== lead);
     return {
       id: c.hash,
       short: c.short ?? String(c.hash).slice(0, 8),
@@ -203,7 +215,8 @@ export function buildGraph({ project, vcsKind, commits, events, prs = [], suiteC
       ticket: lead,
       kind: lead ? (docsOnly ? 'docs' : 'change') : null, // change: the ticket's code change (for a bug, its fix)
       pr: prOfCommit(c.subject),
-      mentions: keysIn(`${c.subject}\n${c.body ?? ''}`, prefixes).filter((k) => k !== lead),
+      mentions,
+      mentionLines: mentionLines(message, mentions),
     };
   });
   const commitOfPr = new Map(nodes.filter((c) => c.pr).map((c) => [c.pr, c]));
@@ -280,7 +293,13 @@ export function buildGraph({ project, vcsKind, commits, events, prs = [], suiteC
       const b = e.bisect;
       t.bisects.push({ at: e.at, status: b.status, culprit: b.culprit?.short ?? null, culpritTicket: b.culprit?.ticket ?? null, steps: (b.steps ?? []).length, durationMs: b.durationMs ?? null });
     }
-    if (LANE.has(e.type)) t.steps.push({ at: e.at, type: e.type, text: String(e.text ?? '').slice(0, 200), url: e.url ?? null });
+    if (LANE.has(e.type)) {
+      t.steps.push({
+        at: e.at, type: e.type, text: String(e.text ?? '').slice(0, 200), url: e.url ?? null,
+        // The owner's Teams message, so the lane can open it as it was sent (or shown, without a webhook).
+        ...(e.type === 'notified' && e.card ? { card: e.card, channel: e.channel ?? null } : {}),
+      });
+    }
   }
   for (const t of byKey.values()) t.steps.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 

@@ -3,11 +3,17 @@
 //
 //   node demo/get-tools.mjs              JDK 21 (Temurin), Maven 3.9.9, Subversion 1.14.5 command line (Windows)
 //   node demo/get-tools.mjs --only jdk,maven
+//   node demo/get-tools.mjs --only uv,laya   the System 1 model (docs/SYSTEM1_PLAN.md): about 1.5 GB, only when named
 //   node demo/get-tools.mjs --dir other/folder
 //
 // Every download is checked: the JDK against the SHA-256 published by Adoptium, Maven against the SHA-512 published
-// by Apache, Subversion against the SHA-256 pinned below (VisualSVN publishes none). Java and Maven are only needed
-// for the MediAgenda backend; Subversion only for the SVN variant of the demo (on Linux/macOS use the system svn).
+// by Apache, Subversion against the SHA-256 pinned below (VisualSVN publishes none), uv against the SHA-256 published
+// with its release. Java and Maven are only needed for the MediAgenda backend; Subversion only for the SVN variant of
+// the demo (on Linux/macOS use the system svn).
+//
+// laya: uv installs its own Python into tools/python and the laya package into tools/laya-env, resolved as of
+// LAYA.asOf (packages published later are ignored: the package moves fast, and a two-week-old set is the one checked);
+// the multilingual checkpoint goes into tools/hf at a pinned revision of the model repository.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -26,9 +32,37 @@ const win = process.platform === 'win32';
 const JDK = 'jdk-21.0.13+9';
 const MAVEN = '3.9.9';
 const SVN = { version: '1.14.5', sha256: '23d393431b0aeec67490669b7d3b4a1a83332fdc184055fef48ea9123eaf7e0a' };
+const UV = '0.13.5';
+const LAYA = {
+  version: '0.4.18',
+  python: '3.12',
+  asOf: '2026-10-31T00:00:00Z',
+  model: 'convaiinnovations/laya',
+  // 2026-10-03; the multilingual weights are unchanged since 2026-09-19, later commits only edit the model card.
+  revision: '7b928d828b7b0e022f929d9bd2e44165aa270148',
+};
 
 const os = { win32: 'windows', linux: 'linux', darwin: 'mac' }[process.platform];
 const arch = { x64: 'x64', arm64: 'aarch64' }[process.arch];
+const uvTarget = `${{ x64: 'x86_64', arm64: 'aarch64' }[process.arch]}-${{ win32: 'pc-windows-msvc', linux: 'unknown-linux-gnu', darwin: 'apple-darwin' }[process.platform]}`;
+
+/** uv.exe at the root of tools/uv (Windows zip), or inside its target folder (tar.gz elsewhere). */
+function uvBin(dir) {
+  const flat = join(dir, 'uv', win ? 'uv.exe' : 'uv');
+  return existsSync(flat) ? flat : join(dir, 'uv', `uv-${uvTarget}`, 'uv');
+}
+/** The Python of the laya environment. */
+function layaPython(dir) {
+  return join(dir, 'laya-env', win ? join('Scripts', 'python.exe') : join('bin', 'python'));
+}
+/** uv and the model downloads keep everything inside tools/: the Python, uv's cache, the Hugging Face cache. */
+function layaEnv(dir) {
+  // UV_PYTHON_BIN_DIR: uv would otherwise put a python3.12.exe into ~/.local/bin, outside tools/.
+  return { UV_PYTHON_INSTALL_DIR: join(dir, 'python'), UV_PYTHON_BIN_DIR: join(dir, 'python', 'bin'), UV_PYTHON_PREFERENCE: 'only-managed', UV_CACHE_DIR: join(dir, 'uv-cache'), HF_HOME: join(dir, 'hf'), HF_HUB_DISABLE_TELEMETRY: '1', USE_TF: '0' };
+}
+function run(bin, binArgs, env = {}) {
+  execFileSync(bin, binArgs, { stdio: 'inherit', env: { ...process.env, ...env } });
+}
 
 const TOOLS = [
   {
@@ -64,6 +98,36 @@ const TOOLS = [
     },
     check: (dir) => [join(dir, 'svn', 'bin', 'svn.exe'), ['--version', '--quiet']],
   },
+  {
+    name: 'uv',
+    folder: 'uv',
+    optional: true,
+    extractInto: 'uv',
+    async source() {
+      const name = `uv-${uvTarget}.${win ? 'zip' : 'tar.gz'}`;
+      const url = `https://github.com/astral-sh/uv/releases/download/${UV}/${name}`;
+      const sha256 = curlText(`${url}.sha256`).trim().split(/\s+/)[0];
+      return { url, name, hash: ['sha256', sha256] };
+    },
+    check: (dir) => [uvBin(dir), ['--version']],
+  },
+  {
+    name: 'laya',
+    folder: 'laya-env',
+    optional: true,
+    install(dir) {
+      const uv = uvBin(dir);
+      if (!existsSync(uv)) throw new Error('uv is missing: run with --only uv,laya');
+      const env = layaEnv(dir);
+      run(uv, ['python', 'install', LAYA.python], env);
+      run(uv, ['venv', join(dir, 'laya-env'), '--python', LAYA.python], env);
+      run(uv, ['pip', 'install', '--python', layaPython(dir), '--exclude-newer', LAYA.asOf, `laya[serve]==${LAYA.version}`], env);
+      // Only the multilingual checkpoint and the model card, at the pinned revision: no Python files of the model repository.
+      const fetch = `from huggingface_hub import snapshot_download; print(snapshot_download(${JSON.stringify(LAYA.model)}, revision=${JSON.stringify(LAYA.revision)}, allow_patterns=["multilingual/*", "README.md"]))`;
+      run(layaPython(dir), ['-c', fetch], env);
+    },
+    check: (dir) => [layaPython(dir), ['-c', 'from importlib.metadata import version as v; import torch; print("laya", v("laya"), "· torch", torch.__version__, "· cpu threads", torch.get_num_threads())'], layaEnv(dir)],
+  },
 ];
 
 // curl (built into Windows 10+, Linux and macOS) instead of fetch: Node's fetch times out on some hosts here
@@ -81,13 +145,25 @@ function digest(file, algorithm) {
 
 mkdirSync(DIR, { recursive: true });
 let failed = false;
-for (const tool of TOOLS.filter((t) => !ONLY || ONLY.includes(t.name))) {
+// An optional tool (the System 1 model) is fetched only when --only names it.
+const wanted = (t) => (ONLY ? ONLY.includes(t.name) : !t.optional);
+for (const tool of TOOLS.filter(wanted)) {
   if (tool.windowsOnly && !win) {
     console.log(`- ${tool.name}: skipped (Windows only; use the system package)`);
     continue;
   }
   if (existsSync(join(DIR, tool.folder))) {
     console.log(`- ${tool.name}: already in ${join(DIR, tool.folder)}`);
+    continue;
+  }
+  if (tool.install) {
+    try {
+      console.log(`- ${tool.name}: installing …`);
+      tool.install(DIR);
+    } catch (e) {
+      failed = true;
+      console.error(`  ${tool.name} FAILED: ${e.message}`);
+    }
     continue;
   }
   const tmp = mkdtempSync(join(tmpdir(), `get-tools-${tool.name}-`));
@@ -107,20 +183,25 @@ for (const tool of TOOLS.filter((t) => !ONLY || ONLY.includes(t.name))) {
     }
     const target = tool.extractInto ? join(DIR, tool.extractInto) : DIR;
     mkdirSync(target, { recursive: true });
-    // tar (bsdtar) extracts zip and tar.gz on Windows 10+, Linux and macOS.
-    execFileSync('tar', ['-xf', file, '-C', target], { stdio: 'inherit' });
+    // tar (bsdtar) extracts zip and tar.gz on Windows 10+, Linux and macOS. On Windows the system one by its path: from
+    // Git Bash, `tar` is GNU tar, which reads "C:\…" as a remote host and cannot open a zip.
+    const tar = win ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
+    execFileSync(tar, ['-xf', file, '-C', target], { stdio: 'inherit' });
     if (!existsSync(join(DIR, tool.folder))) throw new Error(`after extracting, ${tool.folder} is missing in ${DIR} (found: ${readdirSync(DIR).join(', ')})`);
     console.log(`  extracted to ${join(DIR, tool.folder)}`);
   } catch (e) {
     failed = true;
     console.error(`  ${tool.name} FAILED: ${e.message}`);
+    // An empty folder left by a failed extract would make the next run skip the tool as "already there".
+    const target = tool.extractInto ? join(DIR, tool.extractInto) : null;
+    if (target && existsSync(target) && !readdirSync(target).length) rmSync(target, { recursive: true });
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
 }
 
 // Each tool must start.
-for (const tool of TOOLS.filter((t) => (!ONLY || ONLY.includes(t.name)) && !(t.windowsOnly && !win))) {
+for (const tool of TOOLS.filter((t) => wanted(t) && !(t.windowsOnly && !win))) {
   const [bin, binArgs, env = {}] = tool.check(DIR);
   // java -version prints to stderr: take whichever output has text.
   const r = spawnSync(win && bin.endsWith('.cmd') ? `"${bin}"` : bin, binArgs, { encoding: 'utf8', shell: win && bin.endsWith('.cmd'), env: { ...process.env, ...env } });

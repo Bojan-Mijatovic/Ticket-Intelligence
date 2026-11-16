@@ -3,6 +3,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { killTree } from './proc.mjs';
 
 let nextPort = 4310;
 
@@ -13,7 +14,7 @@ function run(cmd, args, { cwd, env = {}, timeoutMs = 600_000 }) {
     let out = '';
     child.stdout.on('data', (d) => (out += d));
     child.stderr.on('data', (d) => (out += d));
-    const timer = setTimeout(() => child.kill(), timeoutMs);
+    const timer = setTimeout(() => killTree(child), timeoutMs); // mvn/npx run under a shell on Windows
     child.on('close', (code) => {
       clearTimeout(timer);
       resolvePromise({ code, out, durationMs: Date.now() - started });

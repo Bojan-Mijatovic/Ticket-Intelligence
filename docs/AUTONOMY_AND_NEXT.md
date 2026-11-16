@@ -76,7 +76,7 @@ An app is something people open. A system works without being opened, learns fro
 
 | Principle | Today | Gap |
 |---|---|---|
-| **Works where people work** (Jira, GitHub, Teams), without being opened | Jira comments, GitHub reviews, Teams notices (simulated without a webhook) | approvals, Ask and digests live only on the dashboard; no Teams webhook configured |
+| **Works where people work** (Jira, GitHub, Teams), without being opened | Jira comments, GitHub reviews, Teams notices (simulated without a webhook) | approvals, Ask and digests live only on the dashboard; Teams notices reach a real channel (checked 2026-11-16 on a test tenant, G1b); the team's own channel still needs its webhook, created by a person there |
 | **Learns from every outcome** | knowledge base grows on every Done; Ask 👎 becomes a gap | the agent never learns whether its **analysis was right**: the final fix, a reopened ticket, a rejected PR are not compared with what it said |
 | **Autonomy earned by measurement** | `policy.json` levels, set by hand | no per-action accuracy; nothing proposes "this action has been right 30 times, make it auto" |
 | **Knowledge compounds** | 46/46 bugs documented, read by analysis, fix, review and Ask | only bugs; nothing on "how this component works"; an entry is not tied to the test that proves it still holds |
@@ -152,6 +152,7 @@ One plan for this document and [GIT_GRAPH.md](GIT_GRAPH.md) (GG0, G1–G3, A1–
 |---|---|---|---|---|
 | 1 | **AI1** continuous evaluation + **GG0** graph model (git and SVN) | everything else (G1, WF5, AG2, AI2) needs its numbers and its edges; no new AI cost | 2 d | **done 2026-11-13**: `agent/accuracy.mjs`, `GET /api/accuracy`, one snapshot a day (FR-68, FR-69); the dashboard panel comes with step 2 |
 | 2 | **G1** ticket lanes (developer mode) + the accuracy panel | the picture the CTO asked for; developers every day | 1.5 d | **done 2026-11-13**: the dashboard's **Graph** tab (FR-70); seen in light, dark and at phone width |
+| 2b | **G1b** links out of the lanes: Jira on every key (J1), the tickets a commit's message names (J2, J3), the owner's Teams message in the lane (T1), and a real Teams channel ready except its webhook (T2) | the lanes showed what happened but led nowhere: no Jira, no Teams, and a knowledge refresh naming 14 tickets showed none | 1 d | **done 2026-11-16** (FR-85, FR-37): seen on MediAgenda (#31 lists its 14 tickets; DEM-32's view shows the 6 commits that mention it), in light, dark and at phone width. **Teams checked against a real channel** the same day (a test Microsoft 365 tenant: DEM-46's owner message arrived 61 s after the ticket was picked); the team's own channel needs its webhook ([agent/README.md](../agent/README.md#notifications)). J4 (links written into Jira) and T3 (links into Teams, Microsoft Graph) are in step 13 |
 | 3 | **AI1b** replay on resolved history: the analysis of a resolved ticket as it was reported, on the code before its fix, compared with the real fix | the demo has no person-made fixes of analyzed tickets to compare with; history has 45. Gives a baseline now and on the pilot project on day one | 1 d | **done 2026-11-13** (FR-71): 45/45 files, owner 37/45, $9.31 (approved; a trial on 3 tickets first, and a no-AI leak check of the frozen code and Jira) |
 | 4 | **WF5** Impact: the management week (what the agent did, accuracy, cost per ticket, time saved against the team's baseline) | management looks weekly; built on the records of step 1 | 1 d | **done 2026-11-13**: the dashboard's **Impact** tab and `agent/impact.mjs` (FR-72), with the ROADMAP defaults as the team's baseline ("only a demo"). Suite, 2 weeks of data: 31 tickets analysed, 5 fixes merged, 48 tickets documented, $20.75, about 66 hours saved by the estimate |
 | 5 | **KB1** entry ↔ regression test | executable knowledge; run as a command until the night shift exists | 1 d | **done 2026-11-13** (FR-73): a **Test** line in every entry, written by code; `agent/knowledge-tests.mjs` runs the tests on main. 25 of 48 entries have tests, all pass; proven to catch LAB-8 coming back. The four PRs that add the line to the existing entries (MediAgenda #31, MediLab #7, MediFarma #4, MediBill #3) are merged; the lint is clean on all four `main`s |
@@ -162,16 +163,18 @@ One plan for this document and [GIT_GRAPH.md](GIT_GRAPH.md) (GG0, G1–G3, A1–
 | 10 | **AG2** trust ladder | autonomy by evidence; needs 1 and 9 | 1 d | |
 | 11 | **WF1** intake check | fewer low-confidence analyses; cheap model | 1 d | |
 | 12 | **KG1** + **KG2** gaps from all signals, researcher agent | knowledge grows where it is missing | 2 d | |
-| 13 | G2 bug lineage, G3 relationship graph (KB3), A4 branch care, A5 port fixes, A6 releases, A7 orphan commits, KB2, WF4, AI2–AI4, AG3 | after the above shows where it pays | ~10 d | |
+| 13 | G2 bug lineage, G3 relationship graph (KB3), A4 branch care, A5 port fixes, A6 releases, A7 orphan commits, J4 links written into Jira, T3 links into Teams (with WF2), KB2, WF4, AI2–AI4, AG3 | after the above shows where it pays | ~11.5 d | |
 
-About **25 working days** without the deferred items, in three blocks: **measure and show** (1–4), **act on the code** (5–8), **earn autonomy and grow** (9–13).
+About **27.5 working days** without the deferred items (25 before G1b, J4 and T3 were added on 2026-11-16), in three blocks: **measure and show** (1–4), **act on the code** (5–8), **earn autonomy and grow** (9–13).
 
 **Deferred, kept in the plan** (decided 2026-11-13, to keep the scope narrow for now): **WF2** Teams front door (ROADMAP #1, approval from Teams; 2 d + IT) and **WF3** night shift + morning digest (ROADMAP #3; 1.5 d). Until WF3 exists, the checks it would run (K7 refresh, lint, redaction audit, KB1 tests, AI1 accuracy) stay commands a person runs. They come back when the pilot project (section 6) gives them real tickets.
+
+**Proposal (2026-11-13): one local model for the small decisions.** K8, K18, WF1, AI3 and A7 each call for "a small model" to give a verdict or a classification, and AG3 for a queue with priorities. [SYSTEM1_PLAN.md](SYSTEM1_PLAN.md) proposes one local Jev-type model for all of them. It answers in about two seconds, with no cost per call and nothing sent out, in front of the Claude analysis.
 
 ## 6. What needs a decision
 
 1. **The pilot project** (no patient data, as R-02 allows): AI1 and the night shift need real tickets to mean something. *Started 2026-11-13 as a demo pilot ([PILOT.md](PILOT.md)): MediVax, a fifth app with synthetic patients, gets two changes with a hidden bug and two bug reports every working day, scored against an answer key. A real project is still needed for the bugs we did not design.*
-2. **A Teams webhook now, a Teams bot later** (WF2, WF3 digest): not needed while both are deferred.
+2. **A Teams webhook now, a Teams bot later** (WF2, WF3 digest). *Webhook: decided 2026-11-16, built (G1b) and checked the same day against a test tenant's channel; the team's own channel needs its owner to create the webhook (about 10 minutes). The bot (WF2, T3) stays deferred: it needs an app registered in Azure by IT.*
 3. **The thresholds of the trust ladder** (AG2): how many runs, which acceptance rate, per action.
 4. **The night-shift budget** (AI3, WF3): not needed while WF3 is deferred; a daily budget per action (AI3) still is.
 5. **R-02**: DPO approval and the AI service ([REDACTION.md](REDACTION.md)). *The pilot does without it: its patients are synthetic (fiscal codes fail the official check by construction). It measures the masking on every ticket, which is the evidence for the DPO. Real patient data still needs the approval.*

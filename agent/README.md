@@ -70,7 +70,111 @@ The command-line tools take the project from the ticket key (`LAB-7` → MediLab
 | `node agent/impact.mjs` | the management week for the whole suite: what the agent did, cost, hours saved, what waits (`--weeks 4`, `--json`) | no |
 | `node agent/replay.mjs --project DEM` | replay resolved bugs a person fixed as they came in, and compare with the real fix (dry run; `--yes`, `--limit`, `--only`, `--max-cost`) | no |
 | `node agent/mail-test.mjs` / `DEM-7` / `DEM-7 --dry-run` | send a test email, or the "analysis ready" email of a saved analysis, to `MAIL_TO` | no |
+| `node agent/system1-data.mjs` | System 1: the training and test data for the local decision model (see [System 1](#system-1-the-local-decision-model)) | no |
 | `node --test agent/test` | unit tests of the agent's plain-code parts | no |
+
+## System 1: the local decision model
+
+Every picked ticket is also read by a small model that runs on this machine. It is a fine-tuned [Laya](https://huggingface.co/convaiinnovations/laya), a multilingual encoder that does not write text: for each question it picks one of our options and gives a probability. It answers in a few seconds (1–2 s for four questions, 5–7 s with the known-issue question under load), while the Claude analysis takes about a minute. The plan, the measurements and the reasons are in [docs/SYSTEM1_PLAN.md](../docs/SYSTEM1_PLAN.md).
+
+**Shadow (J1).** With `policy.json` → `system1.intake: "shadow"`, the model is asked these questions for every ticket the watcher picks:
+
+| Question | Options |
+|---|---|
+| type | bug in code, change request, new requirement, system support, data recovery or fix, user question, unclear |
+| side | frontend, backend, both, not code |
+| component | the project's `insights.components` |
+| urgency | urgent, normal, low |
+| needs code? | needs code, no code change |
+| known issue | the project's known-issue entries on main (`docs/knowledge`), or none of these |
+| privacy | names a person, no person; asked on the text with every name masked, the team's too |
+| what the report tells (J7) | four two-option questions: what was done, what is wrong, where (screen or function), where/when/which record |
+
+Only the questions the checkpoint was trained on are asked (its `questions.json`): `ft-1` knew four, `ft-2` the first seven, J7's four come with the next fine-tune.
+
+The model is asked when a ticket is queued. The watcher waits for its answer, at most `waitSeconds` (12), before the analysis starts, so the answers are on the ticket card (**⚡ System 1**) first, as the event `system1`. When the analysis is done, `system1-compared` puts ✓ or ⚠ next to each answer:
+
+- *side* and *component* are compared with the files the analysis names (the component by the `insights.components` rules). A side of "not code" is not compared, because the analysis names files even for a how-to question;
+- *urgency* is compared with the Jira priority.
+
+The KPI **System 1 agreed** counts the side and component matches.
+
+**What the answers can do**, each switched in `policy.json` → `system1`:
+
+| Step | Setting | What happens |
+|---|---|---|
+| Light path (J2) | `lightPath`: `shadow` (default) · `draft` · `auto` | a ticket whose type, side and code answers all say "no change in the code" (each ≥ `lightPathThreshold`), and that System 1 would not ask the reporter about (J7: a text that does not tell what is wrong cannot tell that no code is wrong). `shadow`: the card says *would take the light path*. `draft`: the ticket waits (label `ai-held`) and the card offers **➜ Light path** or **Analyze anyway**. `auto`: no Claude analysis, an internal comment saying what it was recognised as, the label `ai-triaged`, no owner notice. **Run again** always gives the full analysis |
+| Queue order (J3) | `queueOrder`: `shadow` (default) · `auto` · `off` | tickets to analyze by System 1's urgency, then age; never ahead of a review, a guard, a documentation or a test job. `shadow` only emits `system1-queue` |
+| Known issue (J4) | `knownThreshold` (0.5), `knownTest`: `auto` (default) · `off` | the card names the known issue. When its entry has a regression test (KB1), that test runs on main as the next job (`knowledge-tests.mjs --only`), and the card says **its test passes** or **FAILS on main: may be back** |
+| Ask (J5) | `askRouter`: `auto` (default) · `shadow` · `off`, `askIntentThreshold` (0.6), `askComponentThreshold` (0.7) | an Ask question read as "who knows / worked on X" or "the latest tickets" is answered from the Insights data in about a second, with no Claude call, and an **Ask Claude instead** button. A "who" question needs the component at 0.7 or more, otherwise Claude answers: at 0.4, `ft-2` named the wrong component for 8 of 48 test questions |
+| Ask the reporter (J7) | `askReporter`: `shadow` (default) · `draft` · `off`, `askReporterThreshold` (0.6), `askReporterHold` (false) | a report about code, or an unclear one, that does not tell what is wrong or where. `shadow`: the card says *would ask the reporter*; `draft`: a question for what is missing, from a template in the report's language, waits in **Drafts** for a person to send as a Jira comment (it asks for a request number, never a patient's name). With `askReporterHold`, the analysis waits (label `ai-held`) until **Analyze now**. Missing steps or environment alone never ask: most good bug reports leave them out |
+| Privacy (J6) | `privacy`: `shadow` (default) · `auto` · `off`, `privacyThreshold` (0.7) | a text that still names a person after the masking: `shadow` says *would hold*; `auto` holds the ticket (label `ai-held`) until a person releases it, so nothing reaches a cloud model. Keep `shadow` until a checkpoint's `privacy/real` score (real tickets, `eval.py`) holds almost none of them for nothing: `ft-2` would hold 46 of 185 |
+
+**Never in the way.**
+
+- The watcher waits for the model at most `waitSeconds`.
+- The comparison is made in the background.
+- A failed call is retried once.
+- A model that is missing, slow (`timeoutSeconds`) or down gives no answer, and the ticket goes on as before.
+- The ticket text it reads is masked (R-02), as for every model, and it never leaves the machine.
+
+**The server.** `agent/system1/server.py` (Python standard library, about 80 lines) holds one checkpoint:
+
+- it answers on **127.0.0.1 only**, with the Hugging Face hub offline;
+- the watcher starts it and stops it when it exits;
+- a server of an earlier watcher with the same checkpoint is reused, which saves the 10–25 s load;
+- its log is `state/system1/server.log`.
+
+It is not `laya-serve`, because that one listens on every network interface by default and routes between checkpoints by language.
+
+**Set up once, then train.**
+
+```
+node demo/get-tools.mjs --only uv,laya            # Python 3.12, laya 0.4.18, PyTorch (CPU) and the base model into tools/ (~1.5 GB)
+node agent/system1-train.mjs                      # data → fine-tune → evaluate the new and the current checkpoint → accept or keep
+node agent/system1-train.mjs --eval-only ft-2     # score an existing checkpoint against the current one
+node agent/system1-train.mjs --eval-only ft-2 --reuse   # judge again from the saved eval-*.json
+node agent/system1-train.mjs --eval-only ft-2 --rescore # the same, scored again from the saved answers (a rule of eval.py changed)
+node agent/system1-train.mjs --eval-only ft-4 --test agent/state/system1/test-clean.jsonl   # on other held-out rows
+node agent/system1-train.mjs --nightly            # as the scheduled task runs it: no training when the data has not changed
+powershell -NoProfile -File agent/system1/schedule.ps1 -Register   # the nightly fine-tune at 01:00 (-Unregister removes it)
+```
+
+While a fine-tune runs, Windows does not go to sleep when idle (`system1/keep-awake.ps1`). Closing the lid still follows the power settings. An accepted checkpoint is loaded by the running watcher at once (`POST /api/system1/reload`), or by the next start.
+
+**System 2 teaches System 1.** Besides Jira, Insights and the files in `demo/system1/`, the data takes every other ticket with a saved Claude analysis (`state/projects/<KEY>/results`):
+
+- side and component from the files the analysis names (when its confidence is not low);
+- the known issue from its "Already known?";
+- type and urgency from Jira.
+
+The pilot's tickets come in this way, one more example with every analysis. The split is by a hash of each row, so a row keeps its side when rows are added. Otherwise the current checkpoint would be tested on rows it was trained on.
+
+`system1-train.mjs` runs `system1-data.mjs` (Jira, Insights and the files in `demo/system1/`), then `laya-train` on the CPU from the base model: 4 epochs, options shuffled, soft cross-entropy, temperature fitted on a calibration share. `ft-2` (1,049 training items) took **3 hours** on this laptop. Then `system1/eval.py` scores the new and the current checkpoint on the same held-out rows:
+
+- the accuracy and calibration error per question;
+- the known issue per source;
+- the privacy misses;
+- the component of Ask questions apart;
+- whether the agent would ask the reporter (J7), against the hand labels;
+- the light path simulated under four rules and at four thresholds: how many tickets that are not about code it catches, and which tickets about code it would skip by mistake. A ticket it would ask the reporter about never takes it, as in the watcher.
+
+**The new checkpoint replaces the current one** (`state/system1/models/current.json`) only when all three hold:
+
+- no ticket about code takes the light path under the policy's rule;
+- no question is worse by more than one held-out item (or 1 point, the larger);
+- the privacy question misses no more names.
+
+A refused checkpoint stays in `state/system1/models/` for a person to look at.
+
+**Where things are.** `agent.config.json` → `system1` holds `port` (7071), `python`, `hfHome`, `checkpoint`, `timeoutSeconds` (60), `startTimeoutSeconds` and `waitSeconds`. `checkpoint` is used only until `system1-train.mjs` has accepted one: then `state/system1/models/current.json` names it. The data, the models and the results are in `state/system1/`, outside git. `demo/system1/written-tickets.json` holds the written tickets the training needs, because the demo's Jira has only tickets about code. Beside it:
+
+- `known-reworded.json`: known issues in other words;
+- `ask-intents.json` and `ask-components.json`: Ask questions with their intent and component;
+- `privacy-real.json`: real tickets checked by hand for a name the masking left;
+- `completeness.json`: what each demo ticket's report leaves out (J7).
+
+`agent.config.json` → `system1.tour` names the recorded tickets the tour's System 1 chapter shows (J9). Tickets labelled `system1-demo` are the shadow test and are never trained on.
 
 ## Which tickets are picked
 
@@ -82,6 +186,8 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 | `ai-analyzed` | done; **Run again** on the dashboard (or removing the label) has the ticket processed again |
 | `ai-failed` | the analysis failed; see the dashboard; **Run again** (or remove the label) to retry |
 | `ai-fix-proposed` | a draft pull request with a verified fix exists |
+| `ai-triaged` | System 1's light path (`system1.lightPath: auto`, or a person's choice): recognised as not about code, no analysis; **Run again** gives the full one |
+| `ai-held` | System 1 holds the ticket for a person: a light path to confirm (`draft`), a text that may still name a person (`privacy: auto`), or a report waiting for the reporter's answer (`askReporterHold`) |
 | `no-ai` | set by a human: the agent never touches this ticket |
 
 ## Safety
@@ -130,7 +236,14 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 
 ## Notifications
 
-Without configuration, owner notifications are shown on the dashboard as Teams-style cards. To post them to a real Teams channel, create a webhook in the channel (Workflows › "Post to a channel when a webhook request is received") and set `TEAMS_WEBHOOK_URL=` in `~/.claude/skills/analyze-ticket/.env`.
+Without configuration, owner notifications are shown on the dashboard as Teams-style cards ("simulated channel"). To post them to a real Teams channel:
+
+1. In a standard channel: **⋯ › Workflows**, type **webhook** in the search box (the suggestions shown first do not include it) and pick **"Send webhook alerts to a channel"** or, under its older name, **"Post to a channel when a webhook request is received"**. Not the variants "…from specific users" or "…users in my tenant": they want a signed-in caller. Pick the team and the channel, and copy the URL it gives at the end. If the workflow's trigger asks *Who can trigger the flow?*, choose **Anyone**: the agent posts without signing in, and the URL itself is the secret. Without the template: in Power Automate, an instant cloud flow with the trigger *When a Teams webhook request is received* (Anyone) and the action *Post card in a chat or channel* whose card is `triggerBody()?['attachments']?[0]?['content']`.
+2. In `~/.claude/skills/analyze-ticket/.env` (or the repository's git-ignored `.env`, read last; keep the Teams lines in one of the two, since an empty `TEAMS_WEBHOOK_URL=` in the first one wins): `TEAMS_WEBHOOK_URL=<that URL>`. Optional: `TEAMS_CHANNEL_URL=<the channel's link>` (**⋯ › Get link to channel**), which gives the dashboard an **Open in Teams** link on the panel and on each posted message.
+3. `node agent/teams-test.mjs` posts one test message and says what went wrong if it was not accepted (a 401 or 403 means the trigger only accepts signed-in callers; a 404 means a wrong URL or a workflow that is off).
+4. Restart the watcher (`node agent/watcher.mjs --replace`); the Teams panel then says "live channel (webhook)".
+
+The message is an Adaptive Card: for whom, the ticket, the handoff text, an escalation if there is one, and **Open in Jira**. It appears "via Workflows", sent by the account that created the workflow. A channel that refuses the message or does not answer within 15 seconds does not stop the ticket: the card stays on the dashboard with the reason ("not posted"), and the ticket's lane on the Graph tab shows it in red. The dashboard is told only whether the channel is live and its link, never the webhook address.
 
 ### Update emails
 
@@ -298,7 +411,7 @@ One question at a time (`409` otherwise); `askTimeoutSeconds` (default 120) and 
 
 ## Guided tour
 
-**▶ Tour** in the dashboard header presents the whole tool by itself, in English, in about twelve minutes. A cursor moves and clicks, the page scrolls and puts a spotlight on each part, explainer slides open over the page, and a voice explains it all while captions show the text. The caption bar names the chapter:
+**▶ Tour** in the dashboard header presents the whole tool by itself, in English, in about fifteen minutes. A cursor moves and clicks, the page scrolls and puts a spotlight on each part, explainer slides open over the page, and a voice explains it all while captions show the text. The caption bar names the chapter:
 
 | Chapter | What it shows |
 |---|---|
@@ -313,12 +426,13 @@ One question at a time (`409` otherwise); `askTimeoutSeconds` (default 120) and 
 | A new ticket | a suggested ticket opened in the editor: the prepared summary, type, priority and Jira description, the assignee list from Jira with the suggested person, the `no-ai` box, and the confirmation. The cursor stops on **Create in Jira** without clicking it; the editor is closed again |
 | Insights (rest) | risk files, recurring problems, where bugs come from, the knowledge map and people |
 | Ask | a question typed and answered with checked sources, and one that is "not in the knowledge base" |
+| System 1 | the local model in front of Claude (J9): a ticket that is not about code, answered before the analysis and marked for the light path, then what Claude spent on it; a known issue in other words, with its regression test on main; the privacy slide (a name the masking missed, still sent in shadow); a "who knows" question answered live without Claude; the calibration on the Impact tab. Recorded runs of the tickets in `system1.tour`, or the live cards when they are still on the dashboard |
 | How it was built | a slide: the ideas, how it is tested and scored, results, what comes next |
 
 Numbers and names come from the data on the page (tickets, owners, causes, hotspots, counts); a part with no data is skipped.
 
 - **Replays.** When a ticket has been analyzed since the last reset, Case 1 is that ticket. Otherwise the cases are **recorded runs** from the event logs, archived ones included (`/api/tour/replay`): the ticket arrives, the steps stream in, then the analysis, the Teams message, the failing test, the fix, the pull request and the review appear one after the other, sped up, with the real timings. Ask replays **recorded answers** (`/api/tour/asks`): the example question that was asked before, and the newest "not found" one, with the steps rebuilt from the saved run. Every replay says **REPLAY** and its date, lives only in that browser page and is gone when the tour ends. `tourReplay` in `agent.config.json` lists the tickets (`DEM-36`, `FAR-19`); tickets never recorded are left out, and with none the fullest run is chosen.
-- **Read-only.** It never starts an agent run, an Ask question, an app review or a recommendation, and it creates no ticket. Its Ask button press is only shown; nothing is sent. Opening the ticket editor reads the assignable people from Jira, nothing more.
+- **Read-only.** It never starts an agent run, a paid Ask question, an app review or a recommendation, and it creates no ticket. Its Ask button press is only shown; nothing is sent. The one exception is System 1's "who knows" question: it is sent with `fastOnly`, so System 1 and plain code answer it or nothing does, never Claude, at no cost. Opening the ticket editor reads the assignable people from Jira, nothing more.
 - **Voice.** The browser's own speech synthesis: free, no key, nothing leaves the machine. The tour picks a natural English voice when there is one (Edge on Windows has *Aria*, *Jenny* and *Guy Natural*); the voice and speed can be changed in the caption bar, or switched to *captions only*.
 - **Controls.** Back / Pause / Next, or ← space →; Esc ends it. Afterwards the dashboard returns to the tab and project it showed before.
 - **For a presentation** open `http://localhost:7070/?tour`: a *Start the guided tour* button covers the page, because browsers let a page speak only after a click.
@@ -326,15 +440,15 @@ Numbers and names come from the data on the page (tickets, owners, causes, hotsp
 
 ### Presentation
 
-**▶ Present** in the header (or `http://localhost:7070/?present`) wraps the tour in a presentation of about fourteen minutes, in three parts. The caption bar has a button per part, so a click goes straight to the demo or to the conclusion:
+**▶ Present** in the header (or `http://localhost:7070/?present`) wraps the tour in a presentation of about seventeen minutes, in three parts. The caption bar has a button per part, so a click goes straight to the demo or to the conclusion:
 
 | Part | Slides (full screen) | About |
 |---|---|---|
 | **Presentation** | title (presenter and team) · the problem, with an example from the demo data · the goal and its six success metrics · how it works (the flow, row by row) · the AI and the policy · the four demo apps and why the cases are replays · what you will see | 3 min |
-| **Demo** | the tour's dashboard part: the dashboard, case 1, case 2, Insights, a suggested ticket, Ask. The caption bar shows where each step is in the flow: Collect › Analyze › Prove & fix › Learn | 8 min |
+| **Demo** | the tour's dashboard part: the dashboard, case 1, case 2, Insights, a suggested ticket, Ask, System 1. The caption bar shows where each step is in the flow: Collect › Analyze › Prove & fix › Learn | 11 min |
 | **Conclusion** | what you just saw (the flow again, with the cases' real timings) · results against the same six metrics · how it was built and what we learned · technologies · limits and next steps · sources (public documentation and the project's documents) · thank you, with a contact | 2.5 min |
 
-After *Thank you* it stays on that slide. **→** then shows backup slides for questions (patient data, what if it is wrong, cost, Copilot and SVN), without voice.
+After *Thank you* it stays on that slide. **→** then shows backup slides for questions (patient data, what if it is wrong, cost, Copilot and SVN, and System 1: does every ticket need Claude?), without voice.
 
 - **Voice by default.** **P** (or *🎤 Presenter*) switches to presenter mode: no voice, the captions stay as notes, and **→** shows the next part of a slide, then the next slide. **P** again brings the voice back.
 - **Full screen.** It asks for full screen at the start; **F** toggles it.
@@ -511,5 +625,12 @@ The time people spend reviewing is not subtracted. Fixes and documentation have 
 ### Graph tab
 
 The dashboard's **Graph** tab shows the same numbers as six tiles, with the notes and every PR a person closed together with its reason. Below them are the **ticket lanes**. On the left is the main line, and next to it one lane for each ticket the agent worked on. A lane runs from the analysis through the failing test, the fix, the draft PR and the AI review, and bends into the main line at the ticket's commit there (the squash merge of its PR; on SVN, the commit). A lane that never reaches main ends where its PR was closed. The newest row is at the top, as in a branch graph. A node's colour is the state of its step: green for verified, merged or low risk; red for a failing test, a stop or high risk; amber for already known or medium risk; grey for closed or not eligible. The row names the step in words too.
+
+Links out of the lanes:
+
+- **↗ next to every ticket key** opens the ticket in Jira; the key itself shows only that ticket's lane.
+- **Tickets a commit names in its message.** A commit that starts with no key, like the knowledge refresh "Knowledge base: regression tests of the known issues (#31)", which has one line per ticket in its body, shows "14 tickets". The button opens the list: each ticket's Jira summary, the line of the commit that names it, a link to Jira and a link to its lane. A commit that starts with a key and names others shows "+1".
+- **One ticket's view** (click its key) also shows the commits that mention it, on the main line, marked "mentions DEM-32" with the line that names it. They do not stretch the lane: it still ends at its own merge.
+- **The owner's Teams message** is a row of the lane ("✉ Teams message to Luca Bianchi"); **message** opens the card as it was sent, or as it was shown when no webhook is set ("simulated"). A message the channel refused is red.
 
 Filters: the time window (7, 30, 90 or 365 days), one ticket (click its key), and only the agent's work. The layout is plain code (`lib/graph-lanes.mjs`), served by `GET /api/graph?project=DEM&days=30[&ticket=DEM-42][&agentOnly=1]`, and is cut to the newest 400 rows. All times are compared in UTC: git gives local time with an offset, while the events and GitHub use UTC.

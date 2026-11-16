@@ -1,0 +1,10 @@
+{
+  "_comment": "System 1, J6: real ticket texts for the privacy question, checked by hand on 2026-11-15. Each text was masked with nobody allowed (strangersOnly), as in use, and read for a name that survived. ft-2, trained only on synthetic sentences, held 46 of these 185 texts with no name at 0.7, and caught one of the three with a name. 'namesAPerson': the masking left a person's name (FAR-15 'Ferrari Giulia', BIL-17 'Bianchi' and 'Ricci', LAB-19 'Romano'). 'noPerson': the masking left none. A Jira ticket in neither list is not used for this question, so a new ticket is never labelled without a person reading it. The written tickets (written-tickets.json) name nobody and are all 'no person'.",
+  "namesAPerson": ["BIL-17", "FAR-15", "LAB-19"],
+  "noPerson": [
+    "BIL-1", "BIL-2", "BIL-3", "BIL-4", "BIL-5", "BIL-6", "BIL-7", "BIL-8", "BIL-9", "BIL-10", "BIL-11", "BIL-12", "BIL-13", "BIL-14", "BIL-15", "BIL-16", "BIL-18",
+    "DEM-1", "DEM-2", "DEM-3", "DEM-4", "DEM-5", "DEM-6", "DEM-14", "DEM-15", "DEM-16", "DEM-17", "DEM-18", "DEM-19", "DEM-21", "DEM-22", "DEM-23", "DEM-24", "DEM-25", "DEM-26", "DEM-27", "DEM-28", "DEM-29", "DEM-32", "DEM-33", "DEM-39", "DEM-40",
+    "FAR-1", "FAR-2", "FAR-3", "FAR-4", "FAR-5", "FAR-6", "FAR-7", "FAR-8", "FAR-9", "FAR-10", "FAR-11", "FAR-12", "FAR-13", "FAR-14", "FAR-16", "FAR-17", "FAR-18",
+    "LAB-1", "LAB-2", "LAB-3", "LAB-4", "LAB-5", "LAB-6", "LAB-7", "LAB-8", "LAB-9", "LAB-10", "LAB-11", "LAB-12", "LAB-13", "LAB-14", "LAB-15", "LAB-16", "LAB-17", "LAB-18", "LAB-20"
+  ]
+}

@@ -5,6 +5,7 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { killTree } from './proc.mjs';
 
 const REQUIRED = ['ticket', 'summary', 'likelyCause', 'confidence', 'component', 'proposedFix', 'owner', 'escalate', 'nextSteps', 'jiraComment', 'handoff'];
 
@@ -156,13 +157,16 @@ function invokeClaude({ cwd, prompt, cfg, addDirs = [], disallowedTools = [], to
     const transcript = [];
     let buffer = '';
     let final = null;
+    let stopped = false; // after the time limit nothing more is reported: the job has ended
     const limit = timeoutMinutes ?? cfg.analysisTimeoutMinutes;
     const timer = setTimeout(() => {
-      child.kill();
+      stopped = true;
+      killTree(child); // the whole tree: child.kill() would end only the Windows shell, not claude under it
       reject(new Error(`agent run timed out after ${limit} min`));
     }, limit * 60_000);
 
     child.stdout.on('data', (chunk) => {
+      if (stopped) return;
       buffer += chunk.toString();
       let nl;
       while ((nl = buffer.indexOf('\n')) >= 0) {

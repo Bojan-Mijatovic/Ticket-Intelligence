@@ -6,10 +6,11 @@
 const prNo = (url) => Number(String(url ?? '').match(/\/pull\/(\d+)/)?.[1]) || null;
 const riskTone = (text) => (/risk high|needs-changes/i.test(text) ? 'bad' : /risk medium/i.test(text) ? 'warn' : 'ok');
 
-// The steps a lane shows, in the words of a person reading the history. Chatty events (picked, commented, notified)
-// are left out; the commits are rows of the main line.
+// The steps a lane shows, in the words of a person reading the history. Chatty events (picked, commented) are left
+// out; the commits are rows of the main line. The owner's Teams message is a row: the dashboard opens its card.
 const STEP = {
   analyzed: { tone: 'info', label: (s) => `Analysed · ${s.text}` },
+  notified: { tone: (text) => (/not posted/.test(text) ? 'bad' : 'teams'), label: (s) => `✉ ${s.text}` },
   duplicate: { tone: 'warn', label: (s) => s.text },
   'prior-art': { tone: 'warn', label: (s) => s.text },
   'fix-skipped': { tone: 'muted', label: (s) => s.text.replace(/^no automatic fix:/i, 'No automatic fix:') },
@@ -35,7 +36,7 @@ const worked = (t) => t.analyses.length || t.fixAttempts.length || t.reviews.len
  * @param {object} graph   buildGraph()/loadGraph()
  * @param {object} [o]
  * @param {string} [o.since]      ISO date: rows before it are left out (a lane that started earlier is cut at the bottom)
- * @param {string} [o.ticket]     one ticket: its lane and its commits only
+ * @param {string} [o.ticket]     one ticket: its lane, its commits, and the commits that mention it (row.mentioned)
  * @param {boolean} [o.agentOnly] main-line commits only when they are the agent's or belong to a lane
  * @param {number} [o.limit]      at most this many rows, the newest
  * @returns {{ rows: object[], lanes: object[], cols: number, cut: number }}  rows newest first (row.y = its index);
@@ -47,18 +48,29 @@ export function laneLayout(graph, { since = null, ticket = null, agentOnly = fal
   const prOnMain = new Set(graph.commits.filter((c) => c.pr).map((c) => c.pr));
   const laneTickets = graph.tickets.filter((t) => worked(t) && (!ticket || t.key === ticket));
   const laneKeys = new Set(laneTickets.map((t) => t.key));
+  const summaryOf = new Map(graph.tickets.map((t) => [t.key, t.summary]));
 
   let rows = [];
   for (const c of graph.commits) {
-    if (!inWindow(c.date) || (ticket && c.ticket !== ticket) || (agentOnly && !c.agent && !laneKeys.has(c.ticket))) continue;
-    rows.push({ at: c.date, kind: 'commit', ticket: c.ticket, text: c.subject, ref: c.short, pr: c.pr, by: c.agent ? null : c.author, agent: c.agent, docs: c.kind === 'docs' });
+    const mentions = c.mentions ?? [];
+    // One ticket: its own commits, and the ones that only mention it (a knowledge refresh, a fix citing it).
+    if (!inWindow(c.date) || (ticket && c.ticket !== ticket && !mentions.includes(ticket)) || (agentOnly && !c.agent && !laneKeys.has(c.ticket))) continue;
+    rows.push({
+      at: c.date, kind: 'commit', ticket: c.ticket, text: c.subject, ref: c.short, pr: c.pr, by: c.agent ? null : c.author, agent: c.agent, docs: c.kind === 'docs',
+      // The other tickets its message names, with what it says about each.
+      mentions: mentions.map((k) => ({ key: k, summary: summaryOf.get(k) ?? null, line: c.mentionLines?.[k] || null })),
+      mentioned: ticket && c.ticket !== ticket ? ticket : null,
+    });
   }
   for (const t of laneTickets) {
     for (const s of t.steps) {
       const def = STEP[s.type];
       if (!def || !inWindow(s.at)) continue;
       if (s.type === 'pr-merged' && prOnMain.has(prNo(s.url))) continue; // the main line shows the merge commit
-      rows.push({ at: s.at, kind: 'step', ticket: t.key, type: s.type, text: def.label(s), tone: typeof def.tone === 'function' ? def.tone(s.text) : def.tone, url: s.url ?? null });
+      rows.push({
+        at: s.at, kind: 'step', ticket: t.key, type: s.type, text: def.label(s), tone: typeof def.tone === 'function' ? def.tone(s.text) : def.tone, url: s.url ?? null,
+        ...(s.card ? { card: s.card, channel: s.channel ?? null } : {}),
+      });
     }
   }
   rows.sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || (a.kind === b.kind ? 0 : a.kind === 'step' ? -1 : 1));

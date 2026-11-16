@@ -5,6 +5,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { killTree } from './proc.mjs';
 
 const LINKED_DEPS = ['frontend/node_modules', 'e2e/node_modules'];
 
@@ -29,16 +30,7 @@ export async function startDevServer(ws, port, { timeoutMs = 300_000 } = {}) {
     windowsHide: true,
     stdio: 'ignore',
   });
-  const stop = () => {
-    if (child.exitCode !== null) return;
-    if (process.platform === 'win32') {
-      try {
-        execFileSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
-      } catch {
-        /* already gone */
-      }
-    } else child.kill();
-  };
+  const stop = () => killTree(child);
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     if (child.exitCode !== null) throw new Error(`ng serve exited with ${child.exitCode}`);
@@ -101,7 +93,8 @@ export function removeWorktree(repoDir, path) {
   try {
     git(repoDir, ['worktree', 'remove', '--force', path]);
   } catch {
-    rmSync(path, { recursive: true, force: true });
+    // Windows: a process that has just been stopped may still hold a file for a moment (EBUSY); rmSync retries.
+    rmSync(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
     git(repoDir, ['worktree', 'prune']);
   }
 }
@@ -139,9 +132,8 @@ export function createWorkspace({ repoDir, key, stateDir, branch = key, name = '
     throw err;
   }
   git(repoDir, ['fetch', '-q', 'origin', 'main']);
-  if (existsSync(path)) {
-    git(repoDir, ['worktree', 'remove', '--force', path]);
-  }
+  // A folder left by an earlier run (registered as a worktree or not any more) is removed first.
+  if (existsSync(path)) removeWorktree(repoDir, path);
   mkdirSync(dirname(path), { recursive: true });
   git(repoDir, ['worktree', 'add', '-q', '-b', branch, path, 'origin/main']);
   linkDeps(repoDir, path);
@@ -163,7 +155,16 @@ export function createWorkspace({ repoDir, key, stateDir, branch = key, name = '
       // A running dev server keeps files open (Windows): stop it before deleting the worktree.
       this.server?.stop();
       this.server = null;
-      removeWorktree(repoDir, path);
+      // Never throws: remove() runs in catch and finally blocks, where an error here would hide the real one (VAX-17:
+      // "EBUSY" instead of the time limit) and skip the rest of the clean-up. A folder left behind is removed by the
+      // next createWorkspace for this ticket.
+      try {
+        removeWorktree(repoDir, path);
+        return true;
+      } catch (e) {
+        console.warn(`worktree ${path} not removed: ${e.message}`);
+        return false;
+      }
     },
   };
 }

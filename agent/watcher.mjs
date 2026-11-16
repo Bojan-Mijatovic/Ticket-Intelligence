@@ -8,7 +8,7 @@
 // A ticket is picked when it is in one of the projects, not Done, created within lookbackHours, and has none of the
 // agent's labels (ai-analyzing, ai-analyzed, ai-failed) nor the opt-out label (no-ai). One queue for all projects.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -21,7 +21,7 @@ import { createDocsPrs } from './lib/docs-prs.mjs';
 import { repoKnowledge } from './lib/doc-candidates.mjs';
 import { loadPriorArtSources } from './lib/prior-art.mjs';
 import { knowledgeGaps, readAsks } from './lib/gaps.mjs';
-import { processTicket } from './lib/pipeline.mjs';
+import { processTicket, triageTicket } from './lib/pipeline.mjs';
 import { currentBranch, previewBranch } from './lib/preview.mjs';
 import { reviewPullRequest } from './lib/review.mjs';
 import { buildInsights, readRecommendations, savedAnalyses, writeRecommendations } from './lib/insights.mjs';
@@ -29,15 +29,17 @@ import { readReview, writeReview } from './lib/app-review.mjs';
 import { createSuggested, readCreated, suggestTickets } from './lib/suggestions.mjs';
 import { suiteInsights } from './lib/suite.mjs';
 import { askQuestion } from './lib/ask.mjs';
-import { recordedAsks, recordedRuns } from './lib/tour.mjs';
+import { recordedAsks, recordedRuns, system1Privacy, system1Runs } from './lib/tour.mjs';
 import { attachMailUpdates } from './lib/mail-updates.mjs';
 import { loadProjects, peerCheckouts, teamOf } from './lib/projects.mjs';
 import { loadGraph, readSuitePullRequests } from './lib/git-graph.mjs';
 import { readBlameOrigins, recordAccuracy, scoreAccuracy } from './lib/accuracy.mjs';
 import { laneLayout } from './lib/graph-lanes.mjs';
+import { teamsInfo } from './lib/notify.mjs';
 import { readReplays } from './lib/replay.mjs';
 import { impactOf } from './lib/impact.mjs';
 import { guardCommit } from './lib/regression-guard.mjs';
+import { askReporter, askReporterText, createSystem1, currentCheckpoint, describeAnswers, fastAnswer, intentQuestion, knownEntries, knownIssue, knownTestVerdict, missingInfo, nextIndex, questionsFor, stillNamesSomeone, system1Report } from './lib/system1.mjs';
 import { createRedactor } from '../.claude/skills/analyze-ticket/scripts/lib/redact.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -105,6 +107,8 @@ const events = createEventLog(join(rootState, 'events.jsonl'));
 const jira = createJira();
 jira.allowTeam(teamOf(all.projects)); // R-02: the team's names stay readable in the masked ticket text
 const mail = attachMailUpdates({ events, policy, cfg, browseUrl: (key) => jira.browseUrl(key) });
+// System 1 (docs/SYSTEM1_PLAN.md, J1): the local decision model, in shadow. Started in the background below.
+const system1 = createSystem1({ cfg, policy, agentDir: HERE, stateDir: rootState, log: (text) => console.log(text) });
 
 const agentLabels = Object.values(cfg.labels);
 // Only projects whose application clone exists are watched: a ticket of a project without code cannot be analyzed,
@@ -180,7 +184,7 @@ const projectStatus = (p) => ({
   key: p.key, name: p.name, description: p.cfg.description, repo: p.repoDir, ready: existsSync(p.repoDir), app: p.app, linked: p.linked,
   appBranch: existsSync(p.repoDir) ? currentBranch(p.repoDir) : null, github: githubInfo(p.repoDir), askExamples: p.askExamples,
 });
-const status = { projects: all.projects.map(projectStatus), jiraUrl: jira.baseUrl, jira: { ok: null, error: null, warnings: [] }, policy: policy.actions, lastPoll: null, nextPoll: null, queue: [], processing: null, startedAt: new Date().toISOString(), pid: process.pid };
+const status = { projects: all.projects.map(projectStatus), jiraUrl: jira.baseUrl, teams: teamsInfo(), jira: { ok: null, error: null, warnings: [] }, policy: policy.actions, lastPoll: null, nextPoll: null, queue: [], processing: null, startedAt: new Date().toISOString(), pid: process.pid, system1: { mode: system1.mode, model: system1.model, ready: null, reason: null } };
 const clients = new Set();
 const broadcast = (event) => {
   const line = `data: ${JSON.stringify(event)}\n\n`;
@@ -237,6 +241,86 @@ async function recoverStuckTickets() {
 
 const isBusyWith = (key) => status.processing?.key === key || status.queue.some((q) => q.key === key);
 
+// System 1 (docs/SYSTEM1_PLAN.md): the local model is asked when a ticket is queued, while the event loop is free
+// (the pipeline's git steps are synchronous), so its answers are on the card at once. key → Promise<answers | null>;
+// the answers that are in, by key, for the queue order (J3).
+const S1 = policy.system1 ?? {};
+const system1Answers = new Map();
+const system1Resolved = new Map();
+function askSystem1(issue) {
+  if (system1.mode === 'off') return;
+  const p = all.ofTicket(issue.key);
+  const started = Date.now();
+  const threshold = Number(S1.lightPathThreshold ?? 0.5);
+  const entries = p ? knownEntries(p.repoDir) : [];
+  system1Answers.set(issue.key, system1.intake({ issue, jira, components: (p?.cfg.insights?.components ?? []).map((c) => c.name), entries, threshold, askThreshold: Number(S1.askReporterThreshold ?? 0.6), privacy: (S1.privacy ?? 'shadow') !== 'off' })
+    .then((a) => {
+      if (!a) return null;
+      system1Resolved.set(issue.key, a);
+      // Ready after its start timeout (system1.start asks again): the dashboard stops saying "off".
+      if (status.system1 && !status.system1.ready) status.system1 = { ...status.system1, ready: true, reason: null };
+      const known = knownIssue(a.answers, Number(S1.knownThreshold ?? 0.5));
+      const entry = known ? entries.find((e) => e.key === known.key) : null;
+      const holdPrivacy = stillNamesSomeone(a.answers, Number(S1.privacyThreshold ?? 0.7));
+      // J7: a report about code (or an unclear one) that does not tell what is wrong or where: a question to the reporter.
+      const askMode = S1.askReporter ?? 'shadow';
+      const ask = askMode !== 'off' ? askReporter(a.answers, Number(S1.askReporterThreshold ?? 0.6)) : null;
+      events.emit('system1', {
+        key: issue.key, text: describeAnswers(a), answers: a.answers, ms: a.ms, elapsedMs: Date.now() - started, model: a.model, mode: system1.mode,
+        lightPath: a.lightPath, lightPathMode: S1.lightPath ?? 'shadow', threshold,
+        known: entry ? { key: entry.key, title: entry.title, file: entry.file, anchor: entry.anchor, p: known.p, test: entry.test } : null,
+        privacy: holdPrivacy ? { hold: true, mode: S1.privacy ?? 'shadow', p: a.answers.privacy.p } : null,
+        missing: missingInfo(a.answers, Number(S1.askReporterThreshold ?? 0.6)),
+        askReporter: ask ? { mode: askMode, hold: askMode === 'draft' && S1.askReporterHold === true } : null,
+      });
+      if (ask && askMode === 'draft') {
+        events.emit('draft', { key: issue.key, kind: 'ask-reporter', text: `Question to the reporter: the report does not tell ${ask.missing.map((f) => MISSING_WORDS[f]).join(', ')}`, why: 'System 1 (J7): drafted from a template; a person sends it as a Jira comment', body: askReporterText({ missing: ask.missing, text: a.text }) });
+      }
+      // J4: a known issue with a regression test: its test runs on main as the next job (no model, a few minutes).
+      if (entry?.test && (S1.knownTest ?? 'auto') === 'auto') {
+        status.queue.unshift({ kind: 'known-test', key: issue.key, entry: entry.key, project: p.key });
+        events.emit('known-test', { key: issue.key, entry: entry.key, status: 'queued', text: `the regression test of ${entry.key} is queued to run on main` });
+        pushStatus();
+      }
+      return a;
+    })
+    .catch((e) => {
+      events.emit('error', { key: issue.key, text: `System 1: ${e.message}` });
+      return null;
+    }));
+}
+
+/** J4: runs one known issue's regression tests on main (agent/knowledge-tests.mjs --only), without blocking the loop. */
+async function runKnownTest(job) {
+  const started = Date.now();
+  events.emit('known-test', { key: job.key, entry: job.entry, status: 'running', text: `running the regression test of ${job.entry} on main` });
+  const out = await new Promise((done) => {
+    let text = '';
+    const child = spawn(process.execPath, [join(HERE, 'knowledge-tests.mjs'), '--project', job.project, '--only', job.entry], { cwd: join(HERE, '..'), windowsHide: true });
+    const stop = setTimeout(() => child.kill(), 15 * 60_000);
+    child.stdout.on('data', (d) => (text += d));
+    child.stderr.on('data', (d) => (text += d));
+    child.on('close', () => (clearTimeout(stop), done(text)));
+    child.on('error', (e) => (clearTimeout(stop), done(`${text}\n${e.message}`)));
+  });
+  const verdict = knownTestVerdict(out, job.entry);
+  const words = { pass: `${job.entry}'s regression test passes on main: the known issue is not back in that form`, fail: `${job.entry}'s regression test FAILS on main: the known issue may be back`, 'not-run': `${job.entry}'s regression test did not run (compile error or renamed test)`, none: `no verdict for ${job.entry}` };
+  events.emit('known-test', { key: job.key, entry: job.entry, status: verdict, text: `${words[verdict]} (${Math.round((Date.now() - started) / 1000)} s)`, output: out.split('\n').filter((l) => l.includes(job.entry) || /^\s{4,}\S/.test(l)).slice(0, 8).join('\n') });
+}
+
+const MISSING_WORDS = { steps: 'what was done', expected: 'what is wrong', screen: 'where in the application', environment: 'where, when or which record' };
+
+/** J2/J6/J7: a ticket kept out of the analysis until a person decides on the dashboard (label held). */
+async function holdTicket(issue, kind, answers) {
+  const text = kind === 'privacy'
+    ? `held: the text may still name a person (${Math.round(100 * answers.privacy.p)} %), so it is not sent to a cloud model until a person releases it`
+    : kind === 'incomplete'
+      ? `held: the report does not tell ${missingInfo(answers, Number(S1.askReporterThreshold ?? 0.6)).map((f) => MISSING_WORDS[f]).join(', ')}; the question to the reporter is in Drafts, and a person starts the analysis when the answer is in`
+      : `held: System 1 recognised it as ${answers.type.choice}, not about code; a person chooses the light path or a full analysis`;
+  await jira.labels(issue.key, { add: [L.held], remove: [L.inProgress] }).catch(() => {});
+  events.emit('system1-held', { key: issue.key, kind, text, answers });
+}
+
 let polling = false;
 async function poll() {
   if (polling) return;
@@ -254,6 +338,7 @@ async function poll() {
       status.queue.push(issue);
       const docText = issue.labels?.includes(L.done) ? 'ticket moved to Done: documentation queued' : `${issue.summary} · resolved without the agent: documentation queued`;
       events.emit(issue.kind === 'document' ? 'resolved' : 'queued', { key: issue.key, text: issue.kind === 'document' ? docText : issue.summary, url: jira.browseUrl(issue.key), priority: issue.priority, reporter: issue.reporter });
+      if (issue.kind === 'analyze') askSystem1(issue);
     }
   } catch (e) {
     events.emit('error', { text: `poll failed: ${e.message}` });
@@ -276,11 +361,41 @@ async function rerun(key) {
   const [issue] = await jira.search(`key = ${key}`, 1);
   if (!issue) throw Object.assign(new Error(`${key} not found`), { status: 404 });
   if (issue.labels.includes(L.skip)) throw Object.assign(new Error(`${key} has the ${L.skip} label`), { status: 409 });
-  await jira.labels(key, { remove: [L.done, L.failed, L.fixProposed] });
-  status.queue.push({ ...issue, kind: 'analyze' });
+  await jira.labels(key, { remove: [L.done, L.failed, L.fixProposed, L.triaged, L.held] });
+  // A person asked for the full flow: System 1 still answers (shown), but its light path and hold are skipped.
+  status.queue.push({ ...issue, kind: 'analyze', skipGate: true });
   events.emit('queued', { key, text: issue.summary, url: jira.browseUrl(key), priority: issue.priority, reporter: issue.reporter, rerun: true });
+  askSystem1(issue);
   pushStatus();
   drain();
+}
+
+/** J2/J6: a person's decision on a held ticket: the light path, or the full analysis. */
+async function decideHeld(key, action) {
+  if (!['light', 'analyze'].includes(action)) throw badRequest('action must be light or analyze');
+  if (!/^[A-Z][A-Z0-9_]+-\d+$/.test(key) || !WATCHED.includes(key.split('-')[0])) throw badRequest(`${key} is not a ticket of the watched projects`);
+  await health.require();
+  if (isBusyWith(key)) throw Object.assign(new Error(`${key} is already queued or running`), { status: 409 });
+  const [issue] = await jira.search(`key = ${key}`, 1);
+  if (!issue) throw Object.assign(new Error(`${key} not found`), { status: 404 });
+  if (action === 'analyze') {
+    await jira.labels(key, { remove: [L.held] });
+    status.queue.push({ ...issue, kind: 'analyze', skipGate: true });
+    events.emit('queued', { key, text: issue.summary, url: jira.browseUrl(key), priority: issue.priority, rerun: true });
+    askSystem1(issue);
+    pushStatus();
+    drain();
+    return { queued: true };
+  }
+  if (!system1Resolved.has(key)) {
+    askSystem1(issue);
+    await system1Answers.get(key);
+  }
+  const a = system1Resolved.get(key);
+  if (!a) throw Object.assign(new Error('System 1 gave no answer for this ticket; analyze it instead'), { status: 409 });
+  const p = all.ofTicket(key);
+  await triageTicket({ issue, answers: a.answers, cfg: p.cfg, policy, jira, events, by: 'person' });
+  return { triaged: true };
 }
 
 async function documentTicket(issue, p) {
@@ -299,19 +414,46 @@ async function drain() {
   // While Jira is unavailable the queue waits: every step of a ticket reads or writes Jira. The poll that sees Jira
   // again calls drain().
   if (status.processing || !status.queue.length || status.jira.ok === false) return;
-  const issue = status.queue.shift();
+  // J3: tickets to analyze by System 1's urgency ('auto'), or only say which it would take first ('shadow').
+  const order = S1.queueOrder ?? 'shadow';
+  const best = order === 'off' ? 0 : nextIndex(status.queue, (k) => system1Resolved.get(k)?.answers);
+  if (best > 0 && order === 'shadow') {
+    const [first, other] = [status.queue[0], status.queue[best]];
+    const urg = (k) => system1Resolved.get(k)?.answers?.urgency?.choice;
+    events.emit('system1-queue', { key: other.key, text: `queue order (shadow): would take ${other.key} (${urg(other.key)}) before ${first.key} (${urg(first.key) ?? 'no answer'})`, before: first.key });
+  }
+  const issue = order === 'auto' && best > 0 ? status.queue.splice(best, 1)[0] : status.queue.shift();
   status.processing = { key: issue.key ?? `${issue.project} ${String(issue.sha).slice(0, 7)}`, kind: issue.kind, since: new Date().toISOString() };
   pushStatus();
   if (issue.kind === 'guard') await runGuard(issue);
+  else if (issue.kind === 'known-test') await runKnownTest(issue);
   else {
     const p = all.ofTicket(issue.key);
     if (issue.kind === 'document') await documentTicket(issue, p);
     else if (issue.kind === 'review') await reviewPullRequest({ key: issue.key, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, events, jira });
     else {
-      await processTicket({
-        issue, cfg: p.cfg, policy, jira, events, repoDir: p.repoDir, stateDir: p.stateDir, project: { key: p.key, name: p.name },
-        peers: (warn) => peerCheckouts(p, all, warn), followUp: (job) => status.queue.push(job),
-      });
+      // System 1's answers before the analysis starts: its synchronous git steps would otherwise hold them back by
+      // 20 s (DEM-46, 2026-11-15), and the light path and the hold need them here. At most system1.waitSeconds.
+      const s1 = system1Answers.get(issue.key);
+      if (s1) await Promise.race([s1, new Promise((r) => setTimeout(r, 1000 * Number(cfg.system1?.waitSeconds ?? 10)))]);
+      const a = system1Resolved.get(issue.key);
+      const lightMode = S1.lightPath ?? 'shadow';
+      if (!issue.skipGate && a && (S1.privacy ?? 'shadow') === 'auto' && stillNamesSomeone(a.answers, Number(S1.privacyThreshold ?? 0.7))) {
+        await holdTicket(issue, 'privacy', a.answers); // J6: nothing goes to a cloud model
+      } else if (!issue.skipGate && a && (S1.askReporter ?? 'shadow') === 'draft' && S1.askReporterHold === true && askReporter(a.answers, Number(S1.askReporterThreshold ?? 0.6))) {
+        await holdTicket(issue, 'incomplete', a.answers); // J7: the analysis waits for the reporter's answer
+      } else if (!issue.skipGate && a?.lightPath && lightMode === 'auto') {
+        await triageTicket({ issue, answers: a.answers, cfg: p.cfg, policy, jira, events }); // J2
+      } else if (!issue.skipGate && a?.lightPath && lightMode === 'draft') {
+        await holdTicket(issue, 'light', a.answers); // J2: a person chooses
+      } else {
+        await processTicket({
+          issue, cfg: p.cfg, policy, jira, events, repoDir: p.repoDir, stateDir: p.stateDir, project: { key: p.key, name: p.name },
+          peers: (warn) => peerCheckouts(p, all, warn), followUp: (job) => status.queue.push(job), system1Answer: system1Answers.get(issue.key) ?? null,
+        });
+      }
+      system1Answers.delete(issue.key);
+      system1Resolved.delete(issue.key);
     }
   }
   status.processing = null;
@@ -455,6 +597,43 @@ async function insightsCached(p, refresh = false) {
   insightsCache.set(p.key, { at: Date.now(), data });
   return data;
 }
+/** The insights for a fast Ask answer: the cached ones at any age (refreshed in the background when older than 2 min). */
+async function insightsForAsk(p) {
+  const hit = insightsCache.get(p.key);
+  if (!hit) return insightsCached(p);
+  if (Date.now() - hit.at > 120_000) insightsCached(p, true).catch(() => {});
+  return hit.data;
+}
+
+/**
+ * J5 (System 1): the intent and the component of an Ask question. With policy system1.askRouter 'auto', a "who" or
+ * "latest" question at 0.6 or more (a component at 0.4 or more for "who") gets a fast answer from the Insights data,
+ * logged like any answer; otherwise null and Claude answers, with the routing attached ('shadow' and 'auto' alike).
+ */
+async function askRouted(p, question, full) {
+  const mode = S1.askRouter ?? 'auto';
+  if (mode === 'off' || system1.mode === 'off' || !question.trim()) return null;
+  const started = Date.now();
+  let routed;
+  try {
+    const comps = (p.cfg.insights?.components ?? []).map((c) => c.name);
+    const r = await system1.decide(question, { ...intentQuestion(), ...(comps.length ? { component: questionsFor(comps).component } : {}) });
+    if (!r) return null;
+    routed = { intent: r.answers.intent?.choice, intentP: r.answers.intent?.p, component: r.answers.component?.choice, componentP: r.answers.component?.p, ms: r.ms, model: system1.model };
+  } catch {
+    return null; // the question goes to Claude
+  }
+  if (mode !== 'auto' || full || routed.intentP < Number(S1.askIntentThreshold ?? 0.6) || !['who', 'latest'].includes(routed.intent)) return { routed };
+  // 0.7: on 48 "who" questions (demo/system1/ask-components.json) ft-2 named the wrong component 8 times at 0.4, none at 0.7.
+  const component = routed.componentP >= Number(S1.askComponentThreshold ?? 0.7) ? routed.component : null;
+  if (routed.intent === 'who' && !component) return { routed };
+  const fast = fastAnswer({ question, intent: routed.intent, component, insights: await insightsForAsk(p), ticketUrl: (k) => jira.browseUrl(k) });
+  if (!fast) return { routed };
+  const answer = { ...fast, warnings: [], dropped: 0, closest: [], routed, meta: { durationMs: Date.now() - started, costUsd: 0, model: `System 1 (${system1.model})` }, at: new Date().toISOString() };
+  appendFileSync(join(p.stateDir, 'asks.jsonl'), `${JSON.stringify({ at: answer.at, question, found: true, fast: true, intent: routed.intent, component, sources: answer.sources.map((s) => s.ref), warnings: [], costUsd: 0, durationMs: answer.meta.durationMs })}\n`);
+  return answer;
+}
+
 // Accuracy (AI1) from the project's graph (GG0): pull requests of the whole suite read once per refresh (a demo reset
 // is recognised across the repositories), each project's result cached for two minutes like the insights.
 const graphCache = new Map();
@@ -528,6 +707,12 @@ const server = createServer(async (req, res) => {
     });
     return json(res, 200, { runs });
   }
+  // System 1's chapter of the tour (J9): its recorded runs, the privacy moment, and the "who knows" question it asks
+  // live (answered without Claude, at no cost). agent.config.json system1.tour (read-only).
+  if (path === '/api/tour/system1') {
+    const t = cfg.system1?.tour ?? {};
+    return json(res, 200, { runs: system1Runs(rootState, t.runs ?? []), privacy: t.privacy ? system1Privacy(rootState, t.privacy) : null, ask: t.ask ?? null, model: system1.model });
+  }
   // Recorded Ask answers of a project, for the tour to replay instead of asking (and paying) again (read-only).
   if (path === '/api/tour/asks') {
     try {
@@ -574,6 +759,36 @@ const server = createServer(async (req, res) => {
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     }
+  }
+  // System 1 (J8b): what it did (from the events) and how good the current checkpoint is (its evaluation).
+  if (req.method === 'GET' && path === '/api/system1') {
+    try {
+      const lines = (f) => (existsSync(f) ? readFileSync(f, 'utf8').split('\n').filter(Boolean).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } }) : []);
+      const cp = currentCheckpoint({ agentDir: HERE, stateDir: rootState, cfg });
+      const evalFile = join(rootState, 'system1', `eval-${cp.name}.json`);
+      const evaluation = existsSync(evalFile) ? JSON.parse(readFileSync(evalFile, 'utf8')) : null;
+      const report = system1Report({ events: lines(join(rootState, 'events.jsonl')), asks: all.projects.flatMap((p) => lines(join(p.stateDir, 'asks.jsonl'))), evaluation, checkpoint: { name: cp.name, from: cp.from, ready: status.system1?.ready ?? null }, policy });
+      return json(res, 200, { ok: true, ...report });
+    } catch (e) {
+      return json(res, 500, { ok: false, error: e.message });
+    }
+  }
+  // System 1 (J2/J6): a person's decision on a held ticket: { key, action: 'light' | 'analyze' }.
+  if (req.method === 'POST' && path === '/api/system1/decide') {
+    const { key, action } = await readBody(req);
+    try {
+      return json(res, 200, { ok: true, ...(await decideHeld(String(key ?? '').trim().toUpperCase(), String(action ?? ''))) });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    }
+  }
+  // J8b: serve the checkpoint system1-train.mjs has just accepted (current.json), without restarting the watcher.
+  if (req.method === 'POST' && path === '/api/system1/reload') {
+    if (system1.mode === 'off') return json(res, 409, { ok: false, error: 'System 1 is off in policy.json' });
+    const ok = await system1.reload();
+    status.system1 = { mode: system1.mode, model: system1.model, ready: ok, reason: ok ? null : system1.reason };
+    pushStatus();
+    return json(res, ok ? 200 : 503, { ok, model: system1.model, reason: ok ? null : system1.reason });
   }
   // Hotspot map (FR-64): computed on request (git + Jira + saved analyses), cached for two minutes.
   // Hotspot map per project: /api/insights?project=LAB
@@ -809,10 +1024,15 @@ const server = createServer(async (req, res) => {
     try {
       const p = readyProject(body);
       await health.require(); // otherwise "not in the knowledge base" when Jira only could not be searched
+      // J5 (System 1): "who knows X" and "the latest tickets" are answered from the Insights data, no Claude call.
+      const routedAnswer = await askRouted(p, String(body.question ?? ''), body.full === true);
+      if (routedAnswer?.fast) return json(res, 200, { ok: true, project: p.key, ...routedAnswer });
+      // The tour asks with fastOnly: never a paid Claude run.
+      if (body.fastOnly === true) return json(res, 200, { ok: false, notRouted: true, routed: routedAnswer?.routed ?? null });
       // The linked apps too (K11): read-only checkouts of their main, apart from the analysis' (ask-peer-repo).
       const peers = peerCheckouts(p, all, (text) => broadcast({ type: 'ask-progress', id: body.id, step: `warning: ${text}` }), { name: 'ask-peer-repo' });
       const answer = await askQuestion({ question: body.question, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira, project: { key: p.key, name: p.name }, peers, onProgress: (step) => broadcast({ type: 'ask-progress', id: body.id, step }) });
-      return json(res, 200, { ok: true, project: p.key, ...answer });
+      return json(res, 200, { ok: true, project: p.key, ...answer, routed: routedAnswer?.routed ?? null });
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     } finally {
@@ -854,12 +1074,23 @@ server.listen(cfg.dashboardPort, () => {
 });
 const cleanup = () => {
   if (readPid()?.pid === process.pid) rmSync(PID_FILE, { force: true });
+  system1.stop();
 };
 process.on('exit', cleanup);
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(0));
 
 setInterval(() => broadcast({ type: 'ping', at: new Date().toISOString() }), 15_000);
 events.emit('started', { text: `watching ${WATCHED.join(', ')} every ${cfg.pollSeconds}s` });
+if (system1.mode !== 'off') {
+  system1.start().then((ok) => {
+    status.system1 = { mode: system1.mode, model: system1.model, ready: ok, reason: ok ? null : system1.reason };
+    if (!ok) {
+      console.log(`System 1 off: ${system1.reason}`);
+      events.emit('error', { text: `System 1 off: ${system1.reason}` });
+    }
+    pushStatus();
+  });
+} else console.log('System 1 off: policy.json system1.intake is off');
 const first = await health.check();
 console.log(first.ok ? `Jira: connected as ${first.user}` : `Jira UNAVAILABLE: ${first.error}`);
 for (const w of first.warnings) console.log(`Jira warning: ${w}`);

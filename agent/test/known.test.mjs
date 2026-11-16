@@ -54,3 +54,11 @@ test('two reports naming each other: only the newer one is held back as the dupl
   assert.equal(fixBlocker({ issue: older, result: { confidence: 'high', priorArt: { kind: 'duplicate', key: 'DEM-43' } }, policy }), null);
   assert.equal(fixBlocker({ issue: newer, result: { confidence: 'high', priorArt: { kind: 'duplicate', key: 'LAB-3' } }, policy }), 'already known: duplicate of LAB-3');
 });
+
+test('a Teams message goes to a person, never to a role the analysis named as the owner', async () => {
+  const { isPersonName } = await import('../lib/pipeline.mjs');
+  for (const name of ['Giorgio Esposito', 'Matteo Vitale', 'Anna De Luca', 'Jean-Luc Picard']) assert.equal(isPersonName(name), true, name);
+  // LAB-26, FAR-21 and FAR-20 (2026-11-15): roles, which got a Teams message as if they were people.
+  for (const name of ['IT support / network administrator', 'Reporter / product owner (access administrator to be named)', 'Server/infrastructure administrator',
+    'No evidence-based owner', 'Team lead', 'unknown', 'Giorgio', '', null]) assert.equal(isPersonName(name), false, String(name));
+});

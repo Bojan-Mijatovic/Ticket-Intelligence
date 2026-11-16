@@ -1,8 +1,8 @@
 # Git graph: proposals and plan
 
-Status: **Proposal** · Date: 2026-11-13 · Owner: Bojan Mijatović · Builds on: [AUTONOMY_AND_NEXT.md](AUTONOMY_AND_NEXT.md), [ROADMAP.md](ROADMAP.md), [KNOWLEDGE_PLAN.md](KNOWLEDGE_PLAN.md)
+Status: **Proposal**, partly built (GG0, G1, G1b, A1, A2) · Date: 2026-11-13, updated 2026-11-16 · Owner: Bojan Mijatović · Builds on: [AUTONOMY_AND_NEXT.md](AUTONOMY_AND_NEXT.md), [ROADMAP.md](ROADMAP.md), [KNOWLEDGE_PLAN.md](KNOWLEDGE_PLAN.md)
 
-After a short demo of the system, the CTO suggested "a git graph". What exactly was meant was not said. This document lists what it can mean, what we already have for each meaning, and what the AI could do **on its own** on top of such a graph. Nothing here is built yet.
+After a short demo of the system, the CTO suggested "a git graph". What exactly was meant was not said. This document lists what it can mean, what we already have for each meaning, and what the AI could do **on its own** on top of such a graph. Each item says whether it is built.
 
 ## 1. What "git graph" can mean
 
@@ -43,6 +43,18 @@ So the graph is mostly a **view and a shared data model** over facts we have. Th
 
 **G1. Ticket lanes: what the AI did in the code** · 1 d · reading (b) · **Done 2026-11-13** (FR-70, the dashboard's Graph tab). Built vertically, newest row first, as in the VS Code Git Graph, because the agent's steps come in bursts of minutes and a time axis would squash them. A merge commit on main is a row of the main line, but people's parallel branches are not drawn as lanes yet: only the tickets' lanes are. The management mode is WF5.
 A dashboard view: `main` as the spine, one lane per ticket. Each lane shows its steps: analysis → branch → reproduction test (red) → fix (green) → draft PR → AI review (risk colour) → merged into `main` as commit X, or closed → documentation PR → merged. Agent and human work are told apart, with filters for open, merged and closed, and the whole suite. A click opens the ticket, the PR and the Jira comment. Inline SVG, no npm dependencies (NFR-02). For a real repository with merge commits, the same view also draws the classic branch graph (reading a).
+
+**G1b. Links out of the lanes: Jira and Teams** · 1 d · **Done 2026-11-16** (FR-85, FR-37, [agent/README.md](../agent/README.md#graph-tab)). Found by looking at the lanes: a key could not be opened in Jira, the owner's Teams message was missing, and a knowledge refresh like MediAgenda #31 sat on the main line with no ticket, though its body names 14. Built:
+- **J1** ↗ next to every ticket key opens it in Jira; the key still shows only its lane.
+- **J2** a commit carries the tickets its message names besides the one it starts with (`mentions`, already in GG0), with the line that names each. One is shown as a key, more as "14 tickets", which opens the list with each ticket's Jira summary and links to Jira and to its lane.
+- **J3** one ticket's view also shows the commits that mention it ("mentions DEM-32", with that line). They stay on the main line and do not stretch the lane. Not in the all-tickets view: #31 alone would have stretched 14 lanes.
+- **T1** the owner's Teams message is a row of the lane (`notified`, kept in the graph with its card); "message" opens the card.
+- **T2** everything for a real channel except the webhook itself: the dashboard knows whether the channel is live and its link (`TEAMS_CHANNEL_URL`) for **Open in Teams**, never the webhook address; `node agent/teams-test.mjs` posts a test message; a channel that refuses or does not answer no longer stops the ticket (the card stays on the dashboard with the reason). **Checked against a real channel on 2026-11-16** (a test Microsoft 365 tenant): the test message arrived, then DEM-46's owner message, 61 s after the ticket was picked. For a team's own channel, a person creates the webhook there and puts it in `.env` (README, *Notifications*).
+
+Not built, kept as proposals:
+- **J4. Links in Jira itself** · 0.5 d · L1. On each ticket, a remote link ("Links" section) to the commit or PR that changed it or names it: for #31, 14 tickets. It writes to Jira, so it goes behind a switch in `policy.json` (`jiraLinks: off|auto`). The no-code alternative is the "GitHub for Jira" app, which needs a Jira admin and covers git on GitHub only (not SVN).
+- **T3. Links into Teams** · 1–1.5 d + IT. A link to the exact Teams message, or a chat opened with the owner. A webhook returns no message id, so this needs Microsoft Graph with an app registered in Azure (IT admin), or every person's email. It belongs with WF2 (Teams as the front door).
+- **J5** commits without any key is **A7** below.
 
 **G2. Bug lineage** · 0.5 d
 A graph of the commit that brought a bug in → the bug → its fix → a later recurrence or regression. It says, for example, "this change brought in 2 bugs; DEM-5 came back as DEM-42". The data exists (`bugOrigins`, recurring problems); this is a view. The author of the origin stays hidden unless `insights.showBugOrigin` is on (people are not ranked).
@@ -92,7 +104,7 @@ Every edge of the graph depends on the ticket key in the commit subject. Code fi
 
 ## 6. Plan
 
-These steps are part of the one plan in [AUTONOMY_AND_NEXT.md](AUTONOMY_AND_NEXT.md#5-recommended-order), which gives the order and the status. In short: **GG0** is built with AI1 (step 1 there), **G1** comes right after (step 2), then A2, A1 and A3, which are the autonomy. G2, A4–A7 and G3 come later. About 10.5 working days in all.
+These steps are part of the one plan in [AUTONOMY_AND_NEXT.md](AUTONOMY_AND_NEXT.md#5-recommended-order), which gives the order and the status. In short: **GG0** is built with AI1 (step 1 there), **G1** comes right after (step 2), then A2, A1 and A3, which are the autonomy. G2, A4–A7 and G3 come later. About 10.5 working days in all. **G1b** (links to Jira and Teams) was added and built on 2026-11-16 (step 2b there); J4 and T3 wait with the later items.
 
 ## 7. Questions for the CTO
 

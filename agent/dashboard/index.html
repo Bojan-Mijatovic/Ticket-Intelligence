@@ -49,6 +49,16 @@
 
   main { padding: 20px 24px 40px; max-width: 1480px; margin: 0 auto; }
   .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .kpis.kpis6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  /* System 1 (docs/SYSTEM1_PLAN.md): the local model's answers on a ticket card */
+  .s1 { border: 1px dashed var(--border); border-radius: 10px; padding: 8px 10px; margin-top: 10px; background: var(--surface-2); }
+  .s1-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-weight: 600; font-size: 13px; }
+  .s1-rows { display: grid; grid-template-columns: 90px 1fr; gap: 4px 10px; margin-top: 6px; font-size: 12px; align-items: center; }
+  .s1-rows .k { color: var(--muted); font-weight: 600; }
+  .s1-line { display: flex; gap: 6px; align-items: center; min-width: 0; }
+  .s1-bar { position: relative; flex: 1; min-width: 0; height: 18px; border-radius: 4px; background: var(--surface); border: 1px solid var(--border); overflow: hidden; }
+  .s1-bar > i { position: absolute; inset: 0 auto 0 0; background: var(--accent-soft); border-right: 2px solid var(--accent); }
+  .s1-bar > span { position: relative; padding: 0 6px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
   .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow); }
   .kpi .label { color: var(--muted); font-size: 12px; }
   .kpi .value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
@@ -207,7 +217,22 @@
   .g-svg .g-commit { fill: var(--text); } .g-svg .g-commit.agent { fill: var(--accent); }
   .g-ok { fill: var(--ok); background: var(--ok); } .g-bad { fill: var(--bad); background: var(--bad); } .g-warn { fill: var(--warn); background: var(--warn); }
   .g-info { fill: var(--accent); background: var(--accent); } .g-muted { fill: var(--muted); background: var(--muted); }
-  .g-row { height: 26px; display: grid; grid-template-columns: 104px 76px minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 12.5px; padding: 0 6px; border-radius: 4px; }
+  .g-teams { fill: var(--teams); background: var(--teams); }
+  .g-row { height: 26px; display: grid; grid-template-columns: 104px 128px minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 12.5px; padding: 0 6px; border-radius: 4px; }
+  .g-keys { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
+  .g-jira { color: var(--muted); text-decoration: none; font-size: 11px; padding: 0 3px; }
+  .g-jira:hover, .g-jira:focus-visible { color: var(--accent); }
+  .g-key.g-other { font-weight: 600; color: var(--muted); }
+  .g-mention { color: var(--muted); font-weight: 500; }
+  .g-ref .g-linkbtn { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; }
+  .g-ref .g-linkbtn:hover { text-decoration: underline; }
+  .g-line { color: var(--muted); font-weight: 400; }
+  dialog.g-dialog { width: min(560px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: 0 12px 40px rgb(0 0 0 / 0.25); }
+  dialog.g-dialog::backdrop { background: rgb(0 0 0 / 0.35); }
+  .g-dialog .dh { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .g-dialog .db { padding: 12px 14px; max-height: 70vh; overflow: auto; display: grid; gap: 10px; }
+  .g-mrow { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 8px; align-items: start; font-size: 13px; padding: 4px 0; border-top: 1px solid var(--border); }
+  .g-mrow:first-child { border-top: 0; }
   .g-row:hover { background: var(--surface-2); }
   .g-row.commit .g-text { font-weight: 600; }
   .g-t { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -321,14 +346,14 @@
       <div class="kpis" id="acc-kpis"></div>
       <div class="panel ins-list" id="acc-notes" hidden></div>
       <h2>Ticket lanes</h2>
-      <div class="hint" style="margin:-4px 0 8px">The main line on the left, and one lane for each ticket the agent worked on. A lane runs from the analysis to the merge into main, or until its pull request was closed. Newest first. Click a ticket key to see only its lane.</div>
+      <div class="hint" style="margin:-4px 0 8px">The main line on the left, and one lane for each ticket the agent worked on. A lane runs from the analysis to the merge into main, or until its pull request was closed. Newest first. Click a ticket key to see only its lane (with the commits that mention it), ↗ to open it in Jira. A commit that names other tickets in its message shows them too.</div>
       <div class="graph-tools">
         <label class="meta">Window <select id="graph-days" aria-label="Time window"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">a year</option></select></label>
         <label class="meta"><input type="checkbox" id="graph-agent"> only the agent's work</label>
         <form id="graph-ticket-form" style="display:inline-flex;gap:6px"><input type="text" id="graph-ticket" placeholder="DEM-42" aria-label="One ticket"><button class="small" type="submit">Show</button></form>
         <button class="small" id="graph-all" hidden>All tickets</button>
         <span class="spacer"></span>
-        <span class="legend"><span><i class="g-commit-dot" style="background:var(--text)"></i>commit on main</span><span><i style="background:var(--accent)"></i>the agent's commit · analysis, PR</span><span><i class="g-ok"></i>verified, merged, low risk</span><span><i class="g-bad"></i>failing test, stopped, high risk</span><span><i class="g-warn"></i>already known, medium risk</span><span><i class="g-muted"></i>closed, not eligible</span></span>
+        <span class="legend"><span><i class="g-commit-dot" style="background:var(--text)"></i>commit on main</span><span><i style="background:var(--accent)"></i>the agent's commit · analysis, PR</span><span><i class="g-ok"></i>verified, merged, low risk</span><span><i class="g-bad"></i>failing test, stopped, high risk</span><span><i class="g-warn"></i>already known, medium risk</span><span><i class="g-muted"></i>closed, not eligible</span><span><i class="g-teams"></i>Teams message</span></span>
       </div>
       <div class="panel graph" id="graph-lanes"><div class="empty">Loading…</div></div>
     </div>
@@ -348,6 +373,7 @@
     <h2>Per app</h2>
     <div class="panel ins-list" id="impact-apps"></div>
     <div class="panel ins-list" id="impact-notes"></div>
+    <div class="panel ins-list" id="impact-system1"></div>
   </section>
   <section id="tab-ask" hidden>
     <h2 id="ask-title">Ask the knowledge base</h2>
@@ -362,12 +388,13 @@
     <div id="ask-answers"></div>
   </section>
   <div id="tab-tickets">
-  <section class="kpis">
+  <section class="kpis kpis6">
     <div class="kpi"><div class="label">Tickets analyzed</div><div class="value" id="k-done">0</div><div class="sub">by the agent, no human start</div></div>
     <div class="kpi"><div class="label">Avg. time to analysis</div><div class="value" id="k-time">–</div><div class="sub">from pickup to Jira comment</div></div>
     <div class="kpi"><div class="label">Owners notified</div><div class="value" id="k-notified">0</div><div class="sub">handoff messages sent</div></div>
     <div class="kpi"><div class="label">Escalations flagged</div><div class="value" id="k-esc">0</div><div class="sub">by the escalation rules</div></div>
     <div class="kpi"><div class="label">In queue / failed</div><div class="value" id="k-queue">0 / 0</div><div class="sub">waiting · needs a look</div></div>
+    <div class="kpi" title="System 1, the local decision model (docs/SYSTEM1_PLAN.md), in shadow: how often its side and component matched the files the analysis named"><div class="label">System 1 agreed</div><div class="value" id="k-s1">–</div><div class="sub" id="k-s1-sub">side · component, with the analysis</div></div>
   </section>
 
   <div class="grid">
@@ -379,7 +406,7 @@
     <aside>
       <h2>Microsoft Teams · #support-triage</h2>
       <div class="panel">
-        <div class="teams-head"><span class="teams-logo">T</span><div><b>support-triage</b><div class="meta" id="teams-mode">simulated channel</div></div></div>
+        <div class="teams-head"><span class="teams-logo">T</span><div><b>support-triage</b><div class="meta" id="teams-mode">simulated channel</div></div><a id="teams-open" style="margin-left:auto;font-size:13px" target="_blank" hidden>Open in Teams ↗</a></div>
         <div class="teams-body" id="teams"><div class="empty">Handoff messages to owners appear here.</div></div>
       </div>
 
@@ -407,7 +434,7 @@ function h(tag, attrs = {}, ...kids) {
 const initials = (name = '?') => name.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
 const ago = (iso) => { if (!iso) return '–'; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`; };
 const KNOWN_TEXT = { documented: 'documented', duplicate: 'duplicate of', 'in-progress': 'fix in progress', 'fixed-on-main': 'fixed on main by', regression: 'regression of', 'solved-before': 'solved before as' };
-const ICON = { 'prior-art': '⟲', mailed: '✉', 'mail-failed': '✖', resolved: '☑', documenting: '📝', documented: '📚', 'docs-merged': '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', bisecting: '⑂', bisected: '🎯', guard: '🛡', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺', reviewing: '👀', reviewed: '🧐', 'review-skipped': '–' };
+const ICON = { system1: '⚡', 'system1-compared': '⚖', 'system1-held': '⏸', 'system1-queue': '⇅', triaged: '➜', 'known-test': '🧪', 'prior-art': '⟲', mailed: '✉', 'mail-failed': '✖', resolved: '☑', documenting: '📝', documented: '📚', 'docs-merged': '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', bisecting: '⑂', bisected: '🎯', guard: '🛡', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺', reviewing: '👀', reviewed: '🧐', 'review-skipped': '–' };
 
 const tickets = new Map();
 const teams = [];
@@ -464,11 +491,17 @@ function apply(ev) {
   if (ev.url && !t.url && ev.type !== 'commented') t.url = ev.url;
   if (ev.priority) t.priority = ev.priority;
   switch (ev.type) {
-    case 'queued': t.title = ev.text; t.state = 'queued'; break;
+    case 'queued': t.title = ev.text; t.state = 'queued'; t.system1 = null; t.system1Compared = null; t.held = null; t.triaged = null; t.knownTest = null; break;
     case 'picked': t.title = ev.text || t.title; t.state = 'analyzing'; t.startedAt = ev.at; t.steps = []; t.result = null; t.fix = null; t.review = null; t.fixSkipped = null; t.duplicateOf = null; t.priorArt = null; t.cross = null; t.error = null; t.expanded = false; break;
+    // System 1 is asked when the ticket is queued, so its answers come before 'picked' (which keeps them).
+    case 'system1': t.system1 = { answers: ev.answers, ms: ev.ms, elapsedMs: ev.elapsedMs, model: ev.model, mode: ev.mode, lightPath: ev.lightPath, lightPathMode: ev.lightPathMode, threshold: ev.threshold, known: ev.known, privacy: ev.privacy }; break;
+    case 'system1-compared': t.system1Compared = ev.compare; break;
+    case 'system1-held': t.held = { kind: ev.kind, text: ev.text }; t.state = 'held'; break;
+    case 'triaged': t.triaged = ev.text; t.held = null; break;
+    case 'known-test': t.knownTest = { entry: ev.entry, status: ev.status, text: ev.text }; break;
     case 'analyzed': t.result = ev.result; t.meta = ev.meta; t.priorArt = ev.result?.priorArt ?? t.priorArt ?? null; break;
     case 'commented': t.commentUrl = ev.url; break;
-    case 'notified': teams.unshift({ ...ev.card, key: ev.key, at: ev.at, channel: ev.channel }); break;
+    case 'notified': teams.unshift({ ...ev.card, key: ev.key, at: ev.at, channel: ev.channel, error: ev.error ?? null }); break;
     case 'cross-project': t.cross = { projects: ev.projects ?? [], fixIn: ev.fixIn }; break;
     case 'draft': drafts.unshift({ ...ev }); break;
     case 'done': t.state = 'done'; t.doneAt = ev.at; t.totalMs = ev.totalMs; break;
@@ -491,7 +524,7 @@ function apply(ev) {
     case 'reviewed': t.review = { stage: 'done', ...ev.review, url: ev.url }; break;
     case 'review-skipped': t.review = { stage: 'skipped', error: ev.text }; break;
   }
-  if (['picked', 'analyzing', 'progress', 'cross-project', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'prior-art', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'docs-merged', 'warmed', 'workspace', 'reproducing', 'reproduced', 'bisecting', 'bisected', 'guard', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-skipped', 'reviewing', 'reviewed', 'review-skipped', 'mailed', 'mail-failed'].includes(ev.type)) {
+  if (['picked', 'system1', 'system1-compared', 'system1-held', 'system1-queue', 'triaged', 'known-test', 'analyzing', 'progress', 'cross-project', 'analyzed', 'commented', 'notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'prior-art', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'docs-merged', 'warmed', 'workspace', 'reproducing', 'reproduced', 'bisecting', 'bisected', 'guard', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-skipped', 'reviewing', 'reviewed', 'review-skipped', 'mailed', 'mail-failed'].includes(ev.type)) {
     t.steps.push({ at: ev.at, type: ev.type, text: ev.step ?? ev.text });
   }
 }
@@ -569,6 +602,55 @@ function resultView(t) {
   );
 }
 
+const MISSING_WORDS = { steps: 'what was done', expected: 'what is wrong', screen: 'where in the application', environment: 'where, when or which record' };
+/**
+ * System 1 (docs/SYSTEM1_PLAN.md): the local model's answers, there before the analysis; after it, ✓ or ⚠ where the
+ * analysis' files (side, component) or the Jira priority (urgency) say the same or something else. Shadow: nothing
+ * about the ticket depends on it yet.
+ */
+function system1View(t) {
+  const s = t.system1;
+  if (!s) return null;
+  const c = t.system1Compared;
+  const by = (k) => (k === 'urgency' ? 'the Jira priority' : 'the analysis');
+  const mark = (k) => (c?.[k]?.agree === true ? h('span', { class: 'chip done', title: `${by(k)} says ${c[k].other}` }, '✓')
+    : c?.[k]?.agree === false ? h('span', { class: 'chip analyzing', title: `${by(k)} says ${c[k].other}` }, `⚠ ${c[k].other}`) : null);
+  const pc = (p) => `${Math.round(100 * (p ?? 0))} %`;
+  const row = (label, k, a, extra = null) => (a ? [h('span', { class: 'k' }, label), h('div', { class: 's1-line' },
+    h('div', { class: 's1-bar', title: (a.top ?? []).map(([o, p]) => `${o} ${pc(p)}`).join('\n') }, h('i', { style: `width:${pc(a.p).replace(' ', '')}` }), h('span', {}, `${a.choice} · ${pc(a.p)}`)),
+    extra, mark(k))] : []);
+  const a = s.answers ?? {};
+  const kt = t.knownTest;
+  const ktChip = kt ? h('span', { class: `chip ${kt.status === 'pass' ? 'done' : kt.status === 'fail' ? 'failed' : 'analyzing'}`, title: kt.text },
+    { queued: 'test queued', running: 'test running…', pass: '✓ its test passes on main', fail: '✗ its test FAILS on main: may be back', 'not-run': 'test did not run', none: 'no verdict' }[kt.status] ?? kt.status) : null;
+  const light = s.lightPathMode === 'auto' ? 'light path (auto)' : s.lightPathMode === 'draft' ? 'light path offered' : 'would take the light path';
+  return h('div', { class: 's1' },
+    h('div', { class: 's1-head' }, '⚡ System 1', h('span', { class: 'chip' }, s.mode === 'shadow' ? 'shadow · changes nothing' : s.mode),
+      s.lightPath ? h('span', { class: 'chip done', title: `every not-code answer says "no change in the code" (each at least ${pc(s.threshold ?? 0.5)}): ${s.lightPathMode === 'shadow' || !s.lightPathMode ? 'with the light path on (J2), this ticket would get no code analysis' : 'policy.json system1.lightPath'}` }, light) : null,
+      s.privacy?.hold ? h('span', { class: 'chip failed', title: 'the text, with every known name masked, may still name a person (J6)' }, s.privacy.mode === 'auto' ? `held: may name a person ${pc(s.privacy.p)}` : `would hold: may name a person ${pc(s.privacy.p)}`) : null,
+      h('span', { class: 't-sub', title: s.elapsedMs != null ? `answered ${(s.elapsedMs / 1000).toFixed(1)} s after the ticket was queued (reading it from Jira included)` : '' }, `${((s.ms ?? 0) / 1000).toFixed(1)} s on this machine · ${s.model}`)),
+    h('div', { class: 's1-rows' },
+      ...row('Type', 'type', a.type, a.type ? h('span', { class: 't-sub', title: 'the share of the types that need no change in the code' }, `not code ${pc(a.type.notCode)}`) : null),
+      ...row('Needs code?', 'code', a.code), ...row('Side', 'side', a.side), ...row('Component', 'component', a.component), ...row('Urgency', 'urgency', a.urgency),
+      ...(s.known ? [h('span', { class: 'k' }, 'Known issue?'), h('div', { class: 's1-line', style: 'flex-wrap:wrap' },
+        h('span', {}, jiraLink(s.known.key), ` ${s.known.title} · ${pc(s.known.p)}`), s.known.test ? ktChip : h('span', { class: 't-sub' }, 'no regression test'))] : []),
+      ...(s.missing?.length ? [h('span', { class: 'k' }, 'The report'), h('div', { class: 's1-line', style: 'flex-wrap:wrap' },
+        h('span', {}, `does not tell ${s.missing.map((f) => MISSING_WORDS[f]).join(', ')}`),
+        s.askReporter ? h('span', { class: 'chip analyzing', title: 'J7: it does not tell what is wrong or where. A template drafts the question; a person sends it as a Jira comment' }, s.askReporter.mode === 'draft' ? 'question to the reporter in Drafts' : 'would ask the reporter') : null)] : [])),
+    t.held ? h('div', { class: 'actions', style: 'margin-top:8px' },
+      h('span', { class: 't-sub' }, t.held.text),
+      t.held.kind === 'light' ? h('button', { class: 'small', onclick: (e) => decideHeld(t.key, 'light', e.target) }, '➜ Light path') : null,
+      h('button', { class: 'small', onclick: (e) => decideHeld(t.key, 'analyze', e.target) }, t.held.kind === 'privacy' ? 'Release: analyze it' : t.held.kind === 'incomplete' ? 'Analyze now' : 'Analyze anyway')) : null,
+    t.triaged ? h('div', { class: 't-sub', style: 'margin-top:6px' }, `➜ ${t.triaged}. Run again gives the full analysis.`) : null);
+}
+
+/** J2/J6: a person's decision on a ticket System 1 held. */
+async function decideHeld(key, action, button) {
+  if (button) { button.disabled = true; button.textContent = action === 'light' ? 'Taking the light path…' : 'Queuing…'; }
+  try { await post('/api/system1/decide', { key, action }); }
+  catch (e) { alert(`${key}: ${e.message}`); if (button) button.disabled = false; }
+}
+
 /** The second agent's review of the pull request (FR-63). */
 function reviewView(t) {
   const r = t.review;
@@ -592,6 +674,8 @@ function reviewView(t) {
 
 /** What the ticket ended with, in words: a PR, a failed fix, or only an analysis (and why no fix). */
 function stateChip(t) {
+  if (t.state === 'held') return h('span', { class: 'chip analyzing', title: t.held?.text ?? '' }, 'held for a person');
+  if (t.state === 'done' && t.triaged) return h('span', { class: 'chip done', title: t.triaged }, 'light path');
   if (t.state !== 'done') return h('span', { class: `chip ${t.state}` }, t.state);
   if (t.fix?.stage === 'done' && t.review?.stage === 'done' && (t.review.risk === 'high' || t.review.verdict === 'needs-changes')) return h('span', { class: 'chip failed' }, 'PR ready · review findings');
   if (t.fix?.stage === 'done') return h('span', { class: 'chip done' }, t.review?.stage === 'done' ? `PR ready · risk ${t.review.risk}` : 'PR ready');
@@ -643,6 +727,7 @@ function render() {
       t.state === 'done' || t.state === 'failed' ? h('div', { class: 'actions', style: 'margin-top:8px' },
         t.state === 'done' && !t.expanded ? h('button', { onclick: () => { t.expanded = true; render(); } }, `Show ${t.steps.length} agent steps`) : null,
         h('button', { onclick: (e) => runTicket(t.key, e.target), title: 'Edited the ticket? Run the whole flow again (agent labels are reset)' }, '↻ Run again')) : null,
+      system1View(t),
       resultView(t));
     t.fresh = false;
     return el;
@@ -653,15 +738,16 @@ function render() {
   const shownTeams = teams.filter((m) => !m.key || visible(m.key));
   $('#teams').replaceChildren(...(shownTeams.length ? shownTeams.map((m) => h('div', { class: 'msg' },
     h('span', { class: 'avatar', style: 'background:linear-gradient(135deg,var(--accent),var(--teams))' }, '✦'),
-    h('div', {}, h('div', { class: 'who' }, h('b', {}, 'Ticket Intelligence'), ` · ${ago(m.at)}`),
-      h('div', { class: 'card' }, h('div', { class: 'to' }, `@${m.to}`), h('div', { class: 'ct' }, m.title), h('div', {}, m.message),
-        m.escalate ? h('div', { class: 'esc' }, `Escalation: ${m.escalate}`) : null,
-        h('div', { class: 'actions', style: 'margin-top:8px' }, h('a', { href: m.url, target: '_blank' }, 'Open in Jira ↗')))))) : [h('div', { class: 'empty' }, 'Handoff messages to owners appear here.')]));
-  if (teams.some((m) => m.channel === 'teams')) $('#teams-mode').textContent = 'live channel (webhook)';
+    h('div', {}, h('div', { class: 'who' }, h('b', {}, 'Ticket Intelligence'), ` · ${ago(m.at)}`), teamsCard(m)))) : [h('div', { class: 'empty' }, 'Handoff messages to owners appear here.')]));
+  const teamsLive = status?.teams?.live || teams.some((m) => m.channel === 'teams');
+  $('#teams-mode').textContent = teamsLive ? 'live channel (webhook)' : 'simulated channel: no Teams webhook set';
+  const channelUrl = status?.teams?.channelUrl ?? null;
+  $('#teams-open').hidden = !channelUrl;
+  if (channelUrl) $('#teams-open').href = channelUrl;
 
   const shownDrafts = drafts.filter((d) => visible(d.key));
   $('#drafts').replaceChildren(...(shownDrafts.length ? shownDrafts.slice(0, 8).map((d) => h('div', { class: 'draft' },
-    h('div', { class: 'dk' }, `${d.key} · ${d.kind === 'assign' ? 'assignment' : 'reply to reporter'}`),
+    h('div', { class: 'dk' }, `${d.key} · ${d.kind === 'assign' ? 'assignment' : d.kind === 'ask-reporter' ? 'question to the reporter (System 1)' : 'reply to reporter'}`),
     h('div', {}, d.text), d.why ? h('div', { class: 't-sub' }, d.why) : null,
     d.body ? h('details', {}, h('summary', {}, 'Show text'), h('pre', { class: 'comment' }, d.body),
       h('button', { onclick: (e) => { navigator.clipboard?.writeText(d.body); e.target.textContent = 'Copied'; } }, 'Copy')) : null)) : [h('div', { class: 'empty' }, 'Drafts that policy does not allow the agent to send on its own.')]));
@@ -673,12 +759,21 @@ function render() {
   $('#k-notified').textContent = shownTeams.length;
   $('#k-esc').textContent = done.filter((t) => t.result?.escalate?.yes).length;
   $('#k-queue').textContent = `${(status?.queue ?? []).filter((q) => visible(q.key)).length} / ${list.filter((t) => t.state === 'failed').length}`;
+  // System 1 in shadow: its side and component against the files the analysis named.
+  const agreeOf = (k) => { const xs = list.filter((t) => t.system1Compared?.[k]?.agree != null); return [xs.filter((t) => t.system1Compared[k].agree).length, xs.length]; };
+  const [sa, sn] = agreeOf('side');
+  const [ca, cn] = agreeOf('component');
+  const s1 = status?.system1;
+  $('#k-s1').textContent = sn + cn ? `${sa + ca}/${sn + cn}` : '–';
+  const light = list.filter((t) => t.system1?.lightPath).length;
+  $('#k-s1-sub').textContent = sn + cn ? `side ${sa}/${sn} · component ${ca}/${cn}, with the analysis${light ? ` · ${light} would take the light path` : ''}`
+    : s1?.mode === 'off' ? 'off in policy.json' : s1?.ready === false ? `off: ${s1.reason ?? 'not started'}` : 'side · component, with the analysis';
 }
 
 function renderStatus() {
   const pill = $('#state');
   if (!live) { pill.className = 'pill off'; $('#state-text').textContent = 'disconnected'; return; }
-  if (status?.processing) { pill.className = 'pill busy'; $('#state-text').textContent = `${{ review: 'reviewing', document: 'documenting', guard: 'checking commit' }[status.processing.kind] ?? 'analyzing'} ${status.processing.key}`; }
+  if (status?.processing) { pill.className = 'pill busy'; $('#state-text').textContent = `${{ review: 'reviewing', document: 'documenting', guard: 'checking commit', 'known-test': 'testing a known issue for' }[status.processing.kind] ?? 'analyzing'} ${status.processing.key}`; }
   else if (status?.jira?.ok === false) { pill.className = 'pill warn'; $('#state-text').textContent = 'paused'; }
   else { pill.className = 'pill live'; $('#state-text').textContent = 'watching'; }
   // Jira health (agent/lib/jira-health.mjs): red when Jira cannot be used, amber for a warning (a project now empty).
@@ -761,7 +856,17 @@ $('#project-sel').addEventListener('change', (e) => selectProject(e.target.value
 // ---------------------------------------------------------------- insights (FR-64)
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const monthLabel = (m) => `${MONTHS[Number(m.slice(5, 7)) - 1]} ${m.slice(2, 4)}`;
-const jiraLink = (key) => h('a', { href: `${status?.jiraUrl ?? ''}/browse/${key}`, target: '_blank' }, key);
+const jiraHref = (key) => `${status?.jiraUrl ?? ''}/browse/${key}`;
+const jiraLink = (key) => h('a', { href: jiraHref(key), target: '_blank' }, key);
+/** An owner's message as Teams shows it; "Open in Teams" when it was posted and the channel's link is known. */
+function teamsCard(m) {
+  const channelUrl = m.channel === 'teams' ? status?.teams?.channelUrl : null;
+  return h('div', { class: 'card' }, h('div', { class: 'to' }, `@${m.to}`), h('div', { class: 'ct' }, m.title), h('div', {}, m.message),
+    m.escalate ? h('div', { class: 'esc' }, `Escalation: ${m.escalate}`) : null,
+    m.channel === 'failed' ? h('div', { class: 'esc' }, `Not posted to Teams${m.error ? `: ${m.error}` : ''}`) : null,
+    h('div', { class: 'actions', style: 'margin-top:8px' }, m.url ? h('a', { href: m.url, target: '_blank' }, 'Open in Jira ↗') : null,
+      channelUrl ? h('a', { href: channelUrl, target: '_blank' }, 'Open in Teams ↗') : null));
+}
 
 let insightsFor = null; // the project whose insights are shown (a late answer for another project is dropped)
 async function loadInsights(refresh = false) {
@@ -1574,6 +1679,43 @@ const svgEl = (tag, attrs = {}, title = null) => {
   return el;
 };
 const gWhen = (iso) => new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+/** A ticket key: the button shows only its lane, ↗ opens it in Jira. */
+const gKey = (key, other = false) => [
+  h('button', { class: `small g-key${other ? ' g-other' : ''}`, title: `Only ${key}`, onclick: () => { $('#g-dialog')?.close(); showTicketLane(key); } }, key),
+  status?.jiraUrl ? h('a', { class: 'g-jira', href: jiraHref(key), target: '_blank', title: `${key} in Jira`, 'aria-label': `${key} in Jira` }, '↗') : null];
+/**
+ * The key cell of a row: the ticket it belongs to, and the tickets its commit message names (a knowledge refresh
+ * names many): one is shown as a key, more open a list.
+ */
+function gKeys(r) {
+  const named = r.mentions ?? [];
+  if (r.ticket) return h('span', { class: 'g-keys' }, gKey(r.ticket), named.length ? h('button', { class: 'small g-key g-other', title: `Also names ${named.map((m) => m.key).join(', ')}`, onclick: () => openMentions(r) }, `+${named.length}`) : null);
+  if (named.length === 1) return h('span', { class: 'g-keys' }, gKey(named[0].key, true));
+  if (named.length > 1) return h('span', { class: 'g-keys' }, h('button', { class: 'small g-key g-other', title: named.map((m) => m.key).join(', '), onclick: () => openMentions(r) }, `${named.length} tickets`));
+  return h('span');
+}
+/** One dialog for the Graph tab; closes on Escape, Close, or a click outside it. */
+function graphDialog(title, ...body) {
+  let d = $('#g-dialog');
+  if (!d) {
+    d = h('dialog', { id: 'g-dialog', class: 'g-dialog', 'aria-labelledby': 'g-dialog-title' });
+    d.addEventListener('click', (e) => { if (e.target === d) d.close(); });
+    document.body.append(d);
+  }
+  d.replaceChildren(h('div', { class: 'dh' }, h('b', { id: 'g-dialog-title' }, title), h('span', { class: 'spacer' }), h('button', { class: 'small', onclick: () => d.close() }, 'Close')), h('div', { class: 'db' }, body));
+  d.showModal();
+}
+function openMentions(r) {
+  const named = r.mentions ?? [];
+  graphDialog(`${named.length} ticket${named.length === 1 ? '' : 's'} named in ${r.ref}${r.pr ? ` (#${r.pr})` : ''}`,
+    h('div', { class: 't-sub' }, r.text),
+    h('div', {}, named.map((m) => h('div', { class: 'g-mrow' }, h('span', { class: 'g-keys' }, gKey(m.key)),
+      h('div', {}, m.summary ? h('div', {}, m.summary) : null, m.line ? h('div', { class: 't-sub' }, m.line) : null)))));
+}
+function openTeamsMessage(r) {
+  const how = r.channel === 'teams' ? 'Posted to the Teams channel.' : r.channel === 'failed' ? r.text.replace(/^✉ /, '') : 'Simulated: no Teams webhook is set, so the message was shown on the dashboard only.';
+  graphDialog(`Teams message · ${r.ticket}`, h('div', { class: 't-sub' }, `${gWhen(r.at)} · ${how}`), teamsCard({ ...r.card, channel: r.channel }));
+}
 function renderLanes(d) {
   const L = d.layout;
   const box = $('#graph-lanes');
@@ -1599,16 +1741,20 @@ function renderLanes(d) {
     svg.append(svgEl('circle', { class: cls, cx: x(r.col), cy: y(r.y), r: r.kind === 'commit' ? 5 : 4 }, `${r.ticket ? `${r.ticket} · ` : ''}${r.text}`));
   }
   const link = (href, text) => h('a', { href, target: '_blank' }, text);
-  const rows = L.rows.map((r) => h('div', { class: `g-row ${r.kind}` },
-    h('span', { class: 'g-t' }, gWhen(r.at)),
-    r.ticket ? h('button', { class: 'small g-key', title: `Only ${r.ticket}`, onclick: () => showTicketLane(r.ticket) }, r.ticket) : h('span'),
-    h('span', { class: 'g-text', title: r.text }, r.text),
-    h('span', { class: 'g-ref' },
-      r.kind === 'commit'
-        ? [r.agent ? h('span', { class: 'g-agent', title: "The agent's work (its commit, or the squash merge of its PR)" }, '✦ agent') : h('span', {}, r.by ?? ''),
-          repo && !/^r\d+$/.test(r.ref) ? link(`https://github.com/${repo}/commit/${r.ref}`, h('code', {}, r.ref)) : h('code', {}, r.ref),
-          r.pr && repo ? link(`https://github.com/${repo}/pull/${r.pr}`, `#${r.pr}`) : null]
-        : [r.url ? link(r.url, 'open') : null])));
+  const rows = L.rows.map((r) => {
+    const mentionLine = r.mentioned ? r.mentions?.find((m) => m.key === r.mentioned)?.line : null;
+    return h('div', { class: `g-row ${r.kind}` },
+      h('span', { class: 'g-t' }, gWhen(r.at)),
+      gKeys(r),
+      h('span', { class: 'g-text', title: [r.mentioned ? `Mentions ${r.mentioned}` : null, r.text, mentionLine].filter(Boolean).join('\n') },
+        r.mentioned ? h('span', { class: 'g-mention' }, `mentions ${r.mentioned} · `) : null, r.text, mentionLine ? h('span', { class: 'g-line' }, ` · ${mentionLine}`) : null),
+      h('span', { class: 'g-ref' },
+        r.kind === 'commit'
+          ? [r.agent ? h('span', { class: 'g-agent', title: "The agent's work (its commit, or the squash merge of its PR)" }, '✦ agent') : h('span', {}, r.by ?? ''),
+            repo && !/^r\d+$/.test(r.ref) ? link(`https://github.com/${repo}/commit/${r.ref}`, h('code', {}, r.ref)) : h('code', {}, r.ref),
+            r.pr && repo ? link(`https://github.com/${repo}/pull/${r.pr}`, `#${r.pr}`) : null]
+          : [r.card ? h('button', { class: 'g-linkbtn', onclick: () => openTeamsMessage(r) }, 'message') : null, r.url ? link(r.url, 'open') : null]));
+  });
   box.replaceChildren(...[
     h('div', { class: 'g-wrap', style: `grid-template-columns:${GPAD * 2 + (L.cols - 1) * G_COL + 6}px minmax(0,1fr)` }, svg, h('div', {}, rows)),
     L.cut ? h('div', { class: 'hint', style: 'padding:6px' }, `${L.cut} older row(s) not shown: pick a shorter window or one ticket.`) : null].filter(Boolean));
@@ -1622,6 +1768,7 @@ async function loadImpact(refresh = false) {
     const data = await fetchJsonOrHint(`/api/impact?weeks=${impactWeeks}${refresh ? '&refresh=1' : ''}`);
     renderImpact(data);
     $('#impact-state').textContent = `${data.perProject.length} apps`;
+    fetchJsonOrHint('/api/system1').then(renderSystem1).catch((e) => $('#impact-system1').replaceChildren(h('div', { class: 't-sub' }, `System 1: ${e.message}`)));
   } catch (e) {
     $('#impact-kpis').replaceChildren(h('pre', { class: 'err', style: 'grid-column:1/-1' }, `Impact failed: ${e.message}`));
     $('#impact-state').textContent = '';
@@ -1674,6 +1821,35 @@ function renderImpact(d) {
     ...d.notes].map((n) => h('li', { class: 't-sub' }, n))));
 }
 
+/** System 1 (docs/SYSTEM1_PLAN.md, J8b): what the local model did and would have done, and its calibration. */
+function renderSystem1(r) {
+  const pc = (x) => (x == null ? '–' : `${Math.round(100 * x)} %`);
+  const ev = r.evaluation;
+  const modes = Object.entries(r.modes ?? {}).filter(([k]) => !/Threshold$/.test(k)).map(([k, v]) => `${k} ${v}`).join(' · ');
+  const th = (x, n) => h('th', { class: n ? 'num' : null }, x);
+  $('#impact-system1').replaceChildren(
+    h('div', { class: 'ct', style: 'font-weight:700;margin-bottom:6px' }, `⚡ System 1: the local decision model ${r.checkpoint?.name ?? ''}`, h('span', { class: 't-sub', style: 'font-weight:400;margin-left:8px' }, modes)),
+    h('ul', { class: 'review-list', style: 'margin:0 0 8px' }, [
+      `Answered ${r.tickets} ticket(s), ${r.modelSeconds ?? '–'} s of model time each, on this machine, at no cost.`,
+      `Would have taken the light path: ${r.lightPath.tickets.length} (${r.lightPath.tickets.join(', ') || 'none'}). The Claude analysis spent $${r.lightPath.claudeCostUsd.toFixed(2)} and ${r.lightPath.claudeMinutes} min on them, and notified an owner ${r.lightPath.ownerNotices} time(s).`,
+      `Known issues named: ${r.known.tickets.length}${r.known.tickets.length ? ` (${r.known.tickets.map((k) => `${k.key} → ${k.entry}`).join(', ')})` : ''}; their regression tests on main: ${r.known.tests.pass} pass, ${r.known.tests.fail} fail, ${r.known.tests['not-run']} did not run.`,
+      `Privacy: would hold ${r.privacy.wouldHold.length} ticket(s)${r.privacy.wouldHold.length ? ` (${r.privacy.wouldHold.join(', ')})` : ''}. Held for a person: ${r.held}; light path taken: ${r.triaged}.`,
+      `Ask: ${r.ask.fast} of ${r.ask.all} question(s) answered without Claude${r.ask.seconds != null ? `, in ${r.ask.seconds} s on average` : ''}.`,
+      ...(r.askReporter ? [`Reporter asked (J7): ${r.askReporter.tickets.length} ticket(s)${r.askReporter.tickets.length ? ` (${r.askReporter.tickets.join(', ')})` : ''}. Low-confidence analyses: ${r.askReporter.asked.low} of ${r.askReporter.asked.analysed} among them, ${r.askReporter.others.low} of ${r.askReporter.others.analysed} among the other tickets it read.`] : []),
+    ].map((t) => h('li', { class: 't-sub' }, t))),
+    ev ? h('div', { style: 'display:flex;gap:16px;flex-wrap:wrap' },
+      h('div', { style: 'flex:1;min-width:260px' }, h('div', { class: 't-sub' }, `Held-out test of ${ev.label}: right / always the largest class`),
+        h('table', {}, h('thead', {}, h('tr', {}, th('Question'), th('Right', 1), th('Largest class', 1), th('n', 1))),
+          h('tbody', {}, Object.entries(ev.scores).map(([q, s]) => h('tr', {}, h('td', {}, q), h('td', { class: 'num' }, pc(s.accuracy)), h('td', { class: 'num' }, pc(s.majority)), h('td', { class: 'num' }, s.n)))))),
+      h('div', { style: 'flex:1;min-width:260px' }, h('div', { class: 't-sub' }, 'Calibration: when it says …, it is right …'),
+        h('table', {}, h('thead', {}, h('tr', {}, th('Said'), th('Right', 1), th('Answers', 1))),
+          h('tbody', {}, ev.calibration.map((b) => h('tr', {}, h('td', {}, `${Math.round(100 * b.from)}–${Math.round(100 * b.to)} % (avg ${pc(b.said)})`), h('td', { class: 'num' }, pc(b.right)), h('td', { class: 'num' }, b.n))))),
+        ev.lightPath ? h('div', { class: 't-sub', style: 'margin-top:6px' }, `Light path on the test (${ev.lightPath.rule}): ${ev.lightPath.not_code_caught} not-code tickets caught; tickets about code skipped: ${ev.lightPath.code_wrongly_skipped.join(', ') || 'none'}.`) : null,
+        Object.keys(ev.known ?? {}).length ? h('div', { class: 't-sub' }, `Known issue: ${Object.entries(ev.known).map(([k, v]) => `${k} ${v}`).join(' · ')}.`) : null,
+        ev.privacyMissed != null ? h('div', { class: 't-sub' }, `Privacy: ${ev.privacyMissed} name(s) missed on the test.`) : null))
+      : h('div', { class: 't-sub' }, 'No evaluation of the current checkpoint yet (node agent/system1-train.mjs --eval-only <name>).'));
+}
+
 // ---------------------------------------------------------------- ask (FR-65)
 const answers = [];
 let askId = null;
@@ -1704,7 +1880,10 @@ function renderAnswers() {
     h('div', { class: 'q' }, a.project ? h('span', { class: 'proj', style: 'margin-right:8px' }, projectInfo(a.project)?.name ?? a.project) : null, a.question),
     a.error ? h('pre', { class: 'err' }, a.error) : [
       h('div', {}, h('span', { class: `chip ${a.found ? 'done' : a.searchFailed ? 'failed' : 'analyzing'}` }, a.found ? 'answered from sources' : a.searchFailed ? 'Jira could not be searched' : 'not in the knowledge base'),
-        h('span', { class: 'meta', style: 'margin-left:8px' }, `${Math.round((a.meta?.durationMs ?? 0) / 1000)} s · ~$${(a.meta?.costUsd ?? 0).toFixed(2)}`)),
+        a.fast ? h('span', { class: 'chip', style: 'margin-left:6px', title: `System 1 read the question as "${a.routed?.intent}" (${Math.round(100 * (a.routed?.intentP ?? 0))} %)${a.component ? ` about ${a.component}` : ''}, and plain code answered from the Insights data` }, '⚡ System 1 · no Claude call') : null,
+        h('span', { class: 'meta', style: 'margin-left:8px' }, `${a.fast ? ((a.meta?.durationMs ?? 0) / 1000).toFixed(1) : Math.round((a.meta?.durationMs ?? 0) / 1000)} s · ~$${(a.meta?.costUsd ?? 0).toFixed(2)}`),
+        a.fast ? h('button', { class: 'small', style: 'margin-left:8px', onclick: (e) => askClaude(a.question, a.project, e.target) }, 'Ask Claude instead') : null),
+      !a.fast && a.routed?.intent ? h('div', { class: 't-sub' }, `System 1 read it as "${a.routed.intent}" (${Math.round(100 * a.routed.intentP)} %)${a.routed.componentP >= 0.7 ? `, about ${a.routed.component}` : ''}; Claude answered.`) : null,
       // K10: a source that could not be read is said, never hidden behind "not found".
       a.warnings?.length ? h('div', { class: 'err', style: 'margin:6px 0;padding:6px 10px;border-radius:6px' }, a.warnings.map((w) => h('div', {}, `⚠ ${w.text}`))) : null,
       h('div', { class: 'a' }, linkify(a.answer, a.project)),
@@ -1747,6 +1926,15 @@ async function ask() {
   try { answers.unshift(await post('/api/ask', { question: q, id: askId, project })); $('#ask-q').value = ''; }
   catch (e) { answers.unshift({ question: q, project, error: e.message }); }
   finally { askId = null; btn.disabled = false; btn.textContent = 'Ask'; progress.hidden = true; renderAnswers(); }
+}
+/** J5: the same question to Claude, after a fast System 1 answer. */
+async function askClaude(question, project, button) {
+  if (askId) return;
+  askId = String(Date.now());
+  if (button) { button.disabled = true; button.textContent = 'Claude is answering…'; }
+  try { answers.unshift(await post('/api/ask', { question, id: askId, project, full: true })); }
+  catch (e) { answers.unshift({ question, project, error: e.message }); }
+  finally { askId = null; renderAnswers(); }
 }
 $('#ask-form').addEventListener('submit', (e) => { e.preventDefault(); ask(); });
 $('#ask-q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } });

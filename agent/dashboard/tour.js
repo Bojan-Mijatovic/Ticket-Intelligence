@@ -11,7 +11,7 @@
 // Read-only: it never starts an agent run, an Ask question, a review or a recommendation.
 //
 // Three modes. ?tour (or ▶ Tour): the tour above, with its slides over the dashboard. ?present (or ▶ Present): a
-// presentation of about fourteen minutes: full-screen slides (slides.js), then the tour's dashboard part as the demo,
+// presentation of about seventeen minutes: full-screen slides (slides.js), then the tour's dashboard part as the demo,
 // then full-screen slides again (what you just saw, results, technologies, sources, thank you) and backup Q&A slides
 // after the end. ?deck: the slides alone. In a presentation, P switches to presenter mode (no voice; → shows the next
 // part of a slide, then the next slide) and F to full screen.
@@ -244,7 +244,7 @@
       for (const arr of [teams, drafts]) for (let i = arr.length - 1; i >= 0; i--) if (arr[i].key === key) arr.splice(i, 1);
     }
     rps.clear();
-    for (let i = answers.length - 1; i >= 0; i--) if (answers[i].tourReplay) answers.splice(i, 1);
+    for (let i = answers.length - 1; i >= 0; i--) if (answers[i].tourReplay || answers[i].tourLive) answers.splice(i, 1);
     renderAnswers();
     const btn = $('#ask-go');
     btn.disabled = false; btn.textContent = 'Ask';
@@ -333,6 +333,7 @@
   let deckCfg = {}; // agent.config.json "presentation": presenter, team, contact
   let ctx = {}; // what the slides show: the cases, the apps (built with the steps)
   let asks = []; // recorded Ask answers for the tour
+  let s1 = null; // System 1's chapter (J9): /api/tour/system1 (its recorded runs, the privacy moment, a live question)
   let suite = null; // the suite insights, fetched at the start (it also warms the server's cache)
   let preIns = null; // the first case's project insights, fetched at the start for the same reason
   /** The steps, built from what the dashboard has now: real tickets (live or recorded runs), a real project, real numbers. */
@@ -352,7 +353,7 @@
     // The cases: a live ticket first, then recorded runs; case 2 crosses projects.
     const analyzed = [...tickets.values()].filter((t) => t.result && !rps.has(t.key));
     const live = analyzed.find((t) => t.fix?.stage === 'done' && t.review?.stage === 'done') ?? analyzed.find((t) => t.fix?.stage === 'done') ?? analyzed.find((t) => t.state === 'done') ?? analyzed[0] ?? null;
-    const replayed = [...rps.keys()];
+    const replayed = [...rps.keys()].filter((k) => !rps.get(k).s1);
     const k1 = live?.key ?? replayed.find((k) => did(k, 'fix-proposed')) ?? replayed[0] ?? null;
     const k2 = replayed.find((k) => k !== k1 && did(k, 'cross-project') && !did(k, 'duplicate')) ?? null;
 
@@ -459,11 +460,12 @@
       mode, deck: deckCfg,
       apps: projects().map((p) => ({ key: p.key, name: p.name, role: String(p.description ?? ROLE[p.key] ?? '').split(/[;:]/)[0], linked: p.linked ?? [] })),
       cases: [k1, k2].filter(Boolean).map(caseFacts),
+      system1: s1,
     };
 
     const opening = [
       { ch: 'Welcome', target: () => $('.brand'),
-        say: "Hi. This is Ticket Intelligence: an AI agent that reads every new Jira ticket, finds the code behind it, proves the bug with a test, proposes a fix, and gets it to the right person. In about twelve minutes: the problem, how it works, two real cases, Insights and Ask. Nothing I do here costs money or changes anything." },
+        say: "Hi. This is Ticket Intelligence: an AI agent that reads every new Jira ticket, finds the code behind it, proves the bug with a test, proposes a fix, and gets it to the right person. In about fifteen minutes: the problem, how it works, two real cases, Insights, Ask, and a small local model in front of Claude. Nothing I do here costs money or changes anything." },
       { ch: 'The problem', slide: 'problem', reveal: 3,
         say: "The problem: customers open a ticket, then ask what the status is. To answer, an engineer has to read the ticket and its history, find earlier tickets like it, find the code and what changed there, and work out who knows it. By hand, slowly, and hardest for people new to a project. The goal: for every new ticket, within minutes and with no human start, an analysis with evidence, the right person informed, and the knowledge kept." },
       { ch: 'Behind the scenes', slide: 'pipeline', reveal: 2,
@@ -474,6 +476,77 @@
         say: "The AI is Claude, by Anthropic, through Claude Code: Sonnet for the analysis, Opus for the fix, the review and Ask. Code does the facts and the checks; the model does the judgement. Each run gets only the tools it needs, and every source it cites is checked. It is not trained on our data; it improves through what it reads, and every change is scored. An analysis costs fifteen to sixty cents." },
       { ch: 'At work', slide: 'work', reveal: 3,
         say: "At work, the same skills run on demand in GitHub Copilot, which reads the same skill files; that is still to be tried there. Projects can be in git or SVN: the analysis gives the same result on an SVN copy of the demo app, and documentation on SVN can be a commit, a branch or a patch. The automatic fix and Insights are git only for now." },
+    ];
+
+    // System 1 (docs/SYSTEM1_PLAN.md, J9): the local model in front of Claude, from its recorded runs (a ticket that
+    // is not about code, a known issue in other words), the privacy moment, a live question that costs nothing, and
+    // the Impact tab's numbers.
+    // A ticket still on the dashboard is shown as it is (its card has the answers); otherwise its recorded run plays.
+    const s1Keys = (s1?.runs ?? []).map((r) => r.key).filter((k) => rps.get(k)?.s1 || T(k)?.system1);
+    // The card keeps System 1's answer (t.system1) but not as one of its steps.
+    const s1Of = (k) => firstOf(k, 'system1') ?? T(k)?.system1 ?? null;
+    const kLight = s1Keys.find((k) => s1Of(k)?.lightPath) ?? null;
+    const kKnown = s1Keys.find((k) => s1Of(k)?.known) ?? null;
+    const pctOf = (p) => `${Math.round(100 * (p ?? 0))} percent`;
+    const s1Card = (k) => ticketEl(k)?.querySelector('.s1') ?? ticketEl(k);
+    const lastOf = (k, type) => evs(k).filter((e) => e.type === type).at(-1);
+    const fold = (k) => { if (k && T(k)) { T(k).expanded = false; render(); } };
+    let s1Answer = null;
+    const system1Chapter = !s1 ? [] : [
+      { ch: 'System 1', when: () => kLight || kKnown || s1.ask, slide: 'system1', reveal: 2,
+        say: 'One more thing, in front of Claude: System 1. A small model on this laptop, fine-tuned on our tickets, reads each new ticket in a few seconds and picks one of our answers, with a probability: the kind of ticket, the part of the code, how urgent, a known issue, a name that slipped through. Nothing leaves the machine, and a call costs nothing. Each decision it takes starts in shadow.' },
+      { ch: 'System 1', when: () => kLight, go: async (my) => { fold(k1); fold(k2); await toTickets(kLight, my); await playTo(kLight, 'system1', my); }, target: () => s1Card(kLight),
+        say: () => {
+          const a = s1Of(kLight).answers;
+          const after = Math.round((s1Of(kLight).elapsedMs ?? 0) / 1000);
+          const at = (type) => evs(kLight).findIndex((e) => e.type === type);
+          const first = at('picked') < 0 || at('system1') < at('picked');
+          return `${titleOf(kLight)}: a ticket that is not about code.${recorded(kLight)} System 1 answered${after ? ` ${after} seconds after it was queued` : ''}${first ? ', before the analysis started' : ''}: ${a.type.choice}, ${pctOf(a.type.p)}. Its not-code answers all agree, so it would take the light path.`;
+        } },
+      { ch: 'System 1', when: () => kLight, play: playUntil(kLight, 'done'), target: () => ticketEl(kLight),
+        say: () => {
+          // A card's steps keep only type and text: the cost is on the card (t.meta), or in the recorded event.
+          const cost = firstOf(kLight, 'analyzed')?.meta?.costUsd ?? T(kLight)?.meta?.costUsd;
+          return `Today Claude analyzes it anyway: ${secs(kLight, 'picked', 'analyzed')} seconds${cost ? ` and ${cents(cost)}` : ''} for a code analysis it does not need${did(kLight, 'notified') ? ', and a developer is notified in Teams' : ''}. With the light path on, it would get a short comment and a label instead. It stays in shadow until two weeks of the pilot show no bug among the tickets it would skip.`;
+        } },
+      { ch: 'System 1', when: () => kKnown, go: async (my) => { fold(kLight); await toTickets(kKnown, my); await playTo(kKnown, 'known-test', my); }, target: () => s1Card(kKnown),
+        say: () => {
+          const k = s1Of(kKnown).known;
+          return `${titleOf(kKnown)}: a problem we already know, reported in other words.${recorded(kKnown)} System 1 names it: ${k.key}, ${k.title}, at ${pctOf(k.p)}.${k.test ? ' Its knowledge entry has a regression test, so the test is queued to run on main at once.' : ''}`;
+        } },
+      { ch: 'System 1', when: () => kKnown, play: playUntil(kKnown, ''), target: () => s1Card(kKnown),
+        say: () => {
+          const pa = firstOf(kKnown, 'prior-art')?.priorArt ?? T(kKnown)?.priorArt;
+          const t = lastOf(kKnown, 'known-test')?.status ? lastOf(kKnown, 'known-test') : T(kKnown)?.knownTest;
+          return `${pa?.key ? `Claude's analysis agrees two minutes later: already known, fixed on main by ${pa.key}. ` : ''}Then the test runs on main. ${t?.status === 'pass' ? 'It passes: the problem is not back in that form, so an old build or another cause is likelier.' : t?.status === 'fail' ? 'It fails: the known issue is back.' : 'Its verdict lands on the card.'}`;
+        } },
+      { ch: 'System 1', when: () => s1.privacy, slide: 'system1Privacy', reveal: 3,
+        say: () => `Privacy. Before a ticket goes to a cloud model, the names the masking knows are replaced. In ${s1.privacy.key}, an uncommon name went through. A second check, System 1 on the text with every name masked, says it still names a person: ${pctOf(s1.privacy.p)}.${s1.privacy.mode === 'shadow' ? ' The check was in shadow, so the ticket went on, and the analysis repeated the name. With the check on, such a ticket waits for a person.' : ''} It is not on yet: on real tickets that name nobody, it still holds too many.` },
+      { ch: 'System 1', when: () => s1.ask,
+        go: async (my) => {
+          await openTab('ask', my);
+          await until(() => !$('#ask-form').hidden, 5000, my);
+          const box = $('#ask-q');
+          await clickOn(box, my);
+          box.value = '';
+          for (const ch of s1.ask.question) { if (my !== token) return; box.value += ch; await sleep(28); }
+          await pressOn($('#ask-go'), my);
+          const btn = $('#ask-go');
+          btn.disabled = true; btn.textContent = 'Thinking…';
+          try {
+            // fastOnly: answered by System 1 and plain code, or not at all; never a paid Claude run.
+            s1Answer = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: s1.ask.question, project: s1.ask.project, id: `tour-${Date.now()}`, fastOnly: true }) }).then((r) => r.json());
+            if (s1Answer?.fast) { answers.unshift({ ...s1Answer, project: s1.ask.project, tourLive: true }); renderAnswers(); }
+          } catch { s1Answer = null; }
+          box.value = ''; btn.disabled = false; btn.textContent = 'Ask';
+        },
+        target: () => (s1Answer?.fast ? answerEl(0) : $('#ask-form')),
+        say: () => (s1Answer?.fast
+          ? `And Ask: ${s1.ask.question} System 1 reads it as "who knows" ${s1Answer.routed?.component ?? 'a part of the code'}, and plain code answers from the knowledge map: ${firstSentence(noParens(s1Answer.answer), 160)} This answer is live: ${((s1Answer.meta?.durationMs ?? 0) / 1000).toFixed(1)} seconds, no Claude call, nothing paid.`
+          : `And Ask: ${s1.ask.question} Here System 1 was not sure enough which part of the code is meant, so the question would go to Claude; I won't ask it now.`) },
+      // The Impact tab reads the whole suite first: the voice waits for System 1's panel (at most 40 s).
+      { ch: 'System 1', go: async (my) => { await openTab('impact', my); await until(() => hasContent('impact-system1'), 40000, my); }, target: () => $('#impact-system1'),
+        say: 'And it knows when it does not know. On the Impact tab: what it would have saved, the known-issue tests, and its calibration on held-out tickets: when it says ninety percent, how often it is right. A new model replaces the current one only when it is not worse, and never sends a bug down the light path.' },
     ];
 
     // The dashboard: the demo part of a presentation.
@@ -588,6 +661,8 @@
         },
         target: () => $('#ask-form'),
         say: "The last tab is Ask: anyone can ask the knowledge base in plain English. The answer comes only from Jira, the agent's analyses, the git history and the code, and every claim cites its source. If the answer is not there, it says so. I won't press Ask now: each question is a short paid run." },
+
+      ...system1Chapter,
     ];
 
     const closing = [
@@ -605,7 +680,7 @@
 
   // Where each demo step is in the flow of the "How it works" slide (the caption bar's small map).
   const STAGES = [['collect', 'Collect'], ['analyze', 'Analyze'], ['fix', 'Prove & fix'], ['learn', 'Learn']];
-  const CH_STAGE = { 'The dashboard': 'collect', 'Case 1': 'fix', 'Case 2': 'fix', Insights: 'learn', 'A new ticket': 'learn', Ask: 'learn' };
+  const CH_STAGE = { 'The dashboard': 'collect', 'Case 1': 'fix', 'Case 2': 'fix', Insights: 'learn', 'A new ticket': 'learn', Ask: 'learn', 'System 1': 'collect' };
   const PARTS = { 1: 'Presentation', 2: 'Demo', 3: 'Conclusion' };
 
   // ------------------------------------------------------------------ player
@@ -859,6 +934,9 @@
     for (const run of replay?.runs ?? []) if (run?.events?.length && !tickets.has(run.key)) rps.set(run.key, { ...run, i: 0, shift: null });
     const askProject = projOf([...rps.keys()][0] ?? '') || focus()?.key || projects().find((p) => p.ready)?.key;
     asks = askProject ? (await getJson(`/api/tour/asks?project=${encodeURIComponent(askProject)}`))?.answers ?? [] : [];
+    // System 1's recorded runs join the replays, apart from the cases (they are never case 1 or 2).
+    s1 = await getJson('/api/tour/system1');
+    for (const run of s1?.runs ?? []) if (run?.events?.length && !tickets.has(run.key) && !rps.has(run.key)) rps.set(run.key, { ...run, i: 0, shift: null, s1: true });
     // Not awaited: the first suite read takes several seconds; by the time the tour reaches Insights it is cached.
     getJson('/api/insights/suite').then((x) => { if (running) suite = x; });
     if (askProject) getJson(`/api/insights?project=${encodeURIComponent(askProject)}`).then((x) => { if (running) preIns = x; });

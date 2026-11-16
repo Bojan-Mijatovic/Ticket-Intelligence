@@ -64,3 +64,12 @@ test('the slides fit the time: about 3 minutes before the demo, under 3 after it
   assert.ok(before <= 200, `before the demo: ${Math.round(before)} s`);
   assert.ok(after <= 175, `after the demo: ${Math.round(after)} s`);
 });
+
+test("System 1's privacy slide: the ticket, the answer and the analysis' first sentence, escaped; none without data", () => {
+  const html = slides.system1Privacy({ ...ctx('tour'), system1: { privacy: { key: 'DEM-48', p: 0.995, mode: 'shadow', summary: 'A patient <b>X</b> came to the counter. He says more.' } } });
+  assert.match(html, /DEM-48/);
+  assert.match(html, /100 %/);
+  assert.match(html, /A patient &lt;b&gt;X&lt;\/b&gt; came to the counter\./);
+  assert.doesNotMatch(html, /He says more/);
+  assert.equal(slides.system1Privacy(ctx('tour')), '');
+});

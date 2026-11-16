@@ -244,7 +244,7 @@
         <div class="ts-card" data-r="1"><h3>Case 1</h3><p><b>${esc(a?.key ?? 'A new ticket')}</b> · ${esc(a?.app ?? '')}</p><p class="sub">${esc(a?.title ?? '')}</p><p>From Jira to a reviewed pull request.</p></div>
         <div class="ts-card" data-r="1"><h3>Case 2</h3>${b ? `<p><b>${esc(b.key)}</b> · ${esc(b.app)}</p><p class="sub">${esc(b.title)}</p>` : ''}<p>The cause is in another app.</p></div>
         <div class="ts-card" data-r="2"><h3>Insights</h3><p>The whole history: where bugs come from, who knows what, what to fix next.</p></div>
-        <div class="ts-card" data-r="2"><h3>Ask</h3><p>A question in plain English, answered with checked sources, or “not in the knowledge base”.</p></div>
+        <div class="ts-card" data-r="2"><h3>Ask · System 1</h3><p>A question in plain English, answered with checked sources, or “not in the knowledge base”.</p><p>And a small model on this machine that reads each ticket first.</p></div>
       </div>`;
     },
 
@@ -388,7 +388,7 @@
       { ch: 'The demo', slide: 'setup', stagger: true,
         say: `The demo runs on four linked hospital apps: booking, laboratory, pharmacy and billing, each with its own Jira project, git history and team, calling each other's APIs. The bugs came in with later changes, like real ones, and the answers are hidden from the agent. ${demo ? 'The cases you will see' : 'The cases'} are real runs of the agent, shown again with their real timings, so nothing is paid now.` },
       ...(demo ? [{ ch: 'The demo', slide: 'preview', stagger: true,
-        say: `Case one: a ticket from Jira to a reviewed pull request. Case two: a bug whose cause is in another app. Then Insights and Ask. Let's go to the dashboard.` }] : []),
+        say: `Case one: a ticket from Jira to a reviewed pull request. Case two: a bug whose cause is in another app. Then Insights and Ask, and System 1: a small model on this machine that reads each ticket before Claude. Let's go to the dashboard.` }] : []),
     ];
     const outro = [
       ...(a ? [{ ch: 'Recap', slide: 'recap', stagger: true,
@@ -411,6 +411,7 @@
       { ch: 'Q&A', slide: 'qaWrong', hold: true, silent: true, say: 'Question: what if it is wrong?' },
       { ch: 'Q&A', slide: 'qaCost', hold: true, silent: true, say: 'Question: what does it cost?' },
       { ch: 'Q&A', slide: 'work', hold: true, silent: true, say: 'Question: does it work with GitHub Copilot and SVN?' },
+      { ch: 'Q&A', slide: 'system1', hold: true, silent: true, say: 'Question: does every ticket need Claude?' },
     ];
     return {
       intro: intro.map((s) => ({ ...s, part: 1 })),
@@ -429,6 +430,33 @@
         <div class="ts-card" data-r="2"><h3>git and SVN</h3><p>Detected automatically. git: <code>git log</code>, <code>git show</code>. SVN: <code>svn log --search</code>, <code>svn diff -c</code>, logins mapped to names.</p><p>Tested on an SVN copy of MediAgenda: the same components, people and related tickets as on git.</p></div>
         <div class="ts-card" data-r="3"><h3>Documentation on SVN</h3><p><code>/document-ticket</code> can commit, make a branch (<code>svn copy</code>) or write a patch file. An SVN commit goes straight to the server, so it always asks first. Patch mode is tested.</p><p><b>Git only for now:</b> the automatic fix, pull requests and Insights.</p></div>
       </div>`;
+
+  // System 1 (docs/SYSTEM1_PLAN.md, J9): a backup Q&A slide in the presentation. The numbers are the first live test.
+  slides.system1 = () => `
+      <div class="kick">Questions · two systems</div>
+      <h1>Does every ticket need Claude? No: System 1 decides first</h1>
+      <p class="lead">A small model on this machine reads each ticket in a few seconds and picks one of our answers with a probability; Claude, System 2, takes the rest.</p>
+      <div class="ts-grid">
+        <div class="ts-card" data-r="1"><h3>System 1, local</h3><p>A fine-tuned Laya (multilingual, CPU): type, side, component, urgency, needs code, known issue, privacy. Nothing leaves the machine, no cost per call, and it always answers with one of our options.</p></div>
+        <div class="ts-card" data-r="2"><h3>What it decides</h3><p><b>Light path</b> for tickets that are not about code. <b>Known issue</b> in other words, with its regression test run on main. <b>Ask</b> "who knows X" without Claude. <b>Hold</b> a text that still names a patient. Each starts in shadow and is switched in the policy.</p></div>
+        <div class="ts-card" data-r="3"><h3>Measured, first live test</h3><p>Ten new tickets that were not about code: it would have sent <span class="ts-big">6</span> down the light path. Claude analysed all ten as code ($1.83) and pinged a developer five times. On held-out tickets: 13 of 23 caught, <b>no bug skipped</b>. "Who knows the exemption code?": answered in 0.9 s, $0.</p></div>
+      </div>`;
+
+  // System 1's privacy moment (J9), from the event log (/api/tour/system1): a name the masking did not know.
+  slides.system1Privacy = (c) => {
+    const x = c.system1?.privacy;
+    if (!x) return '';
+    const first = String(x.summary ?? '').match(/^[^.!?]+[.!?]/)?.[0] ?? '';
+    return `
+      <div class="kick">System 1 · privacy</div>
+      <h1>A name the masking did not know</h1>
+      <p class="lead">Every ticket is masked before a cloud model reads it. System 1 checks the masked text again, on this machine.</p>
+      <div class="ts-grid">
+        <div class="ts-card" data-r="1"><h3>The masking</h3><p>It replaces the names it knows. In ${esc(x.key)} an uncommon name went through.</p></div>
+        <div class="ts-card" data-r="2"><h3>System 1, local</h3><p>On the text with every name masked:</p><p><span class="ts-big">${Math.round(100 * (x.p ?? 0))} %</span> still names a person</p></div>
+        <div class="ts-card" data-r="3"><h3>${x.mode === 'shadow' ? 'In shadow, it went on' : 'Held for a person'}</h3>${first && x.mode === 'shadow' ? `<p>The analysis began: “${esc(first)}”</p>` : ''}<p>With the check on, such a ticket waits for a person. Not on yet: it still holds too many tickets that name nobody.</p></div>
+      </div>`;
+  };
 
   window.TourSlides = { css, slides, deck };
 })();

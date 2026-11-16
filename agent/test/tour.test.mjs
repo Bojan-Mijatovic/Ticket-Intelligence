@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { bestRun, bestRuns, recordedAsks, runsOf, scoreRun } from '../lib/tour.mjs';
+import { bestRun, bestRuns, recordedAsks, runsOf, scoreRun, system1Privacy, system1Runs } from '../lib/tour.mjs';
 
 const ev = (key, type, at) => ({ key, type, at: `2026-11-09T12:${String(at).padStart(2, '0')}:00.000Z` });
 
@@ -42,6 +42,26 @@ test('the fullest run wins, a failed fix counts against it, the newest wins a ti
 test('several configured tickets are replayed in their order; unrecorded ones are left out', () => {
   assert.deepEqual(bestRuns(events, ['DEM-4', 'DEM-99', 'DEM-2']).map((r) => r.key), ['DEM-4', 'DEM-2']);
   assert.deepEqual(bestRuns(events, ['DEM-99']).map((r) => r.key), ['DEM-5']);
+});
+
+test("System 1's chapter: the newest run with its answer and an analysis; the privacy moment and what the analysis said", () => {
+  const root = mkdtempSync(join(tmpdir(), 'tour-s1-'));
+  try {
+    const lines = [
+      ev('LAB-26', 'queued', 1), ev('LAB-26', 'picked', 1), ev('LAB-26', 'analyzed', 2), // J1's first run: asked too late
+      ev('LAB-26', 'queued', 5), { ...ev('LAB-26', 'system1', 5), lightPath: true }, ev('LAB-26', 'picked', 6), ev('LAB-26', 'analyzed', 7),
+      ev('DEM-48', 'queued', 10), { ...ev('DEM-48', 'system1', 10), privacy: { hold: true, mode: 'shadow', p: 0.995 } }, ev('DEM-48', 'picked', 11), ev('DEM-48', 'failed', 11),
+      ev('DEM-48', 'queued', 20), ev('DEM-48', 'picked', 20), { ...ev('DEM-48', 'analyzed', 21), result: { summary: 'A patient (Ruairi Szczepanski) came to the counter.' }, meta: { costUsd: 0.28 } }, ev('DEM-48', 'commented', 21),
+    ];
+    writeFileSync(join(root, 'events.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n'));
+    const runs = system1Runs(root, ['LAB-26', 'DEM-48', 'DEM-99']);
+    assert.deepEqual(runs.map((r) => r.key), ['LAB-26'], 'DEM-48 has no run with both: its answer came in a run that failed');
+    assert.deepEqual(runs[0].events.map((e) => e.type), ['queued', 'system1', 'picked', 'analyzed']);
+    assert.deepEqual(system1Privacy(root, 'DEM-48'), { key: 'DEM-48', p: 0.995, mode: 'shadow', summary: 'A patient (Ruairi Szczepanski) came to the counter.', costUsd: 0.28, commented: true });
+    assert.equal(system1Privacy(root, 'LAB-26'), null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('recorded Ask answers: the example question that was asked, and the newest "not found"', () => {

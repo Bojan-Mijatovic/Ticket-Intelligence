@@ -86,6 +86,28 @@ export function recordedRuns(stateDir, prefer = []) {
   return bestRuns(readEvents(stateDir), [prefer].flat().filter(Boolean));
 }
 
+/**
+ * System 1's chapter (docs/SYSTEM1_PLAN.md, J9): for each ticket, its newest run in which System 1 answered and an
+ * analysis followed, so the tour shows both on one card. Tickets without such a run are left out.
+ */
+export function system1Runs(stateDir, keys = []) {
+  const runs = runsOf(readEvents(stateDir));
+  const has = (r, type) => r.events.some((e) => e.type === type);
+  return keys.map((k) => runs.filter((r) => r.key === k && has(r, 'system1') && has(r, 'analyzed')).at(-1)).filter(Boolean).map(shape);
+}
+
+/**
+ * The privacy moment of the chapter: a ticket's latest System 1 answer that would hold it (J6), and what the analysis
+ * of that ticket then said, sent to the cloud model because the check was in shadow. Null when there is none.
+ */
+export function system1Privacy(stateDir, key) {
+  const evs = readEvents(stateDir).filter((e) => e.key === key);
+  const s1 = evs.filter((e) => e.type === 'system1' && e.privacy?.hold).at(-1);
+  if (!s1) return null;
+  const analyzed = evs.filter((e) => e.type === 'analyzed').at(-1);
+  return { key, p: s1.privacy.p, mode: s1.privacy.mode, summary: analyzed?.result?.summary ?? null, costUsd: analyzed?.meta?.costUsd ?? null, commented: evs.some((e) => e.type === 'commented') };
+}
+
 const readJson = (file, fallback) => {
   try {
     return JSON.parse(readFileSync(file, 'utf8'));
