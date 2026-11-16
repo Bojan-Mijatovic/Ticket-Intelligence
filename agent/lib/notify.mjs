@@ -14,8 +14,9 @@ export function teamsInfo(env = process.env) {
  * The Teams sign-in name (UPN) to @mention for an owner, or null (T4 of docs/GIT_GRAPH.md). TEAMS_MENTIONS names
  * people one by one ("Marta Ricci=marta.ricci@contoso.com; Luca Bianchi=l.bianchi@contoso.com"); TEAMS_MENTION_DOMAIN
  * gives everyone else first.last@domain, accents dropped, but only to a name of two to four capitalised words ("the
- * team" gets none). Without either, nobody is mentioned. A wrong UPN is not refused by the webhook, which answers 202
- * before the workflow runs: the workflow fails afterwards and the message never reaches the channel.
+ * team" gets none). Without either, nobody is mentioned. A sign-in name Teams does not know costs only the
+ * notification: the message still reaches the channel (checked 2026-11-16 on the test tenant with a person who has no
+ * account there).
  */
 export function mentionFor(name, env = process.env) {
   const who = String(name ?? '').trim().replace(/\s+/g, ' ');

@@ -45,9 +45,9 @@ const n = await notifyOwner({
 if (n.channel === 'teams') {
   console.log(`Posted (HTTP ${n.status}). It appears in the channel within a few seconds, sent "via Workflows" by the account that created the workflow.`);
   if (upn) {
-    console.log(`It @mentions ${person} as ${upn}. The webhook accepts the message before the workflow runs: if nothing appears within`);
-    console.log('a minute, the workflow failed afterwards, most often on a sign-in name Teams does not know or a person who is not');
-    console.log("a member of the team. The workflow's run history says why (Teams: Workflows › the workflow › Run history).");
+    console.log(`It @mentions ${person} as ${upn}: their name is highlighted and they get a notification. If the name is plain text,`);
+    console.log('Teams does not know that sign-in name (the message still arrives). The webhook accepts a message before the workflow');
+    console.log("runs, so if nothing appears within a minute, the workflow's run history says why (Teams: Workflows › the workflow › Run history).");
   }
   console.log(info.channelUrl ? `The dashboard links to the channel: ${info.channelUrl}` : 'Optional: TEAMS_CHANNEL_URL=<the channel\'s link, ⋯ › Get link to channel> gives the dashboard an "Open in Teams" link.');
   console.log('Restart the watcher (node agent/watcher.mjs --replace) so that it reads the new settings.');
