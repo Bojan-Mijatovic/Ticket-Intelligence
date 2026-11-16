@@ -54,6 +54,8 @@ A dashboard view: `main` as the spine, one lane per ticket. Each lane shows its 
 
 Not built, kept as proposals:
 - **J4. Links in Jira itself** · 0.5 d · L1. On each ticket, a remote link ("Links" section) to the commit or PR that changed it or names it: for #31, 14 tickets. It writes to Jira, so it goes behind a switch in `policy.json` (`jiraLinks: off|auto`). The no-code alternative is the "GitHub for Jira" app, which needs a Jira admin and covers git on GitHub only (not SVN).
+- **T5. The card says why this person** · 0.25 d. Besides the handoff: the likely cause in one sentence, the confidence, and the commit that broke it with its author when the analysis or the bisect names one. In the pilot that is the moment that convinces: the owner sees it is their own change.
+- **T6. A second message when the fix is ready** · 0.5 d. When the draft PR is verified, a card in the same channel: tests green, the PR's link, the risk of the AI review. Behind `policy.json` (`notifyFixReady`), since it writes to people. Without it the fix is seen only on the dashboard and GitHub.
 - **T3. Links into Teams** · 1–1.5 d + IT. A link to the exact Teams message, or a chat opened with the owner. A webhook returns no message id, so this needs Microsoft Graph with an app registered in Azure (IT admin), or every person's email. It belongs with WF2 (Teams as the front door).
 - **J5** commits without any key is **A7** below.
 
