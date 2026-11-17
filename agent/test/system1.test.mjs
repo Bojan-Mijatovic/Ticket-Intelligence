@@ -8,8 +8,9 @@ import {
   CODE_TYPES, MISSING, NONE, askReporter, askReporterText, compare, completeLabels, componentOfFiles, createSystem1, currentCheckpoint, describeAnswers,
   describeCompare, entryOption, fastAnswer, judgeCandidate, keyOfOption, knownIssue, knownQuestion, knownTestVerdict, languageOf, lightPath, missingInfo,
   nextIndex, notCodeShare, questionsFor, sideOfFiles, stateOf, stillNamesSomeone, strangersOnly, stripTags, summarize, system1Report, trainedQuestions,
-  triageComment, urgencyOfPriority,
+  triageComment, urgencyOfPriority, describeWarm, warmSkip, warmVerdict,
 } from '../lib/system1.mjs';
+import { warmPlan } from '../lib/pipeline.mjs';
 
 const RULES = [
   { name: 'Prenotazioni', paths: ['frontend/src/app/features/booking/', 'backend/src/main/java/com/mediagenda/booking/'] },
@@ -213,6 +214,90 @@ test('the report: what the light path would have saved, known-issue tests, fast 
   assert.equal(r.evaluation.privacyMissed, 1);
   assert.equal(r.evaluation.lightPath.rule, 'type+side+code@0.5');
   assert.deepEqual(r.evaluation.calibration.map((b) => [b.from, b.n, b.right]), [[0.6, 1, 0], [0.9, 1, 1]]);
+});
+
+test('J10: the side skips a warm-up only at the threshold, and only "backend" or "not code"', () => {
+  const side = (choice, p) => ({ side: { choice, p } });
+  assert.deepEqual(warmSkip(side('backend', 0.82)), { side: 'backend', p: 0.82, prepare: true, warm: false });
+  assert.deepEqual(warmSkip(side('not code', 0.7)), { side: 'not code', p: 0.7, prepare: false, warm: false });
+  assert.equal(warmSkip(side('backend', 0.69)), null);
+  assert.equal(warmSkip(side('backend', 0.82), 0.9), null);
+  assert.equal(warmSkip(side('frontend', 0.99)), null);
+  assert.equal(warmSkip(side('both', 0.99)), null);
+  assert.equal(warmSkip({ side: { choice: 'backend' } }), null); // no probability: nothing to trust
+  assert.equal(warmSkip(null), null);
+});
+
+test('J10: the warm-up call is wrong only when the fix needed what was skipped', () => {
+  const backend = { prepare: true, warm: false };
+  const notCode = { prepare: false, warm: false };
+  const none = { prepare: false, warm: false };
+  assert.equal(warmVerdict(backend, none), 'right');
+  assert.equal(warmVerdict(backend, { prepare: true, warm: false }), 'right'); // a backend fix: no dev server needed
+  assert.equal(warmVerdict(backend, { prepare: true, warm: true }), 'wrong'); // a frontend fix started a cold server
+  assert.equal(warmVerdict(notCode, none), 'right');
+  assert.equal(warmVerdict(notCode, { prepare: true, warm: false }), 'wrong');
+});
+
+test('J10: the card says what was or would have been skipped, and then whether it was right', () => {
+  const backend = { side: 'backend', p: 0.82, would: { prepare: true, warm: false } };
+  const notCode = { side: 'not code', p: 0.88, would: { prepare: false, warm: false } };
+  assert.equal(describeWarm({ ...backend, mode: 'shadow' }), 'System 1: backend (82 %): would warm no dev server (shadow: warmed as before)');
+  assert.equal(describeWarm({ ...backend, mode: 'auto' }), 'System 1: backend (82 %): worktree only, no dev server warmed');
+  assert.equal(describeWarm({ ...notCode, mode: 'shadow' }), 'System 1: not code (88 %): would prepare no fix workspace (shadow: prepared as before)');
+  assert.equal(describeWarm({ ...notCode, mode: 'auto' }), 'System 1: not code (88 %): no fix workspace prepared');
+  assert.equal(describeWarm({ ...notCode, mode: 'auto', verdict: 'right', needed: { prepare: false, warm: false, side: null } }), 'warm-up call right: no automatic fix followed');
+  assert.equal(describeWarm({ ...backend, mode: 'auto', verdict: 'right', needed: { prepare: true, warm: false, side: 'backend' } }), 'warm-up call right: the fix was on the backend, no dev server needed');
+  assert.equal(describeWarm({ ...backend, mode: 'auto', verdict: 'wrong', needed: { prepare: true, warm: true, side: 'frontend' } }), 'warm-up call wrong: a frontend fix followed, which prepared its own dev server');
+  assert.equal(describeWarm({ ...notCode, mode: 'shadow', verdict: 'wrong', needed: { prepare: true, warm: false, side: 'backend' } }), 'warm-up call wrong: a backend fix followed, which would have prepared its own workspace');
+});
+
+test('J10: the plan follows the title when it states the side, and System 1 only for a title that does not', () => {
+  const policy = (warmBySide, extra = {}) => ({ actions: { proposeFix: 'auto' }, proposeFixWhen: { titleTags: ['FE', 'BE'], inferTagFromFiles: { FE: 'frontend/', BE: 'backend/' } }, system1: { ...(warmBySide ? { warmBySide } : {}), ...extra } });
+  const issue = (summary) => ({ summary });
+  const side = (choice, p) => ({ side: { choice, p } });
+  const auto = policy('auto');
+
+  // The title decides; System 1 is not even mentioned.
+  assert.deepEqual(warmPlan({ issue: issue('[FE] - x'), policy: auto, answers: side('backend', 0.95) }), { prepare: true, warm: true, system1: null });
+  assert.deepEqual(warmPlan({ issue: issue('[BE] - x'), policy: auto, answers: side('frontend', 0.95) }), { prepare: true, warm: false, system1: null });
+  assert.deepEqual(warmPlan({ issue: issue('[BE][FE] - x'), policy: auto, answers: side('not code', 0.95) }), { prepare: true, warm: true, system1: null });
+  // A title with another tag only is not prepared at all (the title rules), whatever System 1 says.
+  assert.deepEqual(warmPlan({ issue: issue('[SVIL] - x'), policy: auto, answers: side('frontend', 0.95) }), { prepare: false, warm: false, system1: null });
+  // No automatic fix: nothing to prepare.
+  assert.deepEqual(warmPlan({ issue: issue('x'), policy: { ...auto, actions: { proposeFix: 'off' } }, answers: side('backend', 0.95) }), { prepare: false, warm: false, system1: null });
+
+  // An untagged title: as before without an answer, below the threshold, or for frontend/both.
+  const before = { prepare: true, warm: true, system1: null };
+  assert.deepEqual(warmPlan({ issue: issue('x'), policy: auto }), before);
+  assert.deepEqual(warmPlan({ issue: issue('x'), policy: auto, answers: side('backend', 0.6) }), before);
+  assert.deepEqual(warmPlan({ issue: issue('x'), policy: auto, answers: side('frontend', 0.9) }), before);
+  assert.deepEqual(warmPlan({ issue: issue('x'), policy: auto, answers: side('both', 0.9) }), before);
+  assert.deepEqual(warmPlan({ issue: issue('x'), policy: policy('auto', { warmBySideThreshold: 0.9 }), answers: side('backend', 0.82) }), before);
+
+  // auto acts.
+  assert.deepEqual(warmPlan({ issue: issue('x'), policy: auto, answers: side('backend', 0.82) }), { prepare: true, warm: false, system1: { side: 'backend', p: 0.82, mode: 'auto', would: { prepare: true, warm: false } } });
+  assert.deepEqual(warmPlan({ issue: issue('x'), policy: auto, answers: side('not code', 0.88) }), { prepare: false, warm: false, system1: { side: 'not code', p: 0.88, mode: 'auto', would: { prepare: false, warm: false } } });
+  // shadow (also the default) prepares as before and only says what it would skip; off does not ask.
+  const shadow = { prepare: true, warm: true, system1: { side: 'backend', p: 0.82, mode: 'shadow', would: { prepare: true, warm: false } } };
+  assert.deepEqual(warmPlan({ issue: issue('x'), policy: policy('shadow'), answers: side('backend', 0.82) }), shadow);
+  assert.deepEqual(warmPlan({ issue: issue('x'), policy: policy(null), answers: side('backend', 0.82) }), shadow);
+  assert.deepEqual(warmPlan({ issue: issue('x'), policy: policy('off'), answers: side('backend', 0.82) }), before);
+});
+
+test('J10 in the report: runs skipped or that would have been, and their checks; a run again counts on its own', () => {
+  const events = [
+    { type: 'system1-warm', key: 'DEM-46', mode: 'shadow' },
+    { type: 'system1-warm', key: 'DEM-46', mode: 'shadow', verdict: 'right' },
+    { type: 'system1-warm', key: 'LAB-30', mode: 'auto' },
+    { type: 'system1-warm', key: 'LAB-30', mode: 'auto', verdict: 'wrong' },
+    { type: 'system1-warm', key: 'LAB-30', mode: 'auto' }, // Run again
+    { type: 'system1-warm', key: 'LAB-30', mode: 'auto', verdict: 'wrong' },
+    { type: 'system1-warm', key: 'BIL-23', mode: 'shadow' }, // still running: no check yet
+    { type: 'system1-warm', key: 'FAR-9', mode: 'auto', verdict: 'right' }, // a check without its decision (log rotated): not counted
+  ];
+  assert.deepEqual(system1Report({ events }).warm, { tickets: ['DEM-46', 'LAB-30', 'BIL-23'], skipped: 2, wouldSkip: 2, right: 1, wrong: 2, wrongTickets: ['LAB-30'] });
+  assert.deepEqual(system1Report({ events: [] }).warm, { tickets: [], skipped: 0, wouldSkip: 0, right: 0, wrong: 0, wrongTickets: [] });
 });
 
 test('the current checkpoint: the accepted one when there is one, else the configured one', () => {

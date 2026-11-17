@@ -366,6 +366,50 @@ export function describeCompare(c) {
   return parts.length ? parts.join('; ') : 'nothing to compare with the analysis';
 }
 
+// ---------------------------------------------------------------- J10: the fix warm-up by System 1's side
+
+/**
+ * J10: a fix warm-up System 1's side says is not needed. An untagged title gets a worktree and a warm Angular dev
+ * server while the analysis runs, whatever the ticket is about; 44 of the 58 warm-ups in the event logs up to
+ * 2026-11-17 served no frontend fix (median 31 s of a dev server compiling, up to 199 s, beside the analysis).
+ * "backend" at the threshold: the worktree only, as for a [BE] title; "not code": nothing. A fix that still follows
+ * prepares what it needs itself (its own worktree, its own dev server), only slower. An answer can skip a warm-up,
+ * never add one.
+ * @returns {{ side: string, p: number, prepare: boolean, warm: boolean } | null}  null: no reason to prepare less
+ */
+export function warmSkip(answers, threshold = 0.7) {
+  const side = answers?.side;
+  if (!side?.choice || !(side.p >= threshold)) return null;
+  if (side.choice === 'backend') return { side: side.choice, p: side.p, prepare: true, warm: false };
+  if (side.choice === 'not code') return { side: side.choice, p: side.p, prepare: false, warm: false };
+  return null;
+}
+
+/**
+ * J10: whether skipping the warm-up was right, once the fix stage is decided. `needed` is what the fix used: nothing
+ * when no automatic fix ran; a worktree, and a dev server for a frontend fix.
+ * @param {{ prepare: boolean, warm: boolean }} would  what System 1's side said to prepare
+ * @param {{ prepare: boolean, warm: boolean }} needed
+ */
+export const warmVerdict = (would, needed) => ((needed.prepare && !would.prepare) || (needed.warm && !would.warm) ? 'wrong' : 'right');
+
+/**
+ * The card's words for a J10 decision (no verdict yet) or its check (with `verdict` and `needed`).
+ * @param {{ side, p, mode, would, verdict?, needed? }} w  `needed.side` is the fix's side when a fix ran
+ */
+export function describeWarm({ side, p, mode, would, verdict = null, needed = null }) {
+  const live = mode === 'auto';
+  if (!verdict) {
+    const said = `System 1: ${side} (${pct(p)})`;
+    if (would.prepare) return live ? `${said}: worktree only, no dev server warmed` : `${said}: would warm no dev server (shadow: warmed as before)`;
+    return live ? `${said}: no fix workspace prepared` : `${said}: would prepare no fix workspace (shadow: prepared as before)`;
+  }
+  if (verdict === 'right') return needed?.prepare ? `warm-up call right: the fix was on the ${needed.side}, no dev server needed` : 'warm-up call right: no automatic fix followed';
+  const fix = needed?.side ? `a ${needed.side} fix` : 'a fix';
+  const own = !would.prepare ? 'its own workspace' : 'its own dev server';
+  return `warm-up call wrong: ${fix} followed, ${live ? `which prepared ${own}` : `which would have prepared ${own}`}`;
+}
+
 // ---------------------------------------------------------------- what it did, and how good it is (J8b)
 
 /**
@@ -412,6 +456,31 @@ export function system1Report({ events = [], asks = [], evaluation = null, check
       return { tickets: asked.map((e) => e.key), asked: low(asked), others: low(answered.filter((e) => !e.askReporter && e.missing)) };
     })(),
     held, triaged,
+    // J10: the fix warm-ups skipped (auto) or that would have been skipped (shadow), each run with its check after the
+    // fix stage: right when the fix did not need what was skipped. A run of the same ticket again is a run of its own.
+    warm: (() => {
+      const runs = [];
+      const open = new Map();
+      for (const e of events) {
+        if (e.type !== 'system1-warm' || !e.key) continue;
+        if (!e.verdict) {
+          const run = { key: e.key, mode: e.mode, verdict: null };
+          runs.push(run);
+          open.set(e.key, run);
+        } else if (open.has(e.key)) {
+          open.get(e.key).verdict = e.verdict;
+          open.delete(e.key);
+        }
+      }
+      return {
+        tickets: [...new Set(runs.map((r) => r.key))],
+        skipped: runs.filter((r) => r.mode === 'auto').length,
+        wouldSkip: runs.filter((r) => r.mode !== 'auto').length,
+        right: runs.filter((r) => r.verdict === 'right').length,
+        wrong: runs.filter((r) => r.verdict === 'wrong').length,
+        wrongTickets: [...new Set(runs.filter((r) => r.verdict === 'wrong').map((r) => r.key))],
+      };
+    })(),
     ask: { fast: fast.length, all: asks.length, seconds: fast.length ? round(fast.reduce((s, a) => s + (a.durationMs ?? 0), 0) / fast.length / 1000, 1) : null },
     evaluation: null,
   };

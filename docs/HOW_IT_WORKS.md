@@ -82,7 +82,7 @@ flowchart TD
 | One more try for a fix that stopped on an accident (time limit, a locked file, the network) | done (2026-11-17) |
 | Impact (WF5) and ticket lanes (G1, G1b) | done |
 | System 1: known issue (J4), Ask router (J5), queue order (J3) | live |
-| System 1: question to the reporter (J7, WF1), light path (J2), privacy (J6) | in shadow: they say what they would do (J6 missed a name on an unseen pilot ticket, so it stays there) |
+| System 1: question to the reporter (J7, WF1), light path (J2), privacy (J6), fix warm-up by the side (J10) | in shadow: they say what they would do (J6 missed a name on an unseen pilot ticket, so it stays there) |
 | Update emails | built, off until SMTP is configured |
 | Teams as the front door (WF2, ROADMAP #9): Ask in the channel ("ti: …", the answer in the thread), then the approval of a fix by a reply | **built 2026-11-17, live check pending**: the agent reads the channel through Microsoft Graph as one signed-in account, outbound only; `ti: …` questions answered in the thread, `approve` / `reject: why` under the "fix ready" card. A Teams bot with real buttons stays the production path (needs an Azure app and IT) |
 | Night shift and morning digest (WF3) | deferred |

@@ -147,6 +147,14 @@ A nightly fine-tune starts from the base model. It is scored, together with the 
 **J9. Two systems in the presentation** · L0 · 0.5 d
 A tour chapter and a slide: the race on one ticket (two seconds against 59 s), the light path, the known issue found in other words, and the held ticket. They are replayed from recorded events, like the other chapters.
 
+**J10. The fix warm-up by the side** · L2 · 0.5 d (added 2026-11-17)
+While the analysis runs, a ticket whose title does not state the side gets a fix worktree and a warm Angular dev server, whatever it is about. In the event logs up to 2026-11-17, 44 of the 58 warm-ups served no frontend fix: a median of 31 s, and up to 199 s, of a dev server compiling beside the analysis. System 1's side at 0.7 or more skips what is not needed:
+
+- "backend": the worktree only, as for a [BE] title;
+- "not code": nothing.
+
+A title that states the side decides, as before, and an answer never prepares more. A wrong call costs time only: the fix prepares what is missing itself (its own worktree, a cold dev server). *Measured:* each decision is checked after the fix stage (right when the fix needed nothing that was skipped) and counted on the Impact tab. System 1's answers still do not reach the Claude analysis: this decision is made by plain code.
+
 ### Later
 
 - **A7, commits without a ticket.** *Which of these open tickets does this commit belong to?* The options are up to 40 candidates chosen by time and files. Training data is free: every commit that does name its ticket.
@@ -222,6 +230,7 @@ The pilot gives two new tickets every working day, each with an answer key. It i
 | J7 ask the reporter (WF1) | built (FR-82), in shadow: 204 reports labelled by hand, 16 half-written bug reports added, the question from a template (IT/EN). With `ft-5`: what is wrong 96 %, where 92 % on unseen rows; asked in 8 of the 10 cases a person marked, never without need. **Verified live** in shadow (BIL-23, BIL-24) and in `draft` with the hold (LAB-31, BIL-25: held, the question in Drafts in the report's language, **Analyze now** releases it) |
 | J8b retrain with a check | built (FR-83): `agent/system1-train.mjs` (data → fine-tune → evaluate both → accept only if not worse), `--nightly`, keep-awake, reload without a restart, labels from Claude's analyses, a stable split; the Impact panel with the calibration. The nightly task is ready (`schedule.ps1 -Register`) but **not registered**: it takes about four hours of CPU a night |
 | J9 presentation | built (FR-84): the tour's **System 1 chapter** (8 steps, checked in a browser) and the backup Q&A slide |
+| J10 fix warm-up by the side | built (FR-99, 2026-11-17), in shadow (`warmBySide`). Replayed with the same functions on the recorded runs: 11 of 26 runs with a System 1 answer would have skipped the warm-up, all right (no automatic fix followed); the same with no error at thresholds 0.5–0.9. All eleven were "not code"; no "backend" answer has reached 0.7 yet, so the worktree-only case is not seen live. Several of the eleven were vague bug reports (BIL-23, LAB-31) that got no fix because the analysis was not confident: the call was right for the warm-up, not a verdict that they are not about code. `auto` once the shadow checks stay right on the pilot |
 
 The light path stays in shadow until two weeks of the pilot show no ticket about code among those it would skip.
 

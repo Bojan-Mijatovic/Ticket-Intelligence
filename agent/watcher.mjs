@@ -57,7 +57,7 @@ const all = loadProjects(HERE);
 const cfg = all.global; // settings shared by all projects (labels, poll, dashboard, claude, mail)
 const policy = JSON.parse(readFileSync(join(HERE, 'policy.json'), 'utf8'));
 /** The System 1 switches that act for real (auto), in words, for the dashboard: 'shadow' alone would say it changes nothing. */
-const system1Live = () => [['queueOrder', 'queue order'], ['knownTest', 'known-issue test'], ['askRouter', 'Ask router'], ['lightPath', 'light path'], ['privacy', 'privacy hold'], ['askReporter', 'question to the reporter']].filter(([k]) => (policy.system1 ?? {})[k] === 'auto').map(([, w]) => w);
+const system1Live = () => [['queueOrder', 'queue order'], ['knownTest', 'known-issue test'], ['askRouter', 'Ask router'], ['lightPath', 'light path'], ['privacy', 'privacy hold'], ['askReporter', 'question to the reporter'], ['warmBySide', 'fix warm-up by side']].filter(([k]) => (policy.system1 ?? {})[k] === 'auto').map(([, w]) => w);
 const rootState = join(HERE, 'state'); // the watcher's own files: pid, event log
 const PID_FILE = join(rootState, 'watcher.pid');
 const KEYS = all.projects.map((p) => p.key);
@@ -498,6 +498,7 @@ async function drain() {
         await processTicket({
           issue, cfg: p.cfg, policy, jira, events, repoDir: p.repoDir, stateDir: p.stateDir, project: { key: p.key, name: p.name },
           peers: (warn) => peerCheckouts(p, all, warn), followUp: (job) => status.queue.push(job), system1Answer: system1Answers.get(issue.key) ?? null,
+          system1Ready: a ?? null, // J10: the fix warm-up by System 1's side, from the answers already in (no new wait)
         });
       }
       system1Answers.delete(issue.key);

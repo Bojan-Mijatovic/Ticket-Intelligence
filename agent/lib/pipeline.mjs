@@ -12,7 +12,7 @@ import { savedAnalyses } from './insights.mjs';
 import { setAsideRejected } from './fix-approval.mjs';
 import { notifyFixReady, notifyOwner } from './notify.mjs';
 import { publishFix } from './publish.mjs';
-import { compare as compareSystem1, describeCompare, triageComment } from './system1.mjs';
+import { compare as compareSystem1, describeCompare, describeWarm, triageComment, warmSkip, warmVerdict } from './system1.mjs';
 
 const RANK = { low: 0, medium: 1, high: 2 };
 const AGENT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..'); // config paths are relative to agent/
@@ -121,17 +121,39 @@ function mayFixByTitle({ issue, policy }) {
   return Object.keys(when.inferTagFromFiles ?? {}).length > 0 && !tags.length;
 }
 
+/**
+ * Before the analysis: what to prepare for a fix while the analysis runs. The title decides when it states the side:
+ * [FE] (also with [BE]) warms an Angular dev server, [BE] alone gets the worktree only. A title that does not state it
+ * gets both, unless System 1's side says less is needed (J10, `policy.system1.warmBySide`: 'auto' acts, 'shadow' only
+ * says what it would do, 'off'; `warmBySideThreshold`, default 0.7). System 1 can only prepare less than the title
+ * rules, never more, and a fix that follows prepares what is missing itself.
+ * @param {object|null} [p.answers]  System 1's answers that were in before the analysis started; none: as before
+ * @returns {{ prepare: boolean, warm: boolean, system1: null | { side, p, mode, would: { prepare, warm } } }}
+ */
+export function warmPlan({ issue, policy, answers = null }) {
+  if (!mayFixByTitle({ issue, policy })) return { prepare: false, warm: false, system1: null };
+  const tags = titleTags(issue.summary);
+  if (tags.includes('FE')) return { prepare: true, warm: true, system1: null };
+  if (tags.includes('BE')) return { prepare: true, warm: false, system1: null };
+  const s1 = policy.system1 ?? {};
+  const mode = s1.warmBySide ?? 'shadow';
+  const skip = mode === 'off' ? null : warmSkip(answers, Number(s1.warmBySideThreshold ?? 0.7));
+  if (!skip) return { prepare: true, warm: true, system1: null };
+  const would = { prepare: skip.prepare, warm: skip.warm };
+  return { ...(mode === 'auto' ? would : { prepare: true, warm: true }), system1: { side: skip.side, p: skip.p, mode, would } };
+}
+
 let warmPort = 4400;
 /**
- * Worktree (+ a warm Angular dev server, unless the title says backend only), prepared while the analysis runs.
- * Resolves to the workspace, or null. Never throws.
+ * Worktree (+ a warm Angular dev server when `warm`), prepared while the analysis runs. `coldWhy` says on the card
+ * why no dev server is warmed. Resolves to the workspace, or null. Never throws.
  */
-async function prepareWorkspace({ key, repoDir, stateDir, events, warm = true }) {
+async function prepareWorkspace({ key, repoDir, stateDir, events, warm = true, coldWhy = 'backend ticket' }) {
   let ws = null;
   try {
     ws = createWorkspace({ repoDir, key, stateDir });
     if (!warm) {
-      events.emit('workspace', { key, text: `worktree on branch ${ws.branch} (backend ticket: no dev server needed)` });
+      events.emit('workspace', { key, text: `worktree on branch ${ws.branch} (${coldWhy}: no dev server needed)` });
       return ws;
     }
     events.emit('workspace', { key, text: `worktree on branch ${ws.branch}; warming the dev server while the analysis runs` });
@@ -291,8 +313,10 @@ function composeComment(result, meta, policy) {
  *   right before the analysis
  * @param {Promise<object|null>} [p.system1Answer]  System 1's answers for this ticket (lib/system1.mjs), asked when it
  *   was queued; in shadow they are only compared with the analysis
+ * @param {object|null} [p.system1Ready]  the same answers when they were already in before this ticket started (the
+ *   watcher waits for them at most system1.waitSeconds), for the fix warm-up (J10); never waited for here
  */
-export async function processTicket({ issue, cfg, policy, jira, events, repoDir, stateDir, project = null, peers = () => [], result: given, followUp = () => {}, system1Answer = null }) {
+export async function processTicket({ issue, cfg, policy, jira, events, repoDir, stateDir, project = null, peers = () => [], result: given, followUp = () => {}, system1Answer = null, system1Ready = null }) {
   const { key } = issue;
   const auto = (action) => policy.actions[action] === 'auto';
   const started = Date.now();
@@ -312,9 +336,12 @@ export async function processTicket({ issue, cfg, policy, jira, events, repoDir,
   try {
     await jira.labels(key, { add: [cfg.labels.inProgress], remove: [cfg.labels.failed] });
 
-    // Warm up the fix workspace in parallel with the analysis (only for tickets the title rules allow).
-    const onlyBackend = titleTags(issue.summary).includes('BE') && !titleTags(issue.summary).includes('FE');
-    prepared = mayFixByTitle({ issue, policy }) ? prepareWorkspace({ key, repoDir, stateDir, events, warm: !onlyBackend }) : null;
+    // Warm up the fix workspace in parallel with the analysis (only for tickets the title rules allow; for a title
+    // that does not state the side, System 1's side may skip the warm-up: J10).
+    const plan = warmPlan({ issue, policy, answers: system1Ready?.answers ?? null });
+    if (plan.system1) events.emit('system1-warm', { key, ...plan.system1, text: describeWarm(plan.system1) });
+    const coldWhy = plan.system1?.mode === 'auto' ? `System 1: ${plan.system1.side}` : 'backend ticket';
+    prepared = plan.prepare ? prepareWorkspace({ key, repoDir, stateDir, events, warm: plan.warm, coldWhy }) : null;
 
     let result = given;
     let meta = { durationMs: 0, costUsd: 0, turns: 0 };
@@ -375,6 +402,16 @@ export async function processTicket({ issue, cfg, policy, jira, events, repoDir,
 
     const fixed = await maybeFix({ issue, result, cfg, policy, jira, events, repoDir, stateDir, prepared });
     prepared = null; // handed over: maybeFix owns the workspace now
+
+    // J10: was System 1's warm-up call right? What the fix stage needed: nothing when no automatic fix ran; a
+    // worktree, plus a dev server for a frontend fix. The same rules maybeFix used (both pure).
+    if (plan.system1) {
+      const fixRan = !fixBlocker({ issue, result, policy });
+      const side = fixRan ? fixSide({ issue, result, policy }) : null;
+      const needed = { prepare: fixRan, warm: side === 'frontend', side };
+      const verdict = warmVerdict(plan.system1.would, needed);
+      events.emit('system1-warm', { key, ...plan.system1, verdict, needed, text: describeWarm({ ...plan.system1, verdict, needed }) });
+    }
 
     const doneLabels = [cfg.labels.done, ...(fixed ? [cfg.labels.fixProposed] : [])];
     if (auto('addLabels')) await jira.labels(key, { add: doneLabels, remove: [cfg.labels.inProgress] });

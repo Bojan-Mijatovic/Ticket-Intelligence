@@ -43,8 +43,11 @@
     "askComponentThreshold": 0.7,
     "askReporter": "shadow",
     "askReporterThreshold": 0.6,
-    "askReporterHold": false
+    "askReporterHold": false,
+    "warmBySide": "shadow",
+    "warmBySideThreshold": 0.7
   },
+  "_system1WarmComment": "warmBySide, warmBySideThreshold (J10): while the analysis runs, a ticket whose title does not state the side ([FE], [BE]) gets a fix worktree and a warm Angular dev server; 44 of 58 warm-ups up to 2026-11-17 served no frontend fix. With System 1's side at the threshold, 'backend' = the worktree only (as for a [BE] title) and 'not code' = nothing. 'auto' = done; 'shadow' = prepared as before, the card says what would have been skipped, and after the fix stage whether that was right; 'off' = not asked. A wrong call costs time only: the fix prepares what is missing itself (a cold dev server, 20 s to 3 min). The Impact tab counts right and wrong calls; go to auto when the wrong ones stay rare.",
   "_system1LightPathComment": "lightPath (J2): a ticket whose not-code signals (type, side, and the code question) all reach lightPathThreshold. 'shadow' = shown on the card ('would take the light path'), nothing skipped; 'draft' = the ticket waits with the label ai-held and the card offers 'Light path' or 'Analyze anyway'; 'auto' = no Claude analysis, a triage comment and the label ai-triaged. Run again always gives the full analysis. Plan: two weeks of shadow with no code ticket among those it would skip, then draft.",
   "_system1QueueComment": "queueOrder (J3): 'auto' = tickets to analyze are taken by System 1's urgency (urgent, normal, low), then by age; other jobs keep their place. Set to auto on 2026-11-17: it only reorders tickets waiting together at the head of the queue, and a ticket System 1 has not answered counts as normal. 'shadow' = only an event when it would have taken another ticket first. 'off' = by age.",
   "_system1KnownComment": "knownThreshold, knownTest (J4): when System 1 names a known issue of the knowledge base at knownThreshold or more and its entry has a regression test (KB1), knownTest 'auto' runs that test on main as the next job in the queue (no model cost, a few minutes of Maven or Playwright); a failing test means the known issue may be back. 'off' = only shown.",
