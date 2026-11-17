@@ -27,7 +27,7 @@ test('--replace waits: no new job, the running one finishes, then idle', async (
   const c = clock();
   const said = [];
   const r = await waitUntilIdle({ base: 'http://localhost:7070', waitMs: 15 * 60_000, fetch: w.fetch, ...c, log: (t) => said.push(t) });
-  assert.deepEqual([r.idle, r.waitedMs], [true, 12_000], 'three polls of 4 s');
+  assert.deepEqual([r.idle, r.waitedMs, r.sawBusy], [true, 12_000, true], 'three polls of 4 s');
   assert.equal(w.calls[0], 'POST /api/drain {"on":true}', 'first: no new job');
   assert.deepEqual(said, ['Waiting for the running watcher to finish: fix VAX-17', 'Waiting for the running watcher to finish: AI review of FAR'], 'each change said once');
 });
@@ -60,5 +60,5 @@ test('an older watcher (no /api/busy): its processing job from /api/status; a wa
   assert.equal(r.idle, true);
   assert.match(said[0], /analyze LAB-24 \(an older watcher: it may start its next job meanwhile\)/);
   const down = await waitUntilIdle({ base: 'http://localhost:7070', waitMs: 60_000, fetch: async () => { throw new TypeError('fetch failed'); }, ...clock() });
-  assert.deepEqual([down.idle, down.waitedMs], [true, 1200], 'asked three times (drain, then busy), then nothing left to protect');
+  assert.deepEqual([down.idle, down.waitedMs, down.sawBusy], [true, 1200, false], 'asked three times (drain, then busy), then nothing left to protect');
 });

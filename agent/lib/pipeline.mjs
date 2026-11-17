@@ -152,8 +152,25 @@ function discardWorkspace(ws, repoDir, key) {
   }
 }
 
+/**
+ * Whether a stopped fix is worth one more try (A3, `retryFix`): the machine or the network failed, not the fix. A
+ * check that failed, a bug the test did not reproduce, a rule the fix broke (a stage on the error), or a branch that
+ * exists, are answers, not accidents: never retried. VAX-17 (2026-11-13): the fix hit its time limit on a machine
+ * busy with a training (the clean-up's EBUSY hid that at the time); run again three days later, it took a minute.
+ * @returns {string|null} why it is worth a retry, or null
+ */
+export function retryableFixError(e) {
+  if (!e || e.stage || e.code === 'BRANCH_EXISTS') return null;
+  const text = `${e.code ?? ''} ${e.message ?? ''}`;
+  if (/timed out after \d+ min/.test(text)) return 'the time limit (a busy machine?)';
+  if (/\b(EBUSY|EPERM|ENOTEMPTY|EACCES)\b|resource busy|locked/i.test(text)) return 'a file held by another process';
+  if (/\b(ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED)\b|socket hang up|fetch failed|Could not resolve host|unable to access|HTTP 5\d\d/i.test(text)) return 'the network';
+  if (/did not answer on port/.test(text)) return 'a dev server that did not start';
+  return null;
+}
+
 /** Reproduce → fix → verify → draft PR. Returns true when a pull request was opened. Never throws. */
-async function maybeFix({ issue, result, cfg, policy, jira, events, repoDir, stateDir, prepared }) {
+async function maybeFix({ issue, result, cfg, policy, jira, events, repoDir, stateDir, prepared, attempt = 1 }) {
   const key = issue.key;
   const blocker = fixBlocker({ issue, result, policy });
   const ws = prepared ? await prepared : null;
@@ -183,7 +200,23 @@ async function maybeFix({ issue, result, cfg, policy, jira, events, repoDir, sta
     }
     return Boolean(pub.prUrl);
   } catch (e) {
-    events.emit('fix-failed', { key, text: `${e.stage ? `${e.stage}: ` : ''}${e.message}`, checks: e.checks });
+    // A3: one more try after an accident, before anyone is told it stopped. Only once, and only while nothing is
+    // pushed: a failed attempt removes its worktree and its local branch, so the retry starts clean.
+    const why = attempt === 1 && policy.actions.retryFix === 'auto' ? retryableFixError(e) : null;
+    let pushed = false;
+    try {
+      pushed = Boolean(why) && Boolean(execFileSync('git', ['ls-remote', '--heads', 'origin', key], { cwd: repoDir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30_000 }).trim());
+    } catch {
+      /* cannot tell: the retry's own workspace check decides */
+    }
+    if (why && !pushed) {
+      // A failure before reproduceAndFix took the prepared worktree (Jira unreachable) leaves it and its branch.
+      if (ws) discardWorkspace(ws, repoDir, key);
+      events.emit('fix-retry', { key, text: `the fix stopped on ${why}: trying once more in 30 s (${String(e.message).split('\n')[0].slice(0, 160)})`, error: e.message });
+      await new Promise((r) => setTimeout(r, 30_000));
+      return maybeFix({ issue, result, cfg, policy, jira, events, repoDir, stateDir, prepared: null, attempt: 2 });
+    }
+    events.emit('fix-failed', { key, text: `${e.stage ? `${e.stage}: ` : ''}${e.message}${attempt > 1 ? ' (second try)' : ''}`, checks: e.checks });
     // The fix failed, but the commit that broke it is still evidence worth having on the ticket.
     if (['found', 'range', 'older'].includes(e.bisect?.status)) {
       suggestOwnerFromBisect({ key, result, bisect: e.bisect, policy, events });

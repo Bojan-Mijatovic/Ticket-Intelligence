@@ -181,7 +181,7 @@ export function readPullRequests(repoDir, { since = null, max = 500 } = {}) {
 }
 
 // The agent's steps shown on a ticket's lane, in the order they happen.
-const LANE = new Set(['picked', 'analyzed', 'commented', 'notified', 'fix-notified', 'duplicate', 'prior-art', 'fix-skipped', 'reproduced', 'bisected', 'guard', 'verified', 'pr', 'fix-proposed', 'fix-failed', 'reviewed', 'resolved', 'documented', 'doc-failed', 'docs-merged', 'failed']);
+const LANE = new Set(['picked', 'analyzed', 'commented', 'notified', 'fix-notified', 'merge-check', 'fix-retry', 'duplicate', 'prior-art', 'fix-skipped', 'reproduced', 'bisected', 'guard', 'verified', 'pr', 'fix-proposed', 'fix-failed', 'reviewed', 'resolved', 'documented', 'doc-failed', 'docs-merged', 'failed']);
 
 /**
  * @param {object} p

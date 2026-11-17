@@ -78,9 +78,11 @@ flowchart TD
 | Teams: owner message with an @mention and why this person, then "fix ready" with the PR | done, seen on real pilot tickets (VAX-21, VAX-17); the team's own channel needs its webhook |
 | A live demo on the pilot: reserved cases, `demo/preflight.mjs --teams` ([DEMO_SCENARIO.md](DEMO_SCENARIO.md) section 9) | ready; one rehearsal to go |
 | Restart without losing work (`--replace` waits for the running job), a watcher that keeps answering while it works | done |
+| Merge check: every open fix PR checked again on the main of now when main moves, the result on the PR | done (2026-11-17) |
+| One more try for a fix that stopped on an accident (time limit, a locked file, the network) | done (2026-11-17) |
 | Impact (WF5) and ticket lanes (G1, G1b) | done |
-| System 1: known issue (J4), Ask router (J5) | live |
-| System 1: question to the reporter (J7, WF1), light path (J2), queue order (J3), privacy (J6) | in shadow: they say what they would do |
+| System 1: known issue (J4), Ask router (J5), queue order (J3) | live |
+| System 1: question to the reporter (J7, WF1), light path (J2), privacy (J6) | in shadow: they say what they would do (J6 missed a name on an unseen pilot ticket, so it stays there) |
 | Update emails | built, off until SMTP is configured |
 | Teams as the front door (approve a fix from Teams, WF2) | deferred: needs a Teams app and IT |
 | Night shift and morning digest (WF3) | deferred |

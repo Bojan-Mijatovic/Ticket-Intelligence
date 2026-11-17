@@ -111,7 +111,7 @@ await check('GitHub pull request links open in the demo browser', () => {
   return priv.length ? `${priv.join(', ')} private: the browser must be signed in to GitHub as ${sh('gh', ['api', 'user', '--jq', '.login'])} (otherwise 404)` : `${slugs.join(', ')} public`;
 });
 // The running apps (node demo/run-mediagenda.mjs --all): optional, and each app calls the ones it is linked to.
-const BACKEND_PROBE = { DEM: '/api/structures?q=svil', LAB: '/api/exams', FAR: '/api/drugs', BIL: '/api/tariffs' };
+const BACKEND_PROBE = { DEM: '/api/structures?q=svil', LAB: '/api/exams', FAR: '/api/drugs', BIL: '/api/tariffs', VAX: '/api/vaccines' };
 for (const app of APPS) {
   await check(`${app.name} frontend on :${app.app.frontend}`, () => httpOk(`${app.app.url}${app.app.home}`), { optional: true });
   await check(`${app.name} backend on :${app.app.backend}`, () => httpOk(`http://localhost:${app.app.backend}${BACKEND_PROBE[app.key] ?? '/'}`), { optional: true });
@@ -183,6 +183,13 @@ async function teamsChecks() {
     }, { optional: true });
   }
 
+  // A job already running (a merge check runs every browser test: minutes) would hold up the ticket of the scene.
+  await check('Watcher idle: nothing running that would hold up the demo ticket', async () => {
+    const b = await fetch(`${base}/api/busy`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    if (!b) return 'not known (an older watcher)';
+    if (b.busy) throw new Error(`busy with ${b.what.join(', ')}: wait until it is done (GET /api/busy), then run this again`);
+    return 'idle';
+  }, { optional: true });
   await check('Watcher answers within a second', async () => {
     const t0 = Date.now();
     await fetch(`${base}/api/status`);

@@ -281,6 +281,8 @@ For tickets that pass `proposeFixWhen` in `policy.json`, the agent continues aft
 - `high` confidence;
 - not a duplicate.
 
+**One more try after an accident** (`retryFix: auto`). A fix that stops on the time limit, a file held by another process (EBUSY), the network or a dev server that did not start runs once more, 30 s later, from a clean worktree (the event `fix-retry`, shown on the card). An answer is never retried: failed checks, a bug the test did not reproduce, a rule the fix broke, a branch that exists, a branch already pushed. VAX-17 was such an accident: its first fix hit the time limit while a training kept the machine busy, and run again it took a minute.
+
 The steps:
 
 | Step | Who | Check |
@@ -563,6 +565,16 @@ Checked on 2026-11-13:
 - **The pilot.** The planted regression of VAX-13 brought the Sunday bug back and "adjusted" `Vax13RegressionTest` so CI passed. It was alerted 2 minutes after the push, and the ticket was due about two hours later. The test as it was before the commit failed on it.
 - **Backtest.** On the 135 commits of the five apps: 128 clear, 5 notes and 2 alerts. Both alerts were deliberate changes that replaced what an earlier fix protected: DEM-33 (dark red instead of DEM-32's blue) and LAB-18 (mg/dL instead of LAB-15's µmol/L). A person should confirm such a change, and the alert asks for exactly that.
 - **The first version** counted any change to a test file. Because test classes are shared, that gave 17 false alerts on the same history.
+
+## Merge check of open fix PRs
+
+A fix PR is verified on the main it started from. When `main` moves (another fix merged, a pilot push), the watcher checks every open fix PR of the agent again (`mergeCheck: auto`, `lib/merge-check.mjs`):
+
+1. a throwaway worktree of the main of now, the PR's branch merged in (nothing is committed or pushed);
+2. the checks of the sides the PR touches: every backend test, the frontend build and every browser test;
+3. the result as a comment on the PR ("everything still passes", "something fails", or the files that **conflict** with main), and the event `merge-check` on the ticket's card and lane.
+
+Once per PR and main. It waits for every other job: a ticket that comes after it is taken first, so a check never holds up an analysis that has not started (one already running finishes, which takes up to four minutes; `demo/preflight.mjs --teams` warns when the watcher is busy). It never merges. Measured on MediVax: 27 backend tests, the build and 10 browser tests on the merge in 216 s. Before it, this was done by hand before every merge of the pilot's fixes.
 
 ## Duplicates and known problems
 

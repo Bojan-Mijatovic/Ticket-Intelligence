@@ -14,6 +14,8 @@ const STEP = {
   analyzed: { tone: 'info', label: (s) => `Analysed · ${s.text}` },
   notified: { tone: teamsTone, label: (s) => `✉ ${s.text}` },
   'fix-notified': { tone: teamsTone, label: (s) => `✉ ${s.text}` },
+  'merge-check': { tone: (text) => (/still green/.test(text) ? 'ok' : 'bad'), label: (s) => s.text.replace(/^merge check/, 'Merge check') },
+  'fix-retry': { tone: 'warn', label: (s) => `Fix retried: ${s.text.replace(/^the fix /, '')}` },
   duplicate: { tone: 'warn', label: (s) => s.text },
   'prior-art': { tone: 'warn', label: (s) => s.text },
   'fix-skipped': { tone: 'muted', label: (s) => s.text.replace(/^no automatic fix:/i, 'No automatic fix:') },

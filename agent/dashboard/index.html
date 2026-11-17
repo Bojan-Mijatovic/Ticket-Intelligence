@@ -540,7 +540,7 @@ function apply(ev) {
     case 'reviewed': t.review = { stage: 'done', ...ev.review, url: ev.url }; break;
     case 'review-skipped': t.review = { stage: 'skipped', error: ev.text }; break;
   }
-  if (['picked', 'system1', 'system1-compared', 'system1-held', 'system1-queue', 'triaged', 'known-test', 'analyzing', 'progress', 'cross-project', 'analyzed', 'commented', 'notified', 'fix-notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'prior-art', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'docs-merged', 'warmed', 'workspace', 'reproducing', 'reproduced', 'bisecting', 'bisected', 'guard', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-skipped', 'reviewing', 'reviewed', 'review-skipped', 'mailed', 'mail-failed'].includes(ev.type)) {
+  if (['picked', 'system1', 'system1-compared', 'system1-held', 'system1-queue', 'triaged', 'known-test', 'analyzing', 'progress', 'cross-project', 'analyzed', 'commented', 'notified', 'fix-notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'prior-art', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'docs-merged', 'warmed', 'workspace', 'reproducing', 'reproduced', 'bisecting', 'bisected', 'guard', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-retry', 'merge-check', 'fix-skipped', 'reviewing', 'reviewed', 'review-skipped', 'mailed', 'mail-failed'].includes(ev.type)) {
     t.steps.push({ at: ev.at, type: ev.type, text: ev.step ?? ev.text });
   }
 }

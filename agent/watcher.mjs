@@ -11,7 +11,7 @@
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { promisify } from 'node:util';
@@ -28,6 +28,7 @@ import { currentBranch, previewBranch } from './lib/preview.mjs';
 import { reviewPullRequest } from './lib/review.mjs';
 import { readRecommendations, savedAnalyses, writeRecommendations } from './lib/insights.mjs';
 import { waitUntilIdle } from './lib/replace.mjs';
+import { describeMergeCheck, mergeCheck, mergeCheckComment } from './lib/merge-check.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
 import { createSuggested, readCreated, suggestTickets } from './lib/suggestions.mjs';
 import { suiteInsights } from './lib/suite.mjs';
@@ -109,7 +110,7 @@ if (previous?.pid && previous.pid !== process.pid && alive(previous.pid)) {
       console.error('To stop it anyway: node agent/watcher.mjs --replace --force (its work in progress is lost), or wait longer: --wait <minutes>');
       process.exit(1);
     }
-    if (w.waitedMs > 0) {
+    if (w.sawBusy) {
       // The job is done, but its answer may still be on its way to whoever started it (an app review's caller got
       // nothing in the first live test): two seconds before the stop.
       await new Promise((r) => setTimeout(r, 2000));
@@ -442,6 +443,9 @@ async function drain() {
   // While Jira is unavailable the queue waits: every step of a ticket reads or writes Jira. The poll that sees Jira
   // again calls drain(). A watcher about to be replaced (POST /api/drain) starts nothing new.
   if (draining || status.processing || !status.queue.length || status.jira.ok === false) return;
+  // A4: a merge check waits for every other job, so a ticket is never held up by one that has not started.
+  const other = status.queue.findIndex((q) => q.kind !== 'merge-check');
+  if (other > 0) status.queue.unshift(...status.queue.splice(other, 1));
   // J3: tickets to analyze by System 1's urgency ('auto'), or only say which it would take first ('shadow').
   const order = S1.queueOrder ?? 'shadow';
   const best = order === 'off' ? 0 : nextIndex(status.queue, (k) => system1Resolved.get(k)?.answers);
@@ -455,6 +459,7 @@ async function drain() {
   pushStatus();
   if (issue.kind === 'guard') await runGuard(issue);
   else if (issue.kind === 'known-test') await runKnownTest(issue);
+  else if (issue.kind === 'merge-check') await runMergeCheck(issue);
   else {
     const p = all.ofTicket(issue.key);
     if (issue.kind === 'document') await documentTicket(issue, p);
@@ -514,7 +519,7 @@ async function fixKeysOf(p) {
 
 let checkingMains = false;
 async function checkMains() {
-  if (checkingMains || policy.actions.regressionGuard !== 'auto') return;
+  if (checkingMains || (policy.actions.regressionGuard !== 'auto' && policy.actions.mergeCheck !== 'auto')) return;
   checkingMains = true;
   try {
     for (const p of all.projects.filter((x) => WATCHED.includes(x.key))) {
@@ -536,7 +541,8 @@ async function checkMains() {
       writeFileSync(guardFile(p), JSON.stringify({ head, at: new Date().toISOString() }));
       if (!seen || seen === head) continue;
       const shas = (await git(['rev-list', '--first-parent', '--reverse', `${seen}..${head}`])).split('\n').filter(Boolean).slice(-20);
-      for (const sha of shas) status.queue.push({ kind: 'guard', project: p.key, sha, key: null });
+      if (policy.actions.regressionGuard === 'auto') for (const sha of shas) status.queue.push({ kind: 'guard', project: p.key, sha, key: null });
+      if (policy.actions.mergeCheck === 'auto') await queueMergeChecks(p, head);
     }
   } catch (e) {
     events.emit('error', { text: `regression guard: ${e.message.split('\n')[0]}` });
@@ -544,6 +550,42 @@ async function checkMains() {
     checkingMains = false;
     pushStatus();
     drain();
+  }
+}
+
+// ---------------------------------------------------------------- merge check (A4)
+// When a watched main moves, every open fix PR of the agent is checked again on the main of now (lib/merge-check.mjs)
+// and the result is posted on the PR. Once per PR and main; it waits for every other job (drain).
+
+const mergeChecked = new Set(); // `${project}#${pr}@${main}+${head}`: one check per PR and main
+async function queueMergeChecks(p, main) {
+  let prs;
+  try {
+    prs = JSON.parse((await execFileAsync('gh', ['pr', 'list', '--state', 'open', '--json', 'number,headRefName,headRefOid,url'], { cwd: p.repoDir, encoding: 'utf8', timeout: 60_000, windowsHide: true })).stdout);
+  } catch {
+    return; // no GitHub remote, or gh not signed in: nothing to check
+  }
+  for (const pr of prs.filter((x) => /^[A-Z][A-Z0-9_]+-\d+$/.test(x.headRefName))) {
+    const id = `${p.key}#${pr.number}@${main}+${pr.headRefOid}`;
+    if (mergeChecked.has(id)) continue;
+    mergeChecked.add(id);
+    status.queue.push({ kind: 'merge-check', id, project: p.key, key: pr.headRefName, number: pr.number, branch: pr.headRefName, url: pr.url });
+  }
+}
+
+async function runMergeCheck({ project, key, number, branch, url }) {
+  const p = all.byKey(project);
+  const tools = p.cfg.toolsDir ?? cfg.toolsDir;
+  try {
+    const r = await mergeCheck({ repoDir: p.repoDir, head: `origin/${branch}`, workDir: join(p.stateDir, 'merge-check'), toolsDir: tools ? resolve(AGENT_DIR, tools) : null });
+    events.emit('merge-check', { key, ok: r.ok, conflict: Boolean(r.conflict), text: describeMergeCheck(r), url, result: r });
+    try {
+      await execFileAsync('gh', ['pr', 'comment', String(number), '--body', mergeCheckComment(r)], { cwd: p.repoDir, timeout: 60_000, windowsHide: true });
+    } catch (e) {
+      events.emit('error', { key, text: `merge check: the comment on PR #${number} was not posted (${String(e.message).split('\n')[0]})` });
+    }
+  } catch (e) {
+    events.emit('error', { key, text: `merge check of PR #${number}: ${String(e.message).split('\n')[0]}` });
   }
 }
 

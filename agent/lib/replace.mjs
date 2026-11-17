@@ -8,7 +8,7 @@
  * @param {string} p.base       the running watcher, http://localhost:<dashboardPort>
  * @param {number} p.waitMs     how long to wait before giving up
  * @param {(text: string) => void} [p.log]
- * @returns {Promise<{ idle: boolean, what: string[], waitedMs: number }>}
+ * @returns {Promise<{ idle: boolean, what: string[], waitedMs: number, sawBusy: boolean }>} sawBusy: it waited for a job
  */
 export async function waitUntilIdle({ base, waitMs, log = () => {}, fetch = globalThis.fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = () => Date.now(), everyMs = 4000 }) {
   /**
@@ -43,12 +43,14 @@ export async function waitUntilIdle({ base, waitMs, log = () => {}, fetch = glob
   const started = now();
   const drained = await drain(true);
   let said = '';
+  let sawBusy = false;
   for (;;) {
     const what = await busy();
-    if (!what.length) return { idle: true, what: [], waitedMs: now() - started };
+    if (!what.length) return { idle: true, what: [], waitedMs: now() - started, sawBusy };
+    sawBusy = true;
     if (now() - started >= waitMs) {
       if (drained) await drain(false);
-      return { idle: false, what, waitedMs: now() - started };
+      return { idle: false, what, waitedMs: now() - started, sawBusy };
     }
     const line = what.join(', ');
     if (line !== said) log(`Waiting for the running watcher to finish: ${line}${drained ? '' : ' (an older watcher: it may start its next job meanwhile)'}`);
