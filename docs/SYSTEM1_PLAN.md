@@ -1,8 +1,8 @@
 # System 1: fast local decisions in front of Claude
 
-Status: **Proposal** · Date: 2026-11-13 · Owner: Bojan Mijatović · Builds on: [AUTONOMY_AND_NEXT.md](AUTONOMY_AND_NEXT.md), [KNOWLEDGE_PLAN.md](KNOWLEDGE_PLAN.md), [REDACTION.md](REDACTION.md), [PILOT.md](PILOT.md)
+Status: **In use**: J1–J10 built, each decision behind its own switch (state in section 8) · Date: 2026-11-13, updated 2026-11-17 · Owner: Bojan Mijatović · Builds on: [AUTONOMY_AND_NEXT.md](AUTONOMY_AND_NEXT.md), [KNOWLEDGE_PLAN.md](KNOWLEDGE_PLAN.md), [REDACTION.md](REDACTION.md), [PILOT.md](PILOT.md)
 
-Today every decision the agent makes about a ticket goes through Claude: one analysis of about a minute, whatever the ticket is. This document proposes a fast layer in front of it. A small local model answers a fixed set of questions about each ticket in a second or two, with a probability for each answer. Claude stays for everything that has to be reasoned out or written. Nothing is built into the agent yet. The spike (J0) and a first fine-tune ran on 2026-11-13; their results are in section 12.
+Before System 1, every decision the agent made about a ticket went through Claude: one analysis of about a minute, whatever the ticket was. This document describes a fast layer in front of it. A small local model answers a fixed set of questions about each ticket in a few seconds, with a probability for each answer. Claude stays for everything that has to be reasoned out or written. It was proposed on 2026-11-13 and is now built: which decisions act and which only say what they would do is in section 8 (state) and in [agent/README.md](../agent/README.md#system-1-the-local-decision-model); the measurements are in section 12.
 
 The idea comes from the presentation *Jev with Laya: two-system decisions* (received 2026-11-13), which was built on another company's tickets, not ours. The facts about Laya were checked against its model card ([convaiinnovations/laya](https://huggingface.co/convaiinnovations/laya)) on 2026-11-13; its accuracy figures are the vendor's. The facts about our app were measured on 2026-11-13 from the code, the event logs and the Insights data.
 
@@ -57,15 +57,16 @@ Jira ─poll─▶ watcher ─▶ masking ─▶ SYSTEM 1  (local, ~0.7 s per qu
           ▼                            ▼                          ▼                               ▼
   sure, not a code ticket      still names a person      same as known issue KEY          everything else
   light path: route,           held for a person:        KEY's regression test (KB1)      SYSTEM 2: the Claude analysis
-  comment, label               nothing is sent           runs at once                     as today, with System 1's
-  (no code analysis)                                                                      answers as hints
+  comment, label               nothing is sent           runs at once                     as before; System 1's answers
+  (no code analysis)                                                                      are compared after it, not given to it
 
   outcomes: files changed on main, Jira type and resolution, PR outcome, 👍/👎, the analysis itself
         └─▶ labels ─▶ nightly fine-tune ─▶ swapped in only if not worse on held-out tickets
 ```
 
 - **Where it runs.** A small server of ours, `agent/system1/server.py` (Python standard library, one checkpoint, the model on the CPU). It answers on loopback only, with the model hub offline, and the watcher starts it like the dev servers. It is not Laya's own `laya-serve`, which listens on every network interface by default and routes between checkpoints by language; the agent needs its own checkpoint for every ticket. The agent calls it with Node's built-in `fetch`, so the agent still has no npm dependencies (NFR-02). Python and the model files live in `tools/` and are fetched by `demo/get-tools.mjs` with checksums, like the JDK and Maven.
-- **Never in the way.** The call has a 2 s timeout. When the service is down or slow, every ticket takes today's path. System 1 can only make the agent do **less** or do things **in another order**: skip a code analysis, hold a ticket, move it up the queue, propose candidates, or answer a "who" question from plain-code data. It never writes code. Anything posted to Jira goes through `policy.json`, like every other action.
+- **Never in the way.** The watcher waits for the answers at most `waitSeconds` (12 s) before the analysis starts (a call times out after 60 s; a late answer still serves the card and the comparison). When the service is down or slow, the ticket takes the usual path. System 1 can only make the agent do **less** or do things **in another order**: skip a code analysis, hold a ticket, move it up the queue, propose candidates, prepare less for a fix (J10), or answer a "who" question from plain-code data. It never writes code. Anything posted to Jira goes through `policy.json`, like every other action.
+- **Not a hint to Claude.** The analysis does not see System 1's answers. Giving them as hints was considered and is not built: Claude could follow a wrong hint, the comparison of the two would stop being independent, and the labels System 2 gives System 1 would then come partly from System 1 itself. Measure it first on the replay (with and without the hints) before building it.
 - **Every answer is an event.** The `system1` event holds the questions, each answer with its top 3 probabilities, the model version and the time. The ticket card shows it, and the accuracy (AI1) compares it with what happened.
 - **One switch per decision.** `policy.json` → `system1` sets each decision to `off`, `shadow`, `draft` or `auto`, with its own threshold. In `shadow` it answers and logs, and changes nothing. Every decision starts in `shadow`. The trust ladder (AG2) proposes a higher level when the record allows it.
 
