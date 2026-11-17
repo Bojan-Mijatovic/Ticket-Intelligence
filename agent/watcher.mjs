@@ -23,6 +23,7 @@ import { createDocsPrs } from './lib/docs-prs.mjs';
 import { repoKnowledge } from './lib/doc-candidates.mjs';
 import { loadPriorArtSources } from './lib/prior-art.mjs';
 import { knowledgeGaps, readAsks } from './lib/gaps.mjs';
+import { askStats } from './lib/ask-stats.mjs';
 import { processTicket, triageTicket } from './lib/pipeline.mjs';
 import { currentBranch, previewBranch } from './lib/preview.mjs';
 import { reviewPullRequest } from './lib/review.mjs';
@@ -1268,6 +1269,15 @@ const server = createServer(async (req, res) => {
       const entry = { at: new Date().toISOString(), answerAt: String(body.answerAt), question: String(body.question ?? '').slice(0, 500), vote, note: String(body.note ?? '').trim().slice(0, 500) };
       appendFileSync(join(p.stateDir, 'ask-feedback.jsonl'), `${JSON.stringify(entry)}\n`);
       return json(res, 200, { ok: true });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    }
+  }
+  // Ask 7/7: how Ask does across the suite, week by week, for the Impact tab (lib/ask-stats.mjs): plain file reads.
+  if (req.method === 'GET' && path === '/api/ask/stats') {
+    try {
+      const weeks = Math.min(26, Math.max(1, Number(queryOf(req).get('weeks')) || 8));
+      return json(res, 200, askStats(all.projects.map((x) => ({ project: x.key, name: x.name, ...readAsks(x.stateDir) })), { weeks }));
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     }

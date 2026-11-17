@@ -215,7 +215,8 @@
   .rec { border-left: 3px solid var(--accent); padding: 6px 10px; background: var(--accent-soft); border-radius: 0 6px 6px 0; font-size: 13px; }
   /* Graph tab (G1): the main line and one lane per ticket. Node colour = the state of the step (the row's text says it too). */
   #acc-kpis, #impact-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  @media (max-width: 1100px) { #acc-kpis, #impact-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  #ask-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  @media (max-width: 1100px) { #acc-kpis, #impact-kpis, #ask-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .bars.solid .bar i { background: var(--accent); border-radius: 4px 4px 0 0; min-height: 0; }
   .bars.solid .bar span:first-child { color: var(--text); font-weight: 600; }
   .bars.solid .bar span { white-space: nowrap; }
@@ -390,6 +391,11 @@
     <div class="panel ins-list" id="impact-apps"></div>
     <div class="panel ins-list" id="impact-notes"></div>
     <div class="panel ins-list" id="impact-system1"></div>
+    <h2>Ask · questions, and how often the answer was right</h2>
+    <div class="hint" style="margin:4px 0 10px">Every question asked on the Ask tab, in every app: how many were answered without an AI run (the agent's records, plain code, System 1, or an earlier answer given again), what Claude's answers cost, and how people rated them (👍 / 👎, the last vote counting).</div>
+    <div class="kpis" id="ask-kpis"></div>
+    <div class="panel ins-list" id="ask-weeks"></div>
+    <div class="panel ins-list" id="ask-apps"></div>
   </section>
   <section id="tab-ask" hidden>
     <h2 id="ask-title">Ask the knowledge base</h2>
@@ -1854,6 +1860,7 @@ async function loadImpact(refresh = false) {
     renderImpact(data);
     $('#impact-state').textContent = `${data.perProject.length} apps`;
     fetchJsonOrHint('/api/system1').then(renderSystem1).catch((e) => $('#impact-system1').replaceChildren(h('div', { class: 't-sub' }, `System 1: ${e.message}`)));
+    fetchJsonOrHint(`/api/ask/stats?weeks=${impactWeeks}`).then(renderAskStats).catch((e) => $('#ask-kpis').replaceChildren(h('div', { class: 't-sub', style: 'grid-column:1/-1' }, `Ask: ${e.message}`)));
   } catch (e) {
     $('#impact-kpis').replaceChildren(h('pre', { class: 'err', style: 'grid-column:1/-1' }, `Impact failed: ${e.message}`));
     $('#impact-state').textContent = '';
@@ -1904,6 +1911,30 @@ function renderImpact(d) {
   $('#impact-notes').replaceChildren(h('ul', { class: 'review-list', style: 'margin:0' }, [
     `Analysis takes ${d.total.avgAnalysisMin ?? '–'} min on average; from the analysis to a verified draft PR ${d.total.avgToPrMin ?? '–'} min.`,
     ...d.notes].map((n) => h('li', { class: 't-sub' }, n))));
+}
+
+/** Ask 7/7: the questions of the whole suite, how many needed no AI run, and how often the answer was rated right. */
+function renderAskStats(d) {
+  const [prev, now] = [d.weeks.at(-2) ?? null, d.weeks.at(-1)];
+  const t = d.total;
+  const pc = (r) => (r?.of ? `${Math.round(r.rate * 100)} %` : '–');
+  const kpi = (label, value, sub) => h('div', { class: 'kpi' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), h('div', { class: 'sub' }, sub));
+  $('#ask-kpis').replaceChildren(
+    kpi('Questions this week', String(now?.asked ?? 0), `last week ${prev?.asked ?? '–'} · ${t.asked} in all`),
+    kpi('Answered without an AI run', pc(t.withoutAi), `${t.fast} from the records, plain code or System 1${t.secondsFast != null ? ` (${t.secondsFast} s)` : ''} · ${t.reused} given again`),
+    kpi('Rated right', pc(t.upRate), `${t.up} 👍 · ${t.down} 👎 · ${pc(t.rated)} of the answers rated`),
+    kpi('Claude answers', String(t.claude), `${money(t.costUsd)} in all · ${money(t.costPerClaude)} each${t.secondsClaude != null ? ` · ${t.secondsClaude} s` : ''}`));
+  const num = (v) => h('td', { class: 'num' }, v ?? '–');
+  const th = (x, n) => h('th', { class: n ? 'num' : null }, x);
+  $('#ask-weeks').replaceChildren(h('table', {},
+    h('thead', {}, h('tr', {}, th('Week of'), th('Questions', 1), th('Without AI', 1), th('Claude', 1), th('Given again', 1), th('Found', 1), th('👍', 1), th('👎', 1), th('Cost', 1))),
+    h('tbody', {}, [...d.weeks].reverse().map((w) => h('tr', {}, h('td', {}, weekLabel(w.week)), num(w.asked), num(pc(w.withoutAi)), num(w.claude), num(w.reused), num(pc(w.foundRate)), num(w.up), num(w.down), num(money(w.costUsd)))))));
+  $('#ask-apps').replaceChildren(...[ // replaceChildren writes a null as the text "null": left out
+    d.perProject.length ? h('table', {},
+      h('thead', {}, h('tr', {}, th('App'), th('Questions', 1), th('Without AI', 1), th('Found', 1), th('Rated right', 1), th('👍 / 👎', 1), th('Cost', 1))),
+      h('tbody', {}, d.perProject.map((p) => h('tr', {}, h('td', {}, p.name), num(p.asked), num(pc(p.withoutAi)), num(pc(p.foundRate)), num(pc(p.upRate)), num(`${p.up} / ${p.down}`), num(money(p.costUsd)))))) : h('div', { class: 't-sub' }, 'No question asked yet.'),
+    d.wrong.length ? h('div', { style: 'margin-top:8px' }, h('div', { class: 't-sub' }, 'Marked wrong lately (they are knowledge gaps on the Insights tab):'),
+      h('ul', { class: 'review-list', style: 'margin:4px 0 0' }, d.wrong.map((w) => h('li', { class: 't-sub' }, `${projectInfo(w.project)?.name ?? w.project}: "${w.question}"${w.note ? ` · ${w.note}` : ''} (${ago(w.at)})`)))) : null].filter(Boolean));
 }
 
 /** System 1 (docs/SYSTEM1_PLAN.md, J8b): what the local model did and would have done, and its calibration. */
@@ -2076,22 +2107,33 @@ async function saveAsFaq(a, button) {
   } catch (e) { alert(`Not saved: ${e.message}`); button.disabled = false; button.textContent = 'Save as FAQ'; }
 }
 
-/** 👍 / 👎 under an answer (K12): a 👎 or a "not found" becomes a knowledge gap on the Insights tab. */
+/**
+ * 👍 / 👎 under an answer (K12), one click each (Ask 7/7): the vote is saved at once and can be changed; after a 👎 a
+ * line for what is wrong or missing, saved with it. A 👎 or a "not found" becomes a knowledge gap on the Insights tab.
+ */
 function feedbackRow(a) {
-  if (!a.at || !a.project) return null;
-  const send = async (vote) => {
-    const note = vote === 'down' ? prompt('What is wrong or missing? (optional; e.g. the right answer, or where it is)') : '';
-    if (note === null) return;
+  if (!a.at || !a.project || a.tourReplay) return null;
+  const send = async (vote, note = '') => {
     try {
       await post('/api/ask/feedback', { project: a.project, answerAt: a.at, question: a.question, vote, note });
       a.vote = vote;
+      a.noteSaved = Boolean(note);
+      a.noteEl = null;
       renderAnswers();
     } catch (e) { alert(`Not saved: ${e.message}`); }
   };
-  return h('div', { class: 't-sub', style: 'margin-top:6px' },
-    a.vote ? `Thanks: marked ${a.vote === 'up' ? 'right 👍' : 'wrong 👎'}.` : ['Was this right? ',
-      h('button', { class: 'small', onclick: () => send('up') }, '👍'), ' ',
-      h('button', { class: 'small', onclick: () => send('down') }, '👎')]);
+  const btn = (vote, label, title) => h('button', { class: `small${a.vote === vote ? ' primary' : ''}`, 'aria-pressed': String(a.vote === vote), title, onclick: () => { if (a.vote !== vote) send(vote); } }, label);
+  // The note's box is kept across re-renders: a new answer arriving must not wipe what is being typed.
+  if (a.vote === 'down' && !a.noteSaved && !a.noteEl) {
+    const input = h('input', { type: 'text', maxlength: 500, placeholder: 'What is wrong or missing? (optional: the right answer, or where it is)', style: 'flex:1;min-width:220px' });
+    const save = () => { if (input.value.trim()) send('down', input.value.trim()); };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+    a.noteEl = h('span', { style: 'display:inline-flex;gap:6px;flex:1;min-width:220px' }, input, h('button', { class: 'small', onclick: save }, 'Save note'));
+  }
+  return h('div', { class: 't-sub', style: 'margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap' },
+    a.vote === 'up' ? 'Marked right.' : a.vote === 'down' ? (a.noteSaved ? 'Marked wrong; the note is saved.' : 'Marked wrong.') : 'Was this right?',
+    btn('up', '👍', 'Right'), btn('down', '👎', 'Wrong, or something is missing'),
+    a.vote === 'down' && !a.noteSaved ? a.noteEl : null);
 }
 
 /**
