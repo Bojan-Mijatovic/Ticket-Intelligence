@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { after, test } from 'node:test';
-import { actionsOn, addFaq, askRecord, faqEntry, faqHas, faqProblems, faqRefusal, findAnswer, logAsk, maskAnswer, peopleFor, recordAction, saveFaq, ticketDraft, viaOf, voteOn, wikiOf } from '../lib/ask-actions.mjs';
+import { actionsOn, addFaq, askRecord, faqEntry, faqHas, faqProblems, faqRefusal, findAnswer, followUpChain, logAsk, maskAnswer, peopleFor, recordAction, saveFaq, ticketDraft, viaOf, voteOn, wikiOf } from '../lib/ask-actions.mjs';
 import { lintKnowledge, parseKnowledgeFile } from '../lib/knowledge.mjs';
 
 const tmp = mkdtempSync(join(tmpdir(), 'ask-actions-'));
@@ -191,4 +191,22 @@ test('saving an FAQ: a question already on main is refused before anything is wr
   await assert.rejects(saveFaq({ repoDir: repo, workDir: join(root, 'work'), record: { ...RECORD, question: 'why was the third ESA dose due too early' }, date: 'x', team: TEAM, run }), /already in docs\/knowledge\/faq\.md on main/);
   assert.deepEqual(calls, [], 'GitHub was not asked');
   assert.equal(readFileSync(join(repo, 'docs', 'knowledge', 'faq.md'), 'utf8').match(/^## /gm).length, 1);
+});
+
+test('Ask 4/7: a follow-up is recorded with the answer it follows; the conversation is read back oldest first, three at most', () => {
+  const dir = join(tmp, 'chain');
+  mkdirSync(dir, { recursive: true });
+  const at = (m) => `2026-11-17T10:${String(m).padStart(2, '0')}:00.000Z`;
+  logAsk(dir, { ...CLAUDE, at: at(1), question: 'q1' });
+  logAsk(dir, { ...CLAUDE, at: at(2), question: 'q2', followUp: { at: at(1), question: 'q1' } });
+  logAsk(dir, { ...FAST, at: at(3), question: 'q3', followUp: { at: at(2), question: 'q2' } });
+  logAsk(dir, { ...CLAUDE, at: at(4), question: 'q4', followUp: { at: at(3), question: 'q3' } });
+  assert.equal(findAnswer(dir, at(2)).followUp, at(1));
+  assert.equal(findAnswer(dir, at(1)).followUp, undefined);
+  assert.deepEqual(followUpChain(dir, at(2)).map((r) => r.question), ['q1', 'q2']);
+  assert.deepEqual(followUpChain(dir, at(4)).map((r) => r.question), ['q2', 'q3', 'q4'], 'the last three');
+  assert.equal(followUpChain(dir, at(3)).at(-1).component, 'Prenotazioni', 'a fast answer keeps its component for the next question');
+  assert.deepEqual(followUpChain(dir, at(9)), [], 'not in the records');
+  logAsk(dir, { ...CLAUDE, at: at(5), question: 'loop', followUp: { at: at(5), question: 'loop' } });
+  assert.deepEqual(followUpChain(dir, at(5)).map((r) => r.question), ['loop'], 'a record that follows itself does not loop');
 });

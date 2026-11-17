@@ -395,6 +395,7 @@
     <h2 id="ask-title">Ask the knowledge base</h2>
     <div class="pick-first panel" id="ask-pick" hidden></div>
     <form class="panel ask-form" id="ask-form">
+      <div id="ask-followup" hidden></div>
       <textarea id="ask-q" rows="2" maxlength="500" placeholder="e.g. Has the Struttura field bug happened before?" aria-label="Question"></textarea>
       <div class="actions"><button class="primary" type="submit" id="ask-go">Ask</button>
         <span class="meta">Answers come only from Jira, the agent's analyses, the git history and the code; every claim is cited. Nothing found → it says so.</span></div>
@@ -1939,6 +1940,7 @@ let askId = null;
 /** Title, examples and placeholder of the Ask tab for the selected project; a picker when "All projects" is selected. */
 function renderAskHead() {
   const p = focus();
+  if (followUpOf && followUpOf.focusedOn !== (p?.key ?? null)) { followUpOf = null; renderFollowUp(); }
   $('#ask-form').hidden = !p;
   $('#ask-title').textContent = p ? `Ask the knowledge base · ${projLabel(p)}` : 'Ask the knowledge base';
   if (!p) { if (status) projectPicker($('#ask-pick'), 'The knowledge base'); return; }
@@ -1961,12 +1963,13 @@ function linkify(text, projectKey = focus()?.key) {
 function renderAnswers() {
   $('#ask-answers').replaceChildren(...answers.map((a) => h('div', { class: 'panel answer' },
     h('div', { class: 'q' }, a.project ? h('span', { class: 'proj', style: 'margin-right:8px' }, projectInfo(a.project)?.name ?? a.project) : null, a.question),
+    a.followUp ? h('div', { class: 't-sub' }, `↳ follow-up to: ${a.followUp.question}`) : null,
     a.error ? h('pre', { class: 'err' }, a.error) : [
       h('div', {}, h('span', { class: `chip ${a.found ? 'done' : a.searchFailed ? 'failed' : 'analyzing'}` }, a.found ? 'answered from sources' : a.searchFailed ? 'Jira could not be searched' : 'not in the knowledge base'),
         a.via === 'records' ? h('span', { class: 'chip', style: 'margin-left:6px', title: "From the agent's records: its events for this ticket, the ticket in Jira and the state of its pull requests on GitHub. No model." }, "⚡ from the agent's records · no AI")
           : a.fast ? h('span', { class: 'chip', style: 'margin-left:6px', title: `${a.routed?.via === 'rule' ? 'A clear wording' : 'System 1'} read the question as "${a.routed?.intent}"${a.routed?.via === 'rule' ? '' : ` (${Math.round(100 * (a.routed?.intentP ?? 0))} %)`}${a.component ? ` about ${a.component}` : ''}, and plain code answered from the Insights data${a.intent === 'where' ? ' and the files on main' : ''}` }, a.routed?.via === 'rule' ? '⚡ plain code · no AI' : '⚡ System 1 · no Claude call') : null,
         h('span', { class: 'meta', style: 'margin-left:8px' }, `${a.fast ? ((a.meta?.durationMs ?? 0) / 1000).toFixed(1) : Math.round((a.meta?.durationMs ?? 0) / 1000)} s · ~$${(a.meta?.costUsd ?? 0).toFixed(2)}`),
-        a.fast ? h('button', { class: 'small', style: 'margin-left:8px', onclick: (e) => askClaude(a.question, a.project, e.target) }, 'Ask Claude instead') : null),
+        a.fast ? h('button', { class: 'small', style: 'margin-left:8px', onclick: (e) => askClaude(a.question, a.project, e.target, a.followUp?.at) }, 'Ask Claude instead') : null),
       !a.fast && a.routed?.intent ? h('div', { class: 't-sub' }, `System 1 read it as "${a.routed.intent}" (${Math.round(100 * a.routed.intentP)} %)${a.routed.componentP >= 0.7 ? `, about ${a.routed.component}` : ''}; Claude answered.`) : null,
       // K10: a source that could not be read is said, never hidden behind "not found".
       a.warnings?.length ? h('div', { class: 'err', style: 'margin:6px 0;padding:6px 10px;border-radius:6px' }, a.warnings.map((w) => h('div', {}, `⚠ ${w.text}`))) : null,
@@ -1997,6 +2000,7 @@ function answerActions(a) {
   if (a.panel && !a.panelEl) a.panelEl = a.panel === 'teams' ? sharePanel(a) : askTicketPanel(a);
   return h('div', {},
     h('div', { class: 'actions', style: 'display:flex;gap:8px;flex-wrap:wrap;align-items:center' },
+      h('button', { class: 'small', title: 'The next question continues this one: "who fixed it?", "and where is it in the code?"', onclick: () => followUp(a) }, followUpOf === a ? '↳ following up' : '↳ Follow up'),
       pol.shareAnswer !== 'off' ? h('button', { class: 'small', onclick: () => toggle('teams') }, a.panel === 'teams' ? 'Close' : 'Send to Teams…') : null,
       pol.createTicket !== 'off' && !done.some((d) => d.action === 'ticket') ? h('button', { class: 'small', onclick: () => toggle('ticket') }, a.panel === 'ticket' ? 'Close' : 'Create a ticket…') : null,
       canFaq ? h('button', { class: 'small', title: 'Into docs/knowledge/faq.md through a documentation PR; a person merges it', onclick: (e) => saveAsFaq(a, e.target) }, 'Save as FAQ') : null,
@@ -2084,9 +2088,33 @@ function feedbackRow(a) {
       h('button', { class: 'small', onclick: () => send('down') }, '👎')]);
 }
 
+/**
+ * Ask 4/7: the answer the next question follows, shown above the box until it is asked or dropped. One follow-up at a
+ * time: after it is answered, "Follow up" on the new answer continues the conversation (the server reads up to three
+ * answers back), so a question meant to stand alone never carries an old one by mistake.
+ */
+let followUpOf = null;
+function renderFollowUp() {
+  const box = $('#ask-followup');
+  box.hidden = !followUpOf;
+  if (!followUpOf) { box.replaceChildren(); return; }
+  box.replaceChildren(h('div', { class: 't-sub', style: 'display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap' },
+    h('span', { class: 'chip analyzing' }, '↳ follow-up'), h('span', {}, `to: ${followUpOf.question}`),
+    h('button', { type: 'button', class: 'small', title: 'Ask the next question on its own', onclick: () => { followUpOf = null; renderFollowUp(); renderAnswers(); } }, '✕')));
+}
+function followUp(a) {
+  followUpOf = a;
+  followUpOf.focusedOn = focus()?.key ?? null; // dropped when the person switches project
+  renderFollowUp();
+  renderAnswers();
+  $('#ask-q').focus();
+  $('#ask-form').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
 async function ask() {
   const q = $('#ask-q').value.trim();
-  const project = focus()?.key;
+  const prev = followUpOf;
+  const project = prev?.project ?? focus()?.key;
   if (!q || askId || !project) return;
   askId = String(Date.now());
   const btn = $('#ask-go');
@@ -2094,16 +2122,19 @@ async function ask() {
   const progress = $('#ask-progress');
   progress.hidden = false;
   progress.replaceChildren(h('div', { class: 'step' }, h('span'), h('span'), h('span', { class: 'typing m' }, 'working')));
-  try { answers.unshift(await post('/api/ask', { question: q, id: askId, project })); $('#ask-q').value = ''; }
-  catch (e) { answers.unshift({ question: q, project, error: e.message }); }
+  try {
+    answers.unshift(await post('/api/ask', { question: q, id: askId, project, ...(prev ? { followUp: prev.at } : {}) }));
+    $('#ask-q').value = '';
+    if (followUpOf === prev) { followUpOf = null; renderFollowUp(); }
+  } catch (e) { answers.unshift({ question: q, project, error: e.message }); }
   finally { askId = null; btn.disabled = false; btn.textContent = 'Ask'; progress.hidden = true; renderAnswers(); }
 }
-/** J5: the same question to Claude, after a fast System 1 answer. */
-async function askClaude(question, project, button) {
+/** J5: the same question to Claude, after a fast System 1 answer (a follow-up stays one). */
+async function askClaude(question, project, button, followUpAt = null) {
   if (askId) return;
   askId = String(Date.now());
   if (button) { button.disabled = true; button.textContent = 'Claude is answering…'; }
-  try { answers.unshift(await post('/api/ask', { question, id: askId, project, full: true })); }
+  try { answers.unshift(await post('/api/ask', { question, id: askId, project, full: true, ...(followUpAt ? { followUp: followUpAt } : {}) })); }
   catch (e) { answers.unshift({ question, project, error: e.message }); }
   finally { askId = null; renderAnswers(); }
 }

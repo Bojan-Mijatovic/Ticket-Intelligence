@@ -171,6 +171,7 @@ On stage, with **Run ticket**, both cards come about a minute sooner.
 |---|---|---|
 | the new ticket's key alone | in about a second: what happened so far and **Now**: what waits, for whom (a chip "from the agent's records · no AI") | "The first question support asks: where is my ticket. No model, no cost." |
 | "Which bugs did Scadenze have?" | the component's bugs newest first, what was fixed twice, what came back, who knows it, in under a second ("plain code · no AI") | "Most questions are answered by plain code; Claude only gets the rest." |
+| **↳ Follow up** on it, then "Who knows it best?" | the people who know Scadenze, again in under a second: the question needs no subject | "It is a conversation, not a search box." |
 | **Send to Teams…** on that answer, for the channel | the card in `support-triage`, with the sources as links | "An answer is something you pass on, not a chat you copy from." |
 | **Create a ticket…** (not created) | the draft with the question, the answer, the sources and **Before you create**: what Jira already has | "Every new ticket is checked against what we already know." |
 

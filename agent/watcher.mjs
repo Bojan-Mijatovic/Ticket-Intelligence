@@ -31,7 +31,7 @@ import { waitUntilIdle } from './lib/replace.mjs';
 import { describeMergeCheck, mergeCheck, mergeCheckComment } from './lib/merge-check.mjs';
 import { ticketKeyQuestion, ticketStatus } from './lib/ticket-status.mjs';
 import { componentInQuestion, fastMore, ruleIntent } from './lib/ask-fast.mjs';
-import { actionsOn, faqRefusal, findAnswer, logAsk, maskAnswer, peopleFor, priorArtItem, recordAction, saveFaq, ticketDraft, viaText, voteOn } from './lib/ask-actions.mjs';
+import { actionsOn, faqRefusal, findAnswer, followUpChain, logAsk, maskAnswer, peopleFor, priorArtItem, recordAction, saveFaq, ticketDraft, viaText, voteOn } from './lib/ask-actions.mjs';
 import { readEvents } from './lib/git-graph.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
 import { createSuggested, readCreated, suggestTickets } from './lib/suggestions.mjs';
@@ -743,7 +743,7 @@ async function insightsForAsk(p) {
  * Ask about a ticket's status (lib/ticket-status.mjs): the agent's events, the ticket in Jira, and the state of its
  * PRs on GitHub. No model. The ticket's own project answers, whatever project the Ask tab shows.
  */
-async function ticketStatusAnswer(key, question) {
+async function ticketStatusAnswer(key, question, followUp = null) {
   const p = all.ofTicket(key);
   const started = Date.now();
   const events = readEvents(rootState);
@@ -764,7 +764,7 @@ async function ticketStatusAnswer(key, question) {
     }
   }
   const s = ticketStatus({ key, issue, events, prs, now: { processing: status.processing, queued: status.queue.map((q) => q.key) }, ticketUrl: (k) => jira.browseUrl(k) });
-  const answer = { question, project: p.key, found: s.found, fast: true, via: 'records', intent: 'ticket', answer: s.answer, sources: s.sources, warnings: [], dropped: 0, closest: [], meta: { durationMs: Date.now() - started, costUsd: 0, model: "the agent's records" }, at: new Date().toISOString() };
+  const answer = { question, project: p.key, found: s.found, fast: true, via: 'records', intent: 'ticket', answer: s.answer, sources: s.sources, warnings: [], dropped: 0, closest: [], meta: { durationMs: Date.now() - started, costUsd: 0, model: "the agent's records" }, at: new Date().toISOString(), ...(followUp ? { followUp } : {}) };
   logAsk(p.stateDir, answer);
   return answer;
 }
@@ -789,7 +789,7 @@ async function repoFiles(p) {
  * does; the component is the one the question names, never a model's guess for "latest", "history" or "where". Plain
  * code then answers from the Insights data and the file list, or the question goes to Claude.
  */
-async function askRouted(p, question, full) {
+async function askRouted(p, question, full, previous = []) {
   const mode = S1.askRouter ?? 'auto';
   if (mode === 'off' || !question.trim()) return null;
   const started = Date.now();
@@ -815,7 +815,10 @@ async function askRouted(p, question, full) {
   // The component the question names. For "who" only, System 1's own at 0.7 too: on 48 "who" questions
   // (demo/system1/ask-components.json) ft-2 named the wrong component 8 times at 0.4, none at 0.7. For "latest" it
   // always names one, asked or not ("What are the latest tickets?": "Report", 78 %), so not there.
-  const named = componentInQuestion(question, rules);
+  // A follow-up (Ask 4/7) that names no component is about the one the answer it follows was about: "Which bugs did
+  // Scadenze have?" then "Who knows it best?".
+  const before = previous.at(-1)?.component;
+  const named = componentInQuestion(question, rules) ?? (before && rules.some((r) => r.name === before) ? before : null);
   const component = named ?? (routed.intent === 'who' && routed.componentP >= Number(S1.askComponentThreshold ?? 0.7) ? routed.component : null);
   if (routed.intent === 'who' && !component) return { routed };
   const insights = await insightsForAsk(p);
@@ -823,7 +826,7 @@ async function askRouted(p, question, full) {
   const fast = fastAnswer({ question, intent: routed.intent, component, insights, ticketUrl: (k) => jira.browseUrl(k) })
     ?? fastMore({ question, intent: routed.intent, component, insights, rules, files: routed.intent === 'where' ? await repoFiles(p) : [], ticketUrl: (k) => jira.browseUrl(k), fileUrl: (f) => (repo ? `https://github.com/${repo}/blob/main/${f}` : null) });
   if (!fast) return { routed };
-  const answer = { ...fast, warnings: [], dropped: 0, closest: [], routed, meta: { durationMs: Date.now() - started, costUsd: 0, model: routed.via === 'rule' ? 'a rule and plain code' : `System 1 (${system1.model})` }, at: new Date().toISOString() };
+  const answer = { ...fast, warnings: [], dropped: 0, closest: [], routed, meta: { durationMs: Date.now() - started, costUsd: 0, model: routed.via === 'rule' ? 'a rule and plain code' : `System 1 (${system1.model})` }, at: new Date().toISOString(), ...(previous.length ? { followUp: { at: previous.at(-1).at, question: previous.at(-1).question } } : {}) };
   logAsk(p.stateDir, answer);
   return answer;
 }
@@ -1351,17 +1354,21 @@ const server = createServer(async (req, res) => {
     try {
       const p = readyProject(body);
       await health.require(); // otherwise "not in the knowledge base" when Jira only could not be searched
+      // Ask 4/7: a follow-up names the answer it follows (in this project); the conversation, up to three answers back.
+      const previous = body.followUp ? followUpChain(p.stateDir, String(body.followUp)) : [];
+      if (body.followUp && !previous.length) throw badRequest('the answer this question follows is not in the records: ask it on its own', 404);
+      const followUp = previous.length ? { at: previous.at(-1).at, question: previous.at(-1).question } : null;
       // A ticket key alone ("VAX-21", "status of VAX-21") is answered from the agent's records, in about a second.
       const statusKey = body.full === true ? null : ticketKeyQuestion(String(body.question ?? ''));
-      if (statusKey && all.ofTicket(statusKey)) return json(res, 200, { ok: true, ...(await ticketStatusAnswer(statusKey, String(body.question))) });
+      if (statusKey && all.ofTicket(statusKey)) return json(res, 200, { ok: true, ...(await ticketStatusAnswer(statusKey, String(body.question), followUp)) });
       // J5 (System 1): "who knows X" and "the latest tickets" are answered from the Insights data, no Claude call.
-      const routedAnswer = await askRouted(p, String(body.question ?? ''), body.full === true);
+      const routedAnswer = await askRouted(p, String(body.question ?? ''), body.full === true, previous);
       if (routedAnswer?.fast) return json(res, 200, { ok: true, project: p.key, ...routedAnswer });
       // The tour asks with fastOnly: never a paid Claude run.
       if (body.fastOnly === true) return json(res, 200, { ok: false, notRouted: true, routed: routedAnswer?.routed ?? null });
       // The linked apps too (K11): read-only checkouts of their main, apart from the analysis' (ask-peer-repo).
       const peers = peerCheckouts(p, all, (text) => broadcast({ type: 'ask-progress', id: body.id, step: `warning: ${text}` }), { name: 'ask-peer-repo' });
-      const answer = await askQuestion({ question: body.question, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira, project: { key: p.key, name: p.name }, peers, onProgress: (step) => broadcast({ type: 'ask-progress', id: body.id, step }) });
+      const answer = await askQuestion({ question: body.question, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira, project: { key: p.key, name: p.name }, peers, previous, onProgress: (step) => broadcast({ type: 'ask-progress', id: body.id, step }) });
       return json(res, 200, { ok: true, project: p.key, ...answer, routed: routedAnswer?.routed ?? null });
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });

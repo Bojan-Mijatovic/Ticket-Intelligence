@@ -54,6 +54,7 @@ export function askRecord(answer, extra = {}) {
     durationMs: answer.meta?.durationMs ?? null,
     answer: String(answer.answer ?? '').slice(0, MAX_ANSWER),
     cited: sources.map(({ type, ref, url = null, why = '' }) => ({ type, ref, url: url ?? null, why: String(why ?? '').slice(0, 300) })),
+    ...(answer.followUp?.at ? { followUp: answer.followUp.at } : {}), // Ask 4/7: the answer this question followed
     ...extra,
   };
 }
@@ -76,6 +77,23 @@ export function findAnswer(stateDir, at) {
     }
   }
   return null;
+}
+
+/**
+ * Ask 4/7: the conversation a follow-up continues, oldest first: the answer it follows, the one that one followed,
+ * and so on, at most `max`. Empty when the answer is not in the records.
+ */
+export function followUpChain(stateDir, at, max = 3) {
+  const chain = [];
+  const seen = new Set();
+  for (let cur = at; cur && chain.length < max && !seen.has(cur); ) {
+    seen.add(cur);
+    const r = findAnswer(stateDir, cur);
+    if (!r) break;
+    chain.unshift(r);
+    cur = r.followUp ?? null;
+  }
+  return chain;
 }
 
 /** The last vote on an answer (K12), or null. */

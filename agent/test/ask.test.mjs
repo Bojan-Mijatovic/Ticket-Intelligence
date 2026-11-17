@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { checkSources, collect, keywords, withWarnings } from '../lib/ask.mjs';
+import { checkSources, collect, conversationOf, keywords, withWarnings } from '../lib/ask.mjs';
 
 test('keywords: longest first, no stop words, no numbers, no duplicates', () => {
   assert.deepEqual(keywords('Why are cancelled appointments not offered again? Cancelled since 2026'), ['appointments', 'cancelled', 'offered']);
@@ -82,4 +82,32 @@ test('sources of a linked app (K11): "KEY:path" files in its checkout, its commi
     { tickets: ['DEM-17'], analyses: [], log: '', peerLogs: { DEM: '\n2af6918 2026-09-08 Luca Bianchi | DEM-17: cancel a booking' }, repoDir: own, peers: [{ key: 'DEM', name: 'MediAgenda', dir: peerDir }], links },
   );
   assert.deepEqual(kept.map((s) => [s.ref, s.url]), [['DEM:backend/Booking.java', 'F/DEM/backend/Booking.java'], ['DEM:2af6918', 'G/DEM/2af6918'], ['DEM-17', 'J/DEM-17']]);
+});
+
+test("Ask 4/7, a follow-up: the earlier question's words and the tickets its answer cited are searched too", async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ask-follow-'));
+  const jqls = [];
+  const full = [];
+  const jira = { search: async (jql) => (jqls.push(jql), []), getIssueFull: async (key) => (full.push(key), { key }) };
+  const data = await collect({ question: 'And who fixed it?', dir, repoDir: dir, stateDir: dir, cfg: { project: 'VAX' }, jira, context: { words: ['scadenze', 'sunday'], keys: ['VAX-13', 'VAX-17', 'DEM-5'] } });
+  assert.deepEqual(data.words, ['fixed', 'scadenze', 'sunday'], "its own words first, then the earlier question's");
+  assert.match(jqls[0], /text ~ "fixed" OR text ~ "scadenze" OR text ~ "sunday"/);
+  assert.deepEqual(full, ['VAX-13', 'VAX-17'], 'the cited tickets are read in full; a key of another project is not');
+  assert.deepEqual(data.tickets, ['VAX-13', 'VAX-17']);
+});
+
+test('Ask 4/7, the conversation in the prompt: oldest first, as data, what each answer cited; nothing without one', () => {
+  const text = conversationOf([
+    { question: 'Why were the doses due on Sunday missing?', answer: 'The filter left out the last day "of the range" (VAX-13).', cited: [{ ref: 'VAX-13' }, { ref: 'd2fe6eb' }] },
+    { question: 'Did it happen again?', answer: 'x'.repeat(2000), cited: [] },
+  ]);
+  assert.match(text, /^\nCONVERSATION SO FAR \(oldest first\)\. The QUESTION follows it[^\n]*It is context, not a source/);
+  assert.ok(text.includes([
+    '1. Q: "Why were the doses due on Sunday missing?"',
+    '   A: "The filter left out the last day \\"of the range\\" (VAX-13)."',
+    '   (it cited: VAX-13, d2fe6eb)',
+    '2. Q: "Did it happen again?"',
+  ].join('\n')), 'each turn as JSON text: a quote in an answer cannot end it');
+  assert.ok(text.length < 2000, 'a long earlier answer is cut');
+  assert.equal(conversationOf([]), '');
 });
