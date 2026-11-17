@@ -1,6 +1,6 @@
 # Roadmap: after the POC
 
-Status: **In progress**: #4, #5 and #6 done, #2 mostly; #1 and #3 deferred · Date: 2026-11-04, updated 2026-11-16 · Owner: Bojan Mijatović
+Status: **In progress**: #4, #5 and #6 done (#6 grown on 2026-11-17, Ask 1/7–7/7), #2 mostly; **#9 Teams → agent started 2026-11-17** (A: Ask in Teams first, then B: approval, which is #1); #3 deferred · Date: 2026-11-04, updated 2026-11-17 · Owner: Bojan Mijatović
 
 The POC is complete: a new ticket is analyzed, reproduced with a browser test, fixed and opened as a draft PR with no human action, and a ticket moved to Done is documented (see [DEMO_SCENARIO.md](DEMO_SCENARIO.md)). This roadmap adds eight features. Each feature lets the agent do more on its own, or shows team leads and management what it does and what it is worth.
 
@@ -13,7 +13,7 @@ Two rules from the POC still apply:
 
 | # | Feature | Audience | What they see | Effort | Phase |
 |---|---|---|---|---|---|
-| 1 | Approval from Teams | Team lead | Card with before/after, test result, risk; **Approve** / **Reject** | 1 d · **deferred** (2026-11-13) | A |
+| 1 | Approval from Teams | Team lead | Card with before/after, test result, risk; **Approve** / **Reject** | 1 d · deferred (2026-11-13), **replanned 2026-11-17 as part B of #9**: a reply in the thread of the "fix ready" card | A |
 | 2 | Mission Control dashboard | Team lead, management | Live phase timeline + Impact tab (time, hours saved, cost) + "Run on ticket" | 1 d · **mostly done** (2026-11-13): Impact tab (FR-72), the timeline as the Graph tab's ticket lanes (FR-70), Run ticket in the header; not built: Pause | A |
 | 3 | Night shift + morning digest | Management | 08:00 Teams digest: what the agent did overnight | 1 d · **deferred** (2026-11-13) | C |
 | 4 | AI reviewer | Team lead, developers | Second agent reviews the PR, posts comments, sets a risk level | 0.5–1 d · **done** | B |
@@ -21,8 +21,9 @@ Two rules from the POC still apply:
 | 6 | Ask the knowledge base | PM, support, developers | Question in plain language → answer with ticket/PR links | 1 d · **done** | D |
 | 7 | Release notes and sprint report | PM, customer, management | Two versions: technical and business | 0.5 d | C |
 | 8 | Reply to the customer after merge | Support, customer | "Fixed in …" reply drafted (or posted) when the PR is merged | 0.5 d | B |
+| 9 | Teams → agent: Ask and approval from the channel | Support, developers, team lead | **A**: "ti: status VAX-21" in the channel, the answer in the thread; **B**: "approve" / "reject: why" on the "fix ready" card; **C**: the owner's "I take it" | 3–3.5 d · **started 2026-11-17**: foundation and A (1.5 d) in progress, then B (1–1.5 d), C later (0.5 d) | A |
 
-Total: about 6–7 working days. These are estimates for one developer working with Claude Code.
+Total: about 6–7 working days for #1–#8, and 3–3.5 for #9 (#1 is its part B). These are estimates for one developer working with Claude Code.
 
 **Teams without approval is done (2026-11-16).** The owner gets the handoff in a real channel with an @mention and why it is them, and a second card, **fix ready for review**, with the PR (T4–T6 of [GIT_GRAPH.md](GIT_GRAPH.md), through the Workflows webhook). #1 still needs more: a webhook only posts, so Approve and Reject need a Teams app or a Power Automate flow that waits for the answer.
 
@@ -34,13 +35,18 @@ Phase B  #4 AI reviewer ─────┘   (risk level appears on the approval
          #1 Approve → human merges in GitHub → #8 Reply on merge
 Phase C  #3 Night shift (uses #2 metrics in the digest) · #7 Reports
 Phase D  #5 Hotspots · #6 Ask  (both get better with more processed tickets, which #3 produces)
+#9 Teams → agent: foundation ─> A Ask in Teams (uses #6) ─> B approval (= #1) ─> C the owner's reply
 ```
+
+**Replanned 2026-11-17: #9 before the rest.** The dashboard answers only on the machine it runs on, so today Ask, the drafts and the approvals reach one person. Teams is where the team already works: #9 brings Ask there first (A), then the approval of a fix (B, which is #1), without opening the dashboard to the network.
 
 Phase A gives the biggest demo effect for the least work. Phase B closes the loop from report to customer reply. Phases C and D need more data to look convincing, so they come last.
 
 ---
 
 ## 1. Approval from Teams
+
+**Replanned (2026-11-17): built as part B of [#9](#9-teams--agent-ask-and-approval-from-the-channel).** The design below needed the browser and the agent on one machine (localhost links with a token); in the live demo Teams is on another laptop and a phone. B reads the owner's reply in the thread of the "fix ready" card instead ("approve" / "reject: why"), with the same effects: the PR ready for review and a Jira comment, or the fix again with the reason. The flow and the guardrails below stay.
 
 **Goal.** The owner approves or rejects the AI fix with one click, without opening GitHub or Jira. This answers "who controls the AI?".
 
@@ -178,6 +184,7 @@ Phase A gives the biggest demo effect for the least work. Phase B closes the loo
 - Its own checkout (`state/ask-repo`), because an analysis running at the same time resets `state/analysis-repo`.
 - Every cited ticket, commit and file is checked against the collected data; an answer without a valid source is "not found".
 - Progress is shown step by step (as for the analysis), then the whole answer; no token streaming.
+- **Grown on 2026-11-17 (Ask 1/7–7/7, FR-89–FR-95):** a ticket key gives its status and what waits, from the agent's records; clear wordings in English, Italian and Serbian, and the address of a page or an API path, are answered by plain code in under a second (the page traced to the controller method and its line); follow-up questions; under every answer **Send to Teams**, **Create a ticket** (checked for prior art) and, after 👍, **Save as FAQ** (a documentation PR); the earlier questions, and the same question given again with no new run; one-click rating and an Ask section on the Impact tab. Live on the suite: 79 questions, 67 % answered without an AI run, 94 % found, $0.22 per Claude answer ([agent/README.md](../agent/README.md#ask-the-knowledge-base)).
 - Acceptance (2026-11-06): "Has the Struttura field bug happened before?" → DEM-5 with its fix commit and the review remark, plus DEM-22 and DEM-25, in 20 s (~$0.37); "How do we export the monthly bookings to SAP?" → "Not in the knowledge base", with what does exist, in 22 s (~$0.19). The plan's DEM-10 no longer exists (deleted by the demo reset); `docs/knowledge/` on main is still empty, because no documentation PR has been merged.
 
 **Goal.** Anyone can ask "why did the agenda search break last month?" and get a sourced answer in seconds.
@@ -232,15 +239,58 @@ Phase A gives the biggest demo effect for the least work. Phase B closes the loo
 
 **Acceptance.** One reply per merged PR, never two. It does nothing for PRs not linked to a ticket. A draft is not posted until someone sends it.
 
+## 9. Teams → agent: Ask and approval from the channel
+
+**Status: started 2026-11-17.** Foundation (T7) and A (T8) in progress; B (T9) next; C (T10) later.
+
+**Goal.** The team asks and acts where it already works. "ti: status VAX-21" in the support channel gets the answer in the thread; the owner approves a fix by replying "approve" to its card. The dashboard stays on the agent's machine (it answers only there), and nothing is opened to the internet.
+
+**Why this way.** Four ways were weighed (2026-11-17):
+
+| Way | Why not, or why |
+|---|---|
+| The Workflows webhook we post with | it only posts; Teams cannot answer through it |
+| Microsoft Graph with an **application** permission | reading channel messages that way is a protected API: a request form to Microsoft and weeks of waiting |
+| Teams outgoing webhooks | Microsoft removed the Office 365 connectors in May 2026; whether outgoing webhooks stay was not confirmed, so nothing is built on them |
+| A Teams bot (Bot Framework, `Action.Execute`) | real buttons and instant answers, but an Azure bot, a Teams app and a public HTTPS address (a tunnel in a demo room): **the production path**, with the company's service account |
+| **Graph with a delegated permission, read by polling** (chosen) | one account signs in once; the agent reads the channel every few seconds and replies in the thread, outbound only, like Jira. No public address, no request form; the tenant's admin consents once |
+
+**Setup (once, about 10 minutes, by the tenant's admin).**
+1. A user **Ticket Intelligence** in the tenant, a member of the team, so that the replies show under that name (a trial tenant has free licences).
+2. An app registration in Microsoft Entra: a public client (device code sign-in), delegated permissions `ChannelMessage.Read.All`, `ChannelMessage.Send`, `User.ReadBasic.All`, `offline_access`; **Grant admin consent**. Its client id and tenant id go into `.env` (`TEAMS_CLIENT_ID`, `TEAMS_TENANT_ID`).
+3. `node agent/teams-login.mjs`: sign in once as Ticket Intelligence with the code it shows. The refresh token is kept in `agent/state/` (not committed), a secret like the webhook: never shown, logged or sent anywhere but Microsoft.
+
+**Parts.**
+
+| Part | What | Effort | Status |
+|---|---|---|---|
+| **T7 foundation** | Graph client (token refresh, Microsoft's throttling answered with a wait); the team and channel from `TEAMS_CHANNEL_URL`; every `teams.pollSeconds` (15; 5 for a demo) the new messages and the replies under the agent's own cards; what was handled kept in `state/`, so a restart answers nothing twice; the agent's cards found in the channel by their text (a webhook returns no message id); on the dashboard, "Teams inbox: live, last read …" | 1 d | in progress |
+| **T8 (A) Ask in Teams** | a message that starts with `ti:` (or @mentions Ticket Intelligence), or a reply under an Ask answer in its thread (a follow-up), goes through the same Ask as the dashboard: a ticket's status, a page's code, plain-code answers, the same question given again, Claude for the rest. The answer in the thread: the text, the sources as links, how it was made; masked like Send to Teams. One question at a time, the next waits its turn. Recorded in `asks.jsonl` as asked from Teams, so it counts on the Impact tab. `policy.json` → `askFromTeams: auto` (it only answers) | 0.5 d | next |
+| **T9 (B) approval** | under a "fix ready" card, the owner replies `approve` or `reject: <why>`. Only the ticket's owner counts (the sender's sign-in matched with the owner's). Approve → `gh pr ready`, a Jira comment "approved in Teams by …", a reply "PR #n is ready for review". Reject → the fix again with the reason as the reviewer's feedback (`maxFixAttempts` 2), then `ai-fix-rejected`. Merging stays a person's in GitHub. `approveFix: draft` | 1–1.5 d | after A |
+| **T10 (C) the owner's answer** | under the handoff card, "I take it" / "preuzimam" → a Jira comment and the assignee; "not mine: <who>" → a comment and a new message to that person | 0.5 d | later |
+
+**Guardrails.**
+- Only the configured channel is read. A message is data, never an instruction: a question goes through the same read-only Ask, with its sources checked.
+- Anyone in the channel may ask, as anyone at the dashboard may; only the owner may approve or reject.
+- What is posted is masked first (names outside the team, identifiers), as Send to Teams does.
+- The agent never answers its own messages, nor a message twice.
+
+**Acceptance A.** "ti: VAX-21" → the status in the thread within the poll interval and two seconds; "ti: http://localhost:4204/scadenze" → the page's code; a reply in that thread continues it; a Claude question answered in about a minute; a message without `ti:` ignored; after a restart, nothing answered twice.
+
+**Demo moment.** On the phone, in the support channel: "ti: status VAX-23". The answer appears under it: what happened, and that the fix waits for Tommaso Bruno's review. Then, under the "fix ready" card: "approve" (B), and the PR turns from Draft to Open.
+
+**Risks.** The test tenant is a trial until about 2026-12-16. At the company, the app registration needs IT's consent and a service account (open question 2 of [SPEC.md](../SPEC.md#10-open-questions)). Replies wait for the next poll (5–15 s). The replies show as the signed-in account, hence the Ticket Intelligence user.
+
 ---
 
 ## Cross-cutting work
 
 | Item | What |
 |---|---|
-| `policy.json` | new keys: `approveFix`, `transitionOnApprove`, `reviewFix`, `fixOnReview`, `replyOnMerge`, `transitionOnReply`, `publishReport`; all new write actions start as `draft` or `off` |
-| `agent.config.json` | `baseline`, `nightShift`, `maxFixAttempts`, `approvalTtlHours`, `askTimeoutSeconds` |
-| Events (SPEC 5.3) | `approval-requested`, `approved`, `rejected`, `fix-retry`, `reviewing`, `reviewed`, `merged`, `reply-drafted`, `replied`, `digest`, `report` |
+| `policy.json` | new keys: `approveFix`, `transitionOnApprove`, `reviewFix`, `fixOnReview`, `replyOnMerge`, `transitionOnReply`, `publishReport`, `askFromTeams` (#9); all new write actions start as `draft` or `off` (Ask's own actions are already there: `shareAnswer`, `promoteFaq`, both `draft`) |
+| `agent.config.json` | `baseline`, `nightShift`, `maxFixAttempts`, `approvalTtlHours`, `askTimeoutSeconds`, `askReuseHours` (done), `teams.pollSeconds` (#9) |
+| `.env` | `TEAMS_CLIENT_ID`, `TEAMS_TENANT_ID` (#9); the refresh token stays in `agent/state/` |
+| Events (SPEC 5.3) | `approval-requested`, `approved`, `rejected`, `fix-retry`, `reviewing`, `reviewed`, `merged`, `reply-drafted`, `replied`, `digest`, `report`, `teams-asked`, `teams-answered` (#9) |
 | Labels | `ai-fix-approved`, `ai-fix-rejected`, `ai-replied` |
 | `demo/reset-demo.mjs` | also remove approvals, digests, reports, review comments and the new labels |
 | `demo/preflight.mjs` | checks: `gh` can mark ready and post reviews; Teams card renders; night-shift limits set; seeded history present |
@@ -251,10 +301,10 @@ Phase A gives the biggest demo effect for the least work. Phase B closes the loo
 
 1. New ticket → **Live tab** timeline (#2): analysis, Teams message, reproduction with "before" screenshot.
 2. Draft PR → **AI reviewer** comments, risk low (#4).
-3. **Teams card** → Approve (#1) → PR ready for review.
+3. **Teams card** → the owner replies "approve" (#1, built as #9 B) → PR ready for review.
 4. Presenter merges in GitHub → **customer reply** appears on the ticket (#8).
 5. Ticket to Done → documentation PR (existing).
-6. **Ask:** "Has this happened before?" → DEM-5 with links (#6).
+6. **Ask:** "Has this happened before?" → DEM-5 with links (#6); the same question typed in the Teams channel with `ti:` (#9 A).
 7. **Impact tab** and **hotspot map** (#2, #5): "what this is worth and where to invest".
 8. **Morning digest** from the prepared night shift (#3) and the **business release notes** (#7): "and this is what it does while you sleep".
 

@@ -56,7 +56,7 @@ A dashboard view: `main` as the spine, one lane per ticket. Each lane shows its 
 
 Not built, kept as proposals:
 - **J4. Links in Jira itself** · 0.5 d · L1. On each ticket, a remote link ("Links" section) to the commit or PR that changed it or names it: for #31, 14 tickets. It writes to Jira, so it goes behind a switch in `policy.json` (`jiraLinks: off|auto`). The no-code alternative is the "GitHub for Jira" app, which needs a Jira admin and covers git on GitHub only (not SVN).
-- **T3. Links into Teams** · 1–1.5 d + IT. A link to the exact Teams message, or a chat opened with the owner. A webhook returns no message id, so this needs Microsoft Graph with an app registered in Azure (IT admin), or every person's email. It belongs with WF2 (Teams as the front door).
+- **T3. Links into Teams** · 1–1.5 d + IT. A link to the exact Teams message, or a chat opened with the owner. A webhook returns no message id, so this needs Microsoft Graph with an app registered in Azure (IT admin), or every person's email. It belongs with WF2 (Teams as the front door). **2026-11-17:** WF2 started as ROADMAP #9 (T7 the agent reads the channel through Graph, T8 Ask in Teams, T9 the approval by a reply, T10 the owner's answer). T7 finds the agent's own cards in the channel, with their message ids, so T3 can follow on it.
 - **J5** commits without any key is **A7** below.
 
 **G2. Bug lineage** · 0.5 d

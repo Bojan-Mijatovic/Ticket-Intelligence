@@ -252,6 +252,10 @@ The message is an Adaptive Card: for whom, the ticket, the handoff text, then **
 
 **A second message when the fix is ready** (`notifyFixReady: auto` in `policy.json`). When a verified draft pull request is open, the same person gets a second card in the same channel, @mentioned again: **fix ready for review**, the fix's title, **Checked** (the new test failed before the fix and passes after it, and the browser tests, backend tests and build that ran), **Broken by** (the commit, its story and its author, when the bisect found one), and **Review the pull request** first, then **Open in Jira**. It goes only to a person the analysis handed the ticket to, and the dashboard's "Owners notified" still counts handoffs only. `node agent/teams-test.mjs --mention "Marta Ricci" --fix` sends a sample. A test has no ticket, so its buttons open Jira's and GitHub's home pages; `--ticket DEM-46` makes them open that ticket and, with `--fix`, the agent's pull request for it.
 
+**An Ask answer, sent by a person** (Ask 3/7): **Send to Teams…** under an answer posts it to the same channel, for the channel or for a person of the team, @mentioned (see [Ask the knowledge base](#ask-the-knowledge-base)). The card shows in the Teams panel too, under its project.
+
+**From Teams back to the agent: in progress** ([ROADMAP #9](../docs/ROADMAP.md#9-teams--agent-ask-and-approval-from-the-channel)). The webhook only posts. The agent will read the channel through Microsoft Graph as one signed-in account and answer in the thread: Ask in the channel first ("ti: status VAX-21"), then the approval of a fix by a reply under its "fix ready" card.
+
 ### Update emails
 
 With `emailUpdates: auto` in `policy.json`, the agent mails one update per milestone of a ticket to `MAIL_TO`:

@@ -32,6 +32,7 @@
 | Jira API token (the sandbox owner's account, stored in the per-user `.env`) | available | POC |
 | Company Jira project + service account | **missing** | MVP on real tickets |
 | Teams channel + Workflows webhook | checked on a test Microsoft 365 tenant (2026-11-16): owner messages, @mentions and "fix ready" arrive in a real channel. The team's own channel still needs its webhook, created by a person there; without it, notifications are simulated on the dashboard | real notifications |
+| Teams → agent (ROADMAP #9): an app registration in Microsoft Entra with delegated Graph permissions (`ChannelMessage.Read.All`, `ChannelMessage.Send`, `User.ReadBasic.All`), the admin's consent, and one account that signs in (a "Ticket Intelligence" user) | **started 2026-11-17** on the test tenant (its owner is its admin); at the company it needs IT's consent and a service account | Ask in Teams, the approval of a fix from Teams |
 | GitHub Copilot licence (VS Code, agent mode) | **not on this machine**; the skills are not yet run inside Copilot ([COPILOT_TEST.md](COPILOT_TEST.md)) | the skills in Copilot at work |
 | GitHub repository for the demo app | available: private repo Bojan-Mijatovic/MediAgenda | real draft PRs *(planned)* |
 | Approved AI service for company ticket data | **open** | any use on company tickets |
@@ -74,6 +75,7 @@ Likelihood and impact: L = low, M = medium, H = high.
 | R-13 | **Single workstation** is a single point of failure | H | L (POC) | acceptable for the POC; restart-safe watcher; move to a team VM for the MVP | Tech lead | accepted |
 | R-14 | **Automatic fixes** are wrong or unsafe | M | H | isolated worktree on a new branch; the watcher re-runs every check (test must fail before and pass after; no test edits in the fix); draft PR only; `mergeFix: off`; human review | Bojan | mitigated |
 | R-15 | **A restart or a slow read stops the agent's work** (a restart killed two paid app reviews in one afternoon; a heavy read froze the watcher for up to a minute) | M | M | `--replace` waits for the running job (`/api/drain`, `/api/busy`; `--force` only on purpose); heavy reads in worker threads, the guard's fetches asynchronous; verified live 2026-11-16 | Bojan | mitigated |
+| R-16 | **Teams → agent rests on one signed-in account and a trial tenant** (ROADMAP #9): the refresh token expires or is revoked, the trial ends (about 2026-12-16), Microsoft throttles the reads, or a question in the channel carries an instruction or a patient's name | M | M | the token kept locally like the webhook (never shown or logged), its expiry said on the dashboard and in `demo/preflight.mjs --teams`; reads every 5–15 s for one channel, waits on a throttling answer; a message is data, the question goes through the same read-only Ask, what is posted is masked; only the owner's reply approves a fix; the bot with the company's service account is the production path | Bojan | open |
 
 ## 4. Issues already resolved during the POC
 

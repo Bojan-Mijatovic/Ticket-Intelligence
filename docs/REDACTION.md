@@ -29,6 +29,7 @@ One module, `.claude/skills/analyze-ticket/scripts/lib/redact.mjs`, used at ever
 | Analysis and documentation (`ticket.mjs analyze`, `fetch`) | the ticket and its related tickets (summary, description, comments, worklog comments, links, text field changes), the commit messages and knowledge entries put in the bundle; the bundle says what was masked (`redaction`) |
 | Fix, AI review, Ask (`agent/lib/jira-actions.mjs`: `getIssue`, `getIssueFull`) | summary, description, comments |
 | AI review of the app (`app-review.mjs`) | the ticket summaries in its facts |
+| An Ask answer that leaves the machine (Ask 3/7, `agent/lib/ask-actions.mjs` → `maskAnswer`): **Send to Teams**, **Create a ticket**, **Save as FAQ** | the answer, the question and the person's note are masked again with the same rules and the team as allowed names before they are posted; the FAQ also passes the knowledge lint below. Ask in Teams (ROADMAP #9, in progress) posts its answers the same way |
 | Knowledge base (lint before a push, `knowledge-lint.mjs`) | not masked but **refused**: the same rules report an identifier or a name outside the team, so personal data does not enter the repository |
 
 Plain-code pages (Insights, the dashboard's lists) show Jira as it is: they run on this machine and send nothing to a model.
@@ -38,6 +39,7 @@ Plain-code pages (Insights, the dashboard's lists) show Jira as it is: they run 
 - **Screenshots.** Images cannot be masked. With `redaction.attachments: "skip"` in `~/.claude/skills/analyze-ticket/config.json` they are not downloaded (the analysis says so). Recommended for company tickets; the demo keeps them.
 - **Names the rule cannot see**: one word ("Andrea called"), all capitals ("COSTA ANDREA"), uncommon first names, names inside identifiers. `redaction-audit.mjs` lists the capitalised pairs it left, for a person to check.
 - **The repository itself.** The analysis can read the code, the git history and `docs/knowledge` with its own tools. Masking cannot reach what is in the repository: commit messages and documentation must be kept free of personal data. The knowledge lint enforces it for `docs/knowledge`; for commit messages it is a team rule (the demo history had one: LAB-19's fix commit names a test patient).
+- **The question typed into Ask** (on the dashboard, and in Teams once ROADMAP #9 is built) reaches the model as it was typed: a person who writes a patient's name into the question sends it. The tickets the question reads are masked; what is posted back from Ask is masked again.
 - **What the model writes back** (Jira comments, documentation, the Teams messages) contains placeholders, never the real values, because it never saw them. A name the masking missed is the exception: the model saw it and may repeat it, and the Teams message carries the same handoff text as the internal Jira comment, to a channel. Seen on DEM-48: an uncommon name (Ruairi Szczepanski) passed the masking and appeared in the handoff. Until the masking catches uncommon names, the team channel must be internal, like the Jira comment.
 
 ## Settings

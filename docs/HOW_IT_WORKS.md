@@ -1,6 +1,6 @@
 # How it works: the flow and the workflows
 
-Status: 2026-11-16. One page for anyone who wants the whole picture before the details. The details are in [agent/README.md](../agent/README.md) (the agent), [README.md](../README.md) (the two skills) and [SPEC.md](../SPEC.md) (the requirements).
+Status: 2026-11-17. One page for anyone who wants the whole picture before the details. The details are in [agent/README.md](../agent/README.md) (the agent), [README.md](../README.md) (the two skills) and [SPEC.md](../SPEC.md) (the requirements).
 
 ## 1. In one paragraph
 
@@ -56,9 +56,9 @@ flowchart TD
 |---|---|
 | Tickets | every ticket live: System 1's answers, the analysis, the Teams message, drafts to send, the test, the PR, the review; **Run again**, **Preview in app** |
 | Insights | where bugs come from (hotspots, heatmap, the change that brought each bug in), risk files, recurring problems, code copied between apps and fixes missing in a copy, knowledge map and bus factor; an AI review of the app; suggested tickets, each checked against existing ones before **Create in Jira** (a draft) |
-| Ask | a question about the code, the bugs or the history, answered from checked sources in 20–30 s, or "not in the knowledge base". "Who knows X?" is answered by System 1 and plain code in about a second, without Claude. 👎 and unanswered questions become knowledge gaps |
+| Ask | a question about the code, the bugs or the history, answered from checked sources in 20–30 s, or "not in the knowledge base". Without Claude, in about a second: a ticket key gives its status and what waits for whom (from the agent's records); "who knows X", "where is the code of X", "the latest tickets", "the bugs of X" (in English, Italian or Serbian) come from plain code; the address of a page or an API path is traced to its component, API calls and controller method with its line; the same question again is given its earlier answer when main has not changed. Follow-up questions continue the conversation. Under each answer: **Send to Teams** (for a person, @mentioned), **Create a ticket** (checked against what exists), and after 👍 **Save as FAQ** (a documentation PR). The earlier questions can be opened again. 👎 and unanswered questions become knowledge gaps |
 | Graph | how often the agent was right (no answer key: what it said compared with what happened), and the ticket lanes: one lane per ticket from analysis to merge, with links to Jira and to the Teams messages |
-| Impact | the management week: what the agent did, cost, hours saved against the team's baseline, what waits for a person, System 1's calibration |
+| Impact | the management week: what the agent did, cost, hours saved against the team's baseline, what waits for a person, System 1's calibration, and Ask: questions, the share answered without an AI run, how often answers were rated right, cost per Claude answer |
 | Tour, Present | a narrated walk-through (15–17 min) from recorded runs; it starts no paid run |
 
 ## 6. Workflows covered
@@ -74,7 +74,7 @@ flowchart TD
 | Regression guard on main (A1) | done |
 | Accuracy from production (AI1) and replay on history (AI1b) | done |
 | Insights, app review, suggested tickets | done |
-| Ask over one app and the suite | done |
+| Ask over one app and the suite | done; grown 2026-11-17 (status, plain-code answers in three languages, page → code, follow-ups, Teams / ticket / FAQ from an answer, earlier questions, the same question given again, rating on Impact) |
 | Teams: owner message with an @mention and why this person, then "fix ready" with the PR | done, seen on real pilot tickets (VAX-21, VAX-17); the team's own channel needs its webhook |
 | A live demo on the pilot: reserved cases, `demo/preflight.mjs --teams` ([DEMO_SCENARIO.md](DEMO_SCENARIO.md) section 9) | ready; one rehearsal to go |
 | Restart without losing work (`--replace` waits for the running job), a watcher that keeps answering while it works | done |
@@ -84,7 +84,7 @@ flowchart TD
 | System 1: known issue (J4), Ask router (J5), queue order (J3) | live |
 | System 1: question to the reporter (J7, WF1), light path (J2), privacy (J6) | in shadow: they say what they would do (J6 missed a name on an unseen pilot ticket, so it stays there) |
 | Update emails | built, off until SMTP is configured |
-| Teams as the front door (approve a fix from Teams, WF2) | deferred: needs a Teams app and IT |
+| Teams as the front door (WF2, ROADMAP #9): Ask in the channel ("ti: …", the answer in the thread), then the approval of a fix by a reply | **started 2026-11-17**: the agent reads the channel through Microsoft Graph as one signed-in account, outbound only; Ask first, the approval next. A Teams bot with real buttons stays the production path (needs an Azure app and IT) |
 | Night shift and morning digest (WF3) | deferred |
 | Reply to the reporter on merge, release notes (WF4) | later |
 | Blast radius (A3), branch care (A4), porting fixes to copies (A5), agent contracts and trust ladder (AG1–AG3), gaps researcher (KG1, KG2) | later ([AUTONOMY_AND_NEXT.md](AUTONOMY_AND_NEXT.md#5-recommended-order)) |
@@ -112,7 +112,7 @@ The two skills (`/analyze-ticket`, `/document-ticket`) are what a developer runs
   |---|---|---|
   | L3 | acts, a person approves the result | fix PRs, documentation PRs |
   | L2 | acts and reports | Jira comment, labels, Teams message, AI review, documentation on Done |
-  | L1 | prepares, a person sends | reply to the reporter, assignee, a new ticket |
+  | L1 | prepares, a person sends | reply to the reporter, assignee, a new ticket (from Insights or an Ask answer), an Ask answer to Teams, an FAQ documentation PR |
   | L0 | never | change priority or status, merge |
 
 - **Patient data.** Masked before every model; System 1 runs on this machine and sends nothing out.
@@ -125,7 +125,7 @@ The two skills (`/analyze-ticket`, `/document-ticket`) are what a developer runs
 | Analysis | $0.39 and 63 s on average (49 analyses) |
 | Replay on the 45 resolved bugs people fixed | a file of the real fix named 45/45, component 45/45, owner 37/45 |
 | Automatic fixes | 72 % of the attempts end in a verified draft PR; 5 of 6 decided PRs merged unchanged |
-| Ask | 23/24 on the eval questions |
+| Ask | 23/24 on the eval questions; on the suite (2026-11-17): 79 questions, 67 % answered without an AI run, 94 % found, $0.22 and about 21 s per Claude answer |
 | Regression guard | the planted VAX-13 regression alerted 2 minutes after the push; 135 commits of history: 2 alerts, both deliberate behaviour changes |
 | System 1 (`ft-5`, rows it never saw) | what is wrong 96 %, where 92 %, privacy 100 %; no ticket about code on the light path |
 

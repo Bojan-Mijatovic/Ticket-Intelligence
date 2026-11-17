@@ -31,7 +31,7 @@ Everything is **read-only** until you approve. The only write actions are the Ji
 | [docs/DEPENDENCIES_AND_RISKS.md](docs/DEPENDENCIES_AND_RISKS.md) | dependencies, assumptions, risk register |
 | [docs/EXIT_CRITERIA.md](docs/EXIT_CRITERIA.md) | gate from discovery to the next build steps |
 | [docs/COPILOT_TEST.md](docs/COPILOT_TEST.md) | test plan for GitHub Copilot on company projects |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | post-POC plan: approval from Teams, Mission Control, night shift, AI reviewer, hotspots, ask, reports, reply on merge |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | post-POC plan: approval from Teams, Mission Control, night shift, AI reviewer, hotspots, ask, reports, reply on merge, Teams → agent (Ask and approval from the channel) |
 | [docs/AGENT_TRAINING.md](docs/AGENT_TRAINING.md) | how the agent is improved: levers, scenarios with a known answer (`demo/scenarios.json`), scoring (`demo/score-run.mjs`) |
 | [docs/SUITE.md](docs/SUITE.md) | the four linked demo apps (MediAgenda, MediLab, MediFarma, MediBill): ports, APIs between them, people, cross-project demo tickets; and MediVax, the pilot |
 | [docs/PILOT.md](docs/PILOT.md) | the pilot: MediVax with synthetic patients, a hidden bug and its report every working day, scored against an answer key |
@@ -259,6 +259,6 @@ The agent also takes into account who committed to the component. The ticket's r
 | Phase | What |
 |---|---|
 | 2 | Confluence as an additional documentation source, if you use it |
-| 3 | Input from Teams and email (Microsoft Graph): a bot recognizes a ticket in a message and starts the analysis |
+| 3 | Input from Teams (Microsoft Graph), **started 2026-11-17** ([ROADMAP #9](docs/ROADMAP.md#9-teams--agent-ask-and-approval-from-the-channel)): Ask in the team's channel ("ti: status VAX-21", the answer in the thread), then the approval of a fix by a reply. Later: a bot that recognizes a ticket in a message and starts the analysis, and input from email |
 | 3 | ~~Sending the handoff message directly to the recommended person~~: done in the agent, a Teams message in the team's channel that @mentions the person |
 | 4 | ~~Automatic `/document-ticket` when a ticket moves to Done~~: done in the agent ([agent/README.md](agent/README.md#done--documentation)) |

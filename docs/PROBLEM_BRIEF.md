@@ -50,12 +50,13 @@ When a ticket is resolved, the cause and fix are recorded in the project's own d
 - on-demand use from Claude Code and GitHub Copilot (the tool used at work);
 - an autonomous agent that watches a Jira project and posts internal analyses;
 - a live dashboard; notifications to Teams (simulated in the POC; since 2026-11-16 a real channel through a Workflows webhook, checked on a test tenant);
-- documentation of resolved tickets in the repository (`docs/knowledge/`).
+- documentation of resolved tickets in the repository (`docs/knowledge/`);
+- the question this brief starts from, answered: since 2026-11-17 a ticket key typed into Ask gives what happened to the ticket and what waits for whom now, in about a second, from the agent's own records.
 
 **Out of scope for now:**
 - changing ticket status, priority or assignee automatically;
 - sending messages to customers automatically;
-- email and Teams *intake* (reading customer messages); planned for a later phase;
+- email and Teams *intake* of customer messages; planned for a later phase. (The team's own questions in its Teams channel, answered by Ask, started on 2026-11-17: ROADMAP #9.)
 - Confluence / SharePoint as documentation sources;
 - production deployment as a shared service.
 
