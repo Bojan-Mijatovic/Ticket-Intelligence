@@ -168,6 +168,11 @@ export function createJira() {
       return (list ?? []).map((u) => ({ accountId: u.accountId, name: u.displayName }));
     },
 
+    /** Assigns the ticket to a Jira user (ROADMAP #9 C: the owner took it in Teams). */
+    async assign(key, accountId) {
+      await api('PUT', `/rest/api/2/issue/${encodeURIComponent(key)}/assignee`, { accountId });
+    },
+
     async comment(key, body) {
       const res = await api('POST', `/rest/api/2/issue/${key}/comment`, { body });
       return { id: res.id, url: `${cfg.baseUrl}/browse/${key}?focusedCommentId=${res.id}` };

@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { questionOf } from './teams-inbox.mjs';
 
-const fold = (s) => String(s ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
+export const fold = (s) => String(s ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
 /** A name out of Teams mention markup: "<at>Irene Fabbri</at>" as posted, "<at id="0">Irene Fabbri</at>" as Graph returns it. */
 const plainName = (s) => String(s ?? '').replace(/<\/?at\b[^>]*>/gi, '').trim() || null;
 
@@ -69,9 +69,9 @@ export function keyedDecisionOf(text) {
 }
 
 /** A reply's text: the mentions and the HTML out. */
-const replyText = (r) => String(r?.body?.content ?? '').replace(/<at id="\d+">[\s\S]*?<\/at>/g, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
-const fromPerson = (m, me) => Boolean(m?.from?.user?.id) && !(me?.id && m.from.user.id === me.id);
-const agentThread = (root, me) => Boolean(me?.id) && (root.replies ?? []).some((r) => r?.from?.user?.id === me.id);
+export const replyText = (r) => String(r?.body?.content ?? '').replace(/<at id="\d+">[\s\S]*?<\/at>/g, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+export const fromPerson = (m, me) => Boolean(m?.from?.user?.id) && !(me?.id && m.from.user.id === me.id);
+export const agentThread = (root, me) => Boolean(me?.id) && (root.replies ?? []).some((r) => r?.from?.user?.id === me.id);
 
 /**
  * Whether the sender may decide: the person the card was for (by sign-in name when the card @mentioned them, else by

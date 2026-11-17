@@ -278,6 +278,11 @@ The webhook only posts. To let the team ask and decide in the channel, the agent
 - **Naming the ticket** works anywhere the agent is addressed, since finding the card in a long channel is the hard part (on a phone most of all): a new post `ti: odbij VAX-25: <why>` or `ti: approve VAX-23`, or a reply with the ticket in a thread the agent answered in. Same rules for who may decide; when the ticket's card is not among the channel's last 30 posts, only `teams.approvers` may, and the PR comes from the agent's records.
 - A decision that does not say which fix (`approve` under an Ask answer) changes nothing: the agent answers how to name the ticket and which card is the newest. Elsewhere, people talking are left alone.
 
+**Take a ticket, or hand it on, by a reply** (`ownerReply: draft`, ROADMAP #9 C). Under the agent's handoff card (or the fix ready card) of a ticket, the person it was for, a person it was handed on to since, or a name in `teams.approvers` replies:
+- **`preuzimam`** (also `I take it`, `prendo io`): the ticket is assigned in Jira to the Jira user with the same name (accents and case aside: "Bojan Mijatović" in Teams is "Bojan MIjatovic" in Jira). Without one, Jira gets the comment and the assignee stays as it was; the thread says which. Label `ai-owner-taken`.
+- **`nije moje: <who>`** (also `not mine: try <who>`, `non è mio, chiedi a <who>`; an @mention says who best): Jira gets a comment, and the agent hands the ticket to that person in the same thread, @mentioned, with how to take it or hand it on. A name Teams does not know (or knows twice) changes nothing, and the thread says so.
+- Named with its ticket (`ti: preuzimam VAX-21`, `nije moje VAX-21: Irene Fabbri`) it counts anywhere the agent is addressed, like a decision. Without one in an Ask thread, the agent asks which ticket.
+
 `agent.config.json` → `teams`: `approvers` (names as Teams shows them, accents aside), `project` (the project of a question that names none), `pollSeconds`.
 
 Ask's status of a ticket tells these too ("approved in Teams by …", "rejected in Teams: the agent fixes it again").

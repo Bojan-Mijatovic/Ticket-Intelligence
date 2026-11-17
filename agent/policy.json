@@ -23,8 +23,10 @@
     "shareAnswer": "draft",
     "promoteFaq": "draft",
     "askFromTeams": "auto",
-    "approveFix": "draft"
+    "approveFix": "draft",
+    "ownerReply": "draft"
   },
+  "_ownerReplyComment": "ownerReply = the owner's answer to the agent's handoff in Teams (ROADMAP #9 C): under the handoff card (or the fix ready card) the person it was for, a person it was handed on to since, or a name in agent.config.json teams.approvers replies \"preuzimam\" / \"I take it\" / \"prendo io\" (assigned in Jira to the Jira user of the same name, when there is one; a Jira comment; label ai-owner-taken) or \"nije moje: <who>\" / \"not mine: <who>\" (a Jira comment, and the agent hands the ticket to that person in the thread, @mentioned). Named with its ticket (\"preuzimam VAX-21\") it counts anywhere the agent is addressed. draft = a person decides each time; off = replies are not acted on.",
   "_createTicketComment": "createTicket = tickets suggested on the Insights tab (from the AI review and the facts). 'draft' = shown with a Create in Jira button: a person checks and edits the ticket, then confirms; 'off' = shown only as suggestions. Never 'auto'.",
   "_askFromTeamsComment": "askFromTeams = Ask in the team's Teams channel (ROADMAP #9): the agent reads the channel through Microsoft Graph as one signed-in account (node agent/teams-login.mjs) and answers a message that starts with \"ti:\" (or @mentions it) in its thread, through the same Ask as the dashboard, masked. auto = it answers (it only answers: nothing else changes); off = it does not read the channel.",
   "_approveFixComment": "approveFix = the approval of a fix from Teams (ROADMAP #9 B, #1): under the agent's \"fix ready for review\" card the ticket's owner (or a name in agent.config.json teams.approvers) replies \"approve\" (the draft PR becomes ready for review, a Jira comment, label ai-fix-approved) or \"reject: <why>\" (the PR is closed with the reason, the change kept on <KEY>-rejected-<n>, and the fix runs again with the reason, at most maxFixAttempts, default 2; label ai-fix-rejected). draft = a person decides each time; off = replies are not acted on. Merging is never done: it stays a person's, in GitHub (mergeFix off).",

@@ -35,7 +35,8 @@ import { componentInQuestion, fastMore, ruleIntent } from './lib/ask-fast.mjs';
 import { pageAnswer, pageInQuestion, pageOnly, traceAddress } from './lib/page-code.mjs';
 import { channelApi, createGraph, graphSettings } from './lib/teams-graph.mjs';
 import { answerHtml, mentionOf, newQuestions, noteHtml, projectOf, readInboxState, writeInboxState } from './lib/teams-inbox.mjs';
-import { closePullRequest, keyedDecisions, mayDecide, misplacedDecisions, newDecisions, prOfTicket, readyPullRequest, recordRejection, rejectionsOf } from './lib/fix-approval.mjs';
+import { closePullRequest, fold, keyedDecisions, mayDecide, misplacedDecisions, newDecisions, prOfTicket, readyPullRequest, recordRejection, rejectionsOf } from './lib/fix-approval.mjs';
+import { mayAnswer, ownerReplies, sameNameUser } from './lib/owner-reply.mjs';
 import { actionsOn, askHistory, faqRefusal, findAnswer, followUpChain, logAsk, reusableAnswer, maskAnswer, peopleFor, priorArtItem, recordAction, saveFaq, ticketDraft, viaOf, viaText, voteOn } from './lib/ask-actions.mjs';
 import { readEvents } from './lib/git-graph.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
@@ -993,6 +994,21 @@ async function readTeams() {
       await decideInTeams(d, st, api);
     }
     const taken = new Set(decisions.map((d) => d.id));
+    // C (T10): "preuzimam" / "nije moje: who" under a handoff card, or naming its ticket where the agent is addressed.
+    const owners = ownerReplies(roots, { me, since: st.since, handled: [...(st.handled ?? []), ...taken] });
+    for (const r of owners.replies) {
+      if (draining) break;
+      taken.add(r.id);
+      await ownerInTeams(r, st, api);
+    }
+    for (const m of owners.misplaced) {
+      if (draining) break;
+      taken.add(m.id);
+      st.handled = [...(st.handled ?? []), m.id];
+      writeInboxState(TEAMS_INBOX_FILE, st);
+      const how = m.verdict === 'take' ? 'preuzimam <ticket>' : 'nije moje <ticket>: <who>';
+      await api.reply(m.rootId, `<at id="0">${escHtml(m.from.name)}</at> ${escHtml(`Which ticket? Name it ("${how}"), or reply under its card. Nothing changed.`)}`, mentionOf(m.from)).catch(() => {});
+    }
     // A decision under an Ask answer instead of its card: said where it goes, not carried out, not taken as a question.
     const { misplaced, newest } = misplacedDecisions(roots, { me, since: st.since, handled: st.handled });
     for (const m of misplaced) {
@@ -1081,6 +1097,64 @@ async function decideInTeams(d, st, api) {
   }
 }
 const escHtml = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/**
+ * C (T10): the owner's answer to a handoff. Only the person the card was for, a person it was handed on to since, or
+ * teams.approvers. "Take": assigned in Jira to the Jira user of the same name (when there is one), a Jira comment, the
+ * label ai-owner-taken. "Not mine: who": a Jira comment, and the agent hands the ticket to that person in the thread
+ * (@mentioned, found in Teams by name); that person may then take it or hand it on.
+ */
+async function ownerInTeams(r, st, api) {
+  st.handled = [...(st.handled ?? []), r.id];
+  writeInboxState(TEAMS_INBOX_FILE, st);
+  const say = (text) => api.reply(r.rootId, `<at id="0">${escHtml(r.from.name)}</at> ${escHtml(text)}`, mentionOf(r.from)).catch(() => {});
+  const { key } = r;
+  const p = all.ofTicket(key);
+  if ((policy.actions.ownerReply ?? 'draft') === 'off') return say('Taking or handing on a ticket from Teams is off (policy.json ownerReply).');
+  if (!p) return say(`${key} is not a ticket of the apps this agent watches.`);
+  const sender = await teamsGraph.get(`/users/${encodeURIComponent(r.from.id)}?$select=displayName,userPrincipalName`).catch(() => ({ displayName: r.from.name }));
+  const approvers = cfg.teams?.approvers ?? [];
+  const handedTo = st.handedTo?.[key] ?? [];
+  if (!mayAnswer({ sender, card: r.card, approvers, handedTo })) {
+    const who = [r.card.to, ...handedTo, ...approvers].filter(Boolean);
+    return say(`Only ${who.length ? who.join(', ') : 'the owner or an approver'} can take or hand on ${key}; nothing changed.`);
+  }
+  try {
+    const [issue] = await jira.search(`key = ${key}`, 1);
+    if (!issue) return say(`${key} was not found in Jira; nothing changed.`);
+    const name = sender.displayName ?? r.from.name;
+    const comment = (text) => (policy.actions.postInternalComment === 'auto' ? jira.comment(key, text).catch((e) => events.emit('error', { key, text: `owner comment skipped: ${e.message.split('\n')[0]}` })) : null);
+    if (r.verdict === 'take') {
+      const user = sameNameUser(await jira.assignableUsers(p.key, fold(name).split(' ')[0]).catch(() => []), name);
+      if (user) await jira.assign(key, user.accountId);
+      const note = r.note ? maskAnswer(r.note, teamNames()).text : '';
+      await comment(`(robot) *Taken in Teams* by ${name}${user ? ': assigned to them' : ` (no Jira account of that name, so the assignee is unchanged)`}.${note ? ` Note: ${note}` : ''}`);
+      await jira.labels(key, { add: ['ai-owner-taken'] }).catch(() => {});
+      events.emit('taken', { key, text: `taken in Teams by ${name}${user ? ', assigned in Jira' : ' (no Jira account of that name: assignee unchanged)'}`, url: jira.browseUrl(key) });
+      return say(user ? `${key} is yours: assigned to you in Jira.` : `Noted in Jira that you took ${key}. No Jira account has your name, so the assignee is unchanged.`);
+    }
+    if (!r.who) return say(`To whom? "nije moje: <name>" (or @mention them), and the agent hands ${key} on.`);
+    let target = r.whoId ? { id: r.whoId, name: r.who } : null;
+    if (!target) {
+      const first = r.who.split(/\s+/)[0].replace(/'/g, "''");
+      const found = await teamsGraph.get(`/users?$filter=startswith(displayName,'${encodeURIComponent(first)}')&$select=id,displayName&$top=20`).catch(() => ({ value: [] }));
+      const hits = (found.value ?? []).filter((u) => fold(u.displayName) === fold(r.who) || fold(u.displayName).startsWith(`${fold(r.who)} `));
+      if (hits.length === 1) target = { id: hits[0].id, name: hits[0].displayName };
+    }
+    if (!target) return say(`No one in Teams is called "${r.who}" (or more than one is); nothing changed. Write the name as in Teams, or @mention them.`);
+    if (fold(target.name) === fold(name)) return say(`That is you: "preuzimam" takes ${key}.`);
+    st.handedTo = { ...(st.handedTo ?? {}), [key]: [...handedTo, target.name] };
+    writeInboxState(TEAMS_INBOX_FILE, st);
+    await comment(`(robot) *Handed on in Teams* by ${name}: not theirs; handed to ${target.name}.`);
+    events.emit('handed-on', { key, text: `handed on in Teams by ${name} to ${target.name}`, url: jira.browseUrl(key) });
+    const summary = maskAnswer(issue.summary ?? '', teamNames()).text;
+    await api.reply(r.rootId, `<at id="0">${escHtml(target.name)}</at> ${escHtml(`${name} hands ${key} to you: ${summary}. Reply "preuzimam" (or "I take it") here to take it, or "nije moje: <name>" to hand it on.`)}`, mentionOf(target));
+  } catch (e) {
+    const why = String(e.stderr || e.message).split('\n')[0].slice(0, 200);
+    events.emit('error', { key, text: `Teams answer on ${key} not carried out: ${why}` });
+    return say(`Not done: ${why}`);
+  }
+}
 
 /** One question from the channel: answered in its thread, the asker @mentioned; a follow-up in the thread of an answer. */
 async function answerInTeams(q, st, api) {
