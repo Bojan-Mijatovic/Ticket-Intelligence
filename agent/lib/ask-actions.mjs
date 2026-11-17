@@ -318,14 +318,14 @@ export const faqHas = (text, question) => faqQuestions(text).some((q) => sameQue
  * One FAQ entry. The answer is a list item whose lines are indented under it; its own headings become bold lines,
  * so that an answer never opens a section of the file.
  */
-export function faqEntry(record, { date, answer = record.answer }) {
+export function faqEntry(record, { date, answer = record.answer, checked = 'rated right by a person' }) {
   const lines = String(answer).replace(/\r/g, '').trim().split('\n').map((l) => l.replace(/^\s*#{1,6} +(.+)$/, '**$1**'));
   const body = lines.map((l, i) => (i === 0 ? l : l.trim() ? `  ${l}` : '')).join('\n');
   const sources = (record.cited ?? []).map((s) => (s.url ? `[${s.ref.replace(/[[\]]/g, '')}](${s.url})` : `\`${s.ref}\``));
   return [
     `## ${clean(record.question)}`,
     '',
-    `- **Asked**: ${date}; answered ${viaText(record.via)}; rated right by a person`,
+    `- **Asked**: ${date}; answered ${viaText(record.via)}; ${checked}`,
     `- **Answer**: ${body}`,
     ...(sources.length ? [`- **Sources**: ${sources.join(', ')}`] : []),
     '',
@@ -370,7 +370,11 @@ const exec = promisify(execFile);
  * Merging stays a person's (Knowledge base section, policy mergeDocs). Async: the watcher keeps answering.
  * @returns {Promise<{ number: number|null, url: string|null, branch: string, created: boolean, masked: number }>}
  */
-export async function saveFaq({ repoDir, workDir, record, date, team = [], now = new Date(), run = exec }) {
+/**
+ * @param {object} [p.research]  KG2: the answer comes from the researcher, for a question Ask could not answer (not
+ *   from a person's rating): { why } is said in the entry, the commit and the PR
+ */
+export async function saveFaq({ repoDir, workDir, record, date, team = [], now = new Date(), run = exec, research = null }) {
   const git = async (cwd, args) => (await run('git', args, { cwd, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, windowsHide: true, timeout: 120_000 })).stdout.trim();
   const gh = async (args) => (await run('gh', args, { cwd: repoDir, encoding: 'utf8', windowsHide: true, timeout: 60_000 })).stdout.trim();
   const fail = (message, status = 409) => Object.assign(new Error(message), { status });
@@ -386,7 +390,8 @@ export async function saveFaq({ repoDir, workDir, record, date, team = [], now =
   const branch = open?.headRefName ?? `${FAQ_BRANCH}-${now.toISOString().slice(0, 10).replace(/-/g, '')}-${now.toISOString().slice(11, 16).replace(':', '')}`;
 
   const { text: answer, masked } = maskAnswer(record.answer, team);
-  const entry = faqEntry(record, { date, answer });
+  const checked = research ? `researched by the agent because Ask ${research.why === 'marked as wrong' ? 'gave an answer a person marked wrong' : 'found no answer'}; check it in the documentation PR` : undefined;
+  const entry = faqEntry(record, { date, answer, ...(checked ? { checked } : {}) });
   mkdirSync(workDir, { recursive: true });
   const wt = join(workDir, 'repo');
   if (existsSync(wt)) removeWorktree(repoDir, wt); // a save that was stopped half-way
@@ -402,19 +407,21 @@ export async function saveFaq({ repoDir, workDir, record, date, team = [], now =
     writeFileSync(file, after);
     await git(wt, ['add', '--', FAQ_FILE]);
     const title = `FAQ: ${clean(record.question)}`.slice(0, 100);
-    await git(wt, ['-c', 'user.name=Ticket Intelligence Agent', '-c', 'user.email=ticket-intelligence-agent@users.noreply.github.com', 'commit', '-q', '-m', `${title}\n\nSaved from Ask after a person rated the answer right.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`]);
+    await git(wt, ['-c', 'user.name=Ticket Intelligence Agent', '-c', 'user.email=ticket-intelligence-agent@users.noreply.github.com', 'commit', '-q', '-m', `${title}\n\n${research ? 'Researched by the agent for a question Ask could not answer (KG2).' : 'Saved from Ask after a person rated the answer right.'}\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`]);
     await git(wt, ['push', '-q', 'origin', `HEAD:refs/heads/${branch}`]);
   } finally {
     removeWorktree(repoDir, wt);
   }
 
-  const line = `- ${clean(record.question)} (asked ${date}, answered ${viaText(record.via)})`;
+  const line = `- ${clean(record.question)} (asked ${date}, ${research ? 'researched by the agent: check the answer against its sources' : `answered ${viaText(record.via)}`})`;
   if (open) {
     await gh(['pr', 'comment', String(open.number), '--repo', slug, '--body', `Added from Ask:\n${line}`]).catch(() => '');
     return { number: open.number, url: open.url, branch, created: false, masked };
   }
   const body = [
-    'Questions and their answers saved from Ask (K15 of docs/KNOWLEDGE_PLAN.md): a person rated each answer right on the Ticket Intelligence dashboard and saved it. More saved answers are added to this PR until it is merged.',
+    research
+      ? 'Questions Ask could not answer, researched by the agent (KG2 of docs/AUTONOMY_AND_NEXT.md) in the code, its history and the tickets, each answer with the sources it was checked against. Check them before this is merged; answers a person saves from Ask are added to this PR too.'
+      : 'Questions and their answers saved from Ask (K15 of docs/KNOWLEDGE_PLAN.md): a person rated each answer right on the Ticket Intelligence dashboard and saved it. More saved answers are added to this PR until it is merged.',
     '',
     line,
     '',

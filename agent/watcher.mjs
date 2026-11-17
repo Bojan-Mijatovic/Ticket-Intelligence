@@ -23,6 +23,7 @@ import { createDocsPrs } from './lib/docs-prs.mjs';
 import { repoKnowledge } from './lib/doc-candidates.mjs';
 import { loadPriorArtSources } from './lib/prior-art.mjs';
 import { knowledgeGaps, readAsks } from './lib/gaps.mjs';
+import { gapsToResearch, readResearch, recordResearch, researchedToday, researchOf } from './lib/research.mjs';
 import { askStats } from './lib/ask-stats.mjs';
 import { processTicket, triageTicket, refixTicket } from './lib/pipeline.mjs';
 import { currentBranch, previewBranch } from './lib/preview.mjs';
@@ -37,7 +38,7 @@ import { channelApi, createGraph, graphSettings } from './lib/teams-graph.mjs';
 import { answerHtml, mentionOf, newQuestions, noteHtml, projectOf, readInboxState, writeInboxState } from './lib/teams-inbox.mjs';
 import { closePullRequest, fold, keyedDecisions, mayDecide, misplacedDecisions, newDecisions, prOfTicket, readyPullRequest, recordRejection, rejectionsOf } from './lib/fix-approval.mjs';
 import { mayAnswer, ownerReplies, sameNameUser } from './lib/owner-reply.mjs';
-import { actionsOn, askHistory, faqRefusal, findAnswer, followUpChain, logAsk, reusableAnswer, maskAnswer, peopleFor, priorArtItem, recordAction, saveFaq, ticketDraft, viaOf, viaText, voteOn } from './lib/ask-actions.mjs';
+import { actionsOn, askHistory, askRecord, faqRefusal, findAnswer, followUpChain, logAsk, reusableAnswer, maskAnswer, peopleFor, priorArtItem, recordAction, saveFaq, ticketDraft, viaOf, viaText, voteOn } from './lib/ask-actions.mjs';
 import { readEvents } from './lib/git-graph.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
 import { createSuggested, readCreated, suggestTickets } from './lib/suggestions.mjs';
@@ -506,6 +507,63 @@ async function autoMergeDocs() {
 }
 setInterval(() => autoMergeDocs().catch((e) => events.emit('error', { text: `automatic documentation merge: ${e.message}` })), 60_000).unref();
 
+// ---------------------------------------------------------------- the researcher (KG2)
+// A knowledge gap (a question Ask could not answer, or an answer marked wrong) researched in the queue: a deeper,
+// read-only Claude run over the code, its history and the tickets (ask.mjs research), and a checked answer saved as a
+// FAQ entry through the documentation PR, which a person reviews and mergeDocs merges. researchGaps: auto picks the
+// most asked gap when the agent is idle, at most researchPerDay runs a day; draft only on a person's Research button.
+
+/** Queues the research of one gap of a project; { queued } or why not. */
+function queueResearch(p, gap, by = 'policy') {
+  if (status.queue.some((q) => q.kind === 'research' && q.project === p.key) || (status.processing?.kind === 'research')) return { queued: false, why: 'a research is already queued or running' };
+  status.queue.push({ kind: 'research', key: `${p.key} research`, project: p.key, question: gap.question, why: gap.why, note: gap.note ?? null, group: gap.group ?? [gap.question], by });
+  events.emit('research', { project: p.key, text: `${p.key}: research queued (${by === 'person' ? 'by a person' : 'automatically'}) for a question Ask ${gap.why === 'marked as wrong' ? 'answered wrong' : 'could not answer'}: ${gap.question.slice(0, 160)}` });
+  pushStatus();
+  drain();
+  return { queued: true };
+}
+
+async function runResearch(job) {
+  const p = all.byKey(job.project);
+  if (!p || !existsSync(p.repoDir)) return;
+  const started = Date.now();
+  events.emit('research', { project: p.key, text: `${p.key}: researching "${job.question.slice(0, 160)}" in the code, its history and the tickets` });
+  try {
+    const peers = peerCheckouts(p, all, (text) => events.emit('research', { project: p.key, text: `warning: ${text}` }), { name: 'ask-peer-repo' });
+    const a = await askQuestion({ question: job.question, repoDir: p.repoDir, stateDir: p.stateDir, logDir: join(p.stateDir, 'research'), cfg: p.cfg, jira, project: { key: p.key, name: p.name }, peers, research: { why: job.why, note: job.note } });
+    const cost = a.meta?.costUsd ?? 0;
+    const took = `${Math.round((Date.now() - started) / 1000)} s, $${cost.toFixed(2)}`;
+    if (!a.found) {
+      recordResearch(p.stateDir, job.group, { outcome: 'not-found', costUsd: cost });
+      events.emit('research', { project: p.key, text: `${p.key}: no answer in the code, its history or the tickets either (${took}): a real gap, kept on the Insights tab: ${job.question.slice(0, 140)}` });
+      return;
+    }
+    const record = { ...askRecord(a), via: 'claude' };
+    const saved = await saveFaq({ repoDir: p.repoDir, workDir: join(p.stateDir, 'research-work'), record, date: new Date().toISOString().slice(0, 10), team: teamNames(), research: { why: job.why } });
+    recordResearch(p.stateDir, job.group, { outcome: 'faq', url: saved.url, costUsd: cost });
+    knowledgeCache.delete(p.key);
+    events.emit('research', { project: p.key, text: `${p.key}: answered and saved as a FAQ entry for a person to check (${took}): ${saved.created ? 'new' : 'added to'} documentation PR #${saved.number}`, url: saved.url });
+  } catch (e) {
+    const why = String(e.message).split('\n')[0].slice(0, 200);
+    // An answer already in the FAQ is not a failure: the gap is closed.
+    recordResearch(p.stateDir, job.group, /already in/.test(why) ? { outcome: 'faq', why } : { outcome: 'failed', why });
+    events.emit(/already in/.test(why) ? 'research' : 'error', { project: p.key, text: `${p.key}: research of "${job.question.slice(0, 100)}": ${why}` });
+  }
+}
+
+let lastResearchPick = 0;
+function autoResearch() {
+  if ((policy.actions.researchGaps ?? 'draft') !== 'auto' || draining || status.processing || status.queue.length || status.jira.ok === false || Date.now() - lastResearchPick < 5 * 60_000) return;
+  lastResearchPick = Date.now();
+  const projects = all.projects.filter((x) => existsSync(x.repoDir));
+  const today = projects.reduce((n, p) => n + researchedToday(readResearch(p.stateDir)), 0);
+  if (today >= Number(policy.researchPerDay ?? 3)) return;
+  const candidates = projects.flatMap((p) => gapsToResearch(knowledgeGaps(readAsks(p.stateDir)), readResearch(p.stateDir), { max: 1 }).map((g) => ({ p, g, count: g.group.length })));
+  const next = candidates.sort((a, b) => b.count - a.count)[0];
+  if (next) queueResearch(next.p, next.g);
+}
+setInterval(autoResearch, 60_000).unref();
+
 // ---------------------------------------------------------------- waiting for the reporter (J7 and J2 in auto)
 // lib/reporter-wait.mjs: a ticket asked about waits for the reporter's answer (or askReporterWaitHours); a ticket on
 // the light path is watched for lightPathWatchDays: a reply gets the full analysis, a fix or a commit naming it is a
@@ -630,7 +688,8 @@ async function drain() {
   const issue = order === 'auto' && best > 0 ? status.queue.splice(best, 1)[0] : status.queue.shift();
   status.processing = { key: issue.key ?? `${issue.project} ${String(issue.sha).slice(0, 7)}`, kind: issue.kind, since: new Date().toISOString() };
   pushStatus();
-  if (issue.kind === 'guard') await runGuard(issue);
+  if (issue.kind === 'research') await runResearch(issue);
+  else if (issue.kind === 'guard') await runGuard(issue);
   else if (issue.kind === 'known-test') await runKnownTest(issue);
   else if (issue.kind === 'merge-check') await runMergeCheck(issue);
   else {
@@ -1529,8 +1588,9 @@ const server = createServer(async (req, res) => {
       const review = readReview(p, data);
       const suggestions = suggestionsOf(p, data, review, refresh);
       // Knowledge gaps (K12): questions without a good answer; the coverage per component is put together on the page.
-      const gaps = knowledgeGaps(readAsks(p.stateDir));
-      return json(res, 200, { ...data, gaps, project: p.key, recommendations: readRecommendations(p.stateDir, data), review, reviewing: reviewing === p.key, suggestions, createTicket: policy.actions.createTicket ?? 'draft' });
+      const researched = readResearch(p.stateDir);
+      const gaps = knowledgeGaps(readAsks(p.stateDir)).map((g) => ({ ...g, research: researchOf(g, researched) ?? (status.queue.some((q) => q.kind === 'research' && q.project === p.key && g.questions.some((x) => x.question === q.question)) ? { outcome: 'queued' } : null) }));
+      return json(res, 200, { ...data, gaps, project: p.key, recommendations: readRecommendations(p.stateDir, data), review, reviewing: reviewing === p.key, suggestions, createTicket: policy.actions.createTicket ?? 'draft', researchGaps: policy.actions.researchGaps ?? 'draft' });
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     }
@@ -1715,6 +1775,22 @@ const server = createServer(async (req, res) => {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     } finally {
       mergingDocs = false;
+    }
+  }
+  // KG2: a person asks the researcher to look into one knowledge gap: { project, question } (a question of the gaps).
+  if (req.method === 'POST' && path === '/api/knowledge/research') {
+    try {
+      if ((policy.actions.researchGaps ?? 'draft') === 'off') return json(res, 403, { ok: false, error: 'researchGaps is "off" in policy.json' });
+      if (draining) return json(res, 503, { ok: false, error: 'the agent is about to restart: try again in a minute' });
+      const body = await readBody(req);
+      const p = readyProject(body);
+      const gap = knowledgeGaps(readAsks(p.stateDir)).find((g) => g.questions.some((q) => q.question === body.question));
+      if (!gap) throw badRequest('not a question of the knowledge gaps');
+      const q = gap.questions.find((x) => x.question === body.question);
+      const r = queueResearch(p, { question: q.question, why: q.why, note: q.note, group: gap.questions.map((x) => x.question) }, 'person');
+      return json(res, r.queued ? 200 : 409, r.queued ? { ok: true } : { ok: false, error: r.why });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
     }
   }
   // Feedback on an Ask answer (K12): 👍 / 👎 and an optional note, kept locally; it feeds the knowledge gaps.

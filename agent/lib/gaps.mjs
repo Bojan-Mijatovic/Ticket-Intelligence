@@ -34,8 +34,9 @@ export function knowledgeGaps({ asks = [], feedback = [] }) {
     const vote = latestVote.get(a.at);
     if (vote?.vote === 'up') continue; // someone said the answer was right
     const searchFailed = (a.warnings ?? []).some((w) => /Jira/i.test(w));
-    if (vote?.vote === 'down') open.push({ question: a.question, at: a.at, why: 'marked as wrong', note: vote.note || undefined });
-    else if (a.found === false && !searchFailed) open.push({ question: a.question, at: a.at, why: 'not found' });
+    const how = { ...(a.via ? { via: a.via } : {}), ...(a.followUp ? { followUp: true } : {}) }; // KG2 researches only some
+    if (vote?.vote === 'down') open.push({ question: a.question, at: a.at, why: 'marked as wrong', note: vote.note || undefined, ...how });
+    else if (a.found === false && !searchFailed) open.push({ question: a.question, at: a.at, why: 'not found', ...how });
   }
   const groups = [];
   for (const q of open) {

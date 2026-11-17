@@ -458,7 +458,7 @@ function h(tag, attrs = {}, ...kids) {
 const initials = (name = '?') => name.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
 const ago = (iso) => { if (!iso) return '–'; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`; };
 const KNOWN_TEXT = { documented: 'documented', duplicate: 'duplicate of', 'in-progress': 'fix in progress', 'fixed-on-main': 'fixed on main by', regression: 'regression of', 'solved-before': 'solved before as' };
-const ICON = { approved: '✅', rejected: '✋', taken: '🙋', 'handed-on': '↪', refixing: '↻', 'teams-asked': '💬', 'teams-answered': '💬', system1: '⚡', 'system1-compared': '⚖', 'system1-held': '⏸', 'reporter-answered': '↩', 'system1-demoted': '⬇', 'system1-queue': '⇅', 'system1-warm': '❄', triaged: '➜', 'known-test': '🧪', 'prior-art': '⟲', mailed: '✉', 'mail-failed': '✖', resolved: '☑', documenting: '📝', documented: '📚', 'docs-merged': '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', bisecting: '⑂', bisected: '🎯', guard: '🛡', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-retry': '↻', 'merge-check': '🔀', 'fix-notified': '📣', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺', reviewing: '👀', reviewed: '🧐', 'review-skipped': '–' };
+const ICON = { approved: '✅', research: '🔬', rejected: '✋', taken: '🙋', 'handed-on': '↪', refixing: '↻', 'teams-asked': '💬', 'teams-answered': '💬', system1: '⚡', 'system1-compared': '⚖', 'system1-held': '⏸', 'reporter-answered': '↩', 'system1-demoted': '⬇', 'system1-queue': '⇅', 'system1-warm': '❄', triaged: '➜', 'known-test': '🧪', 'prior-art': '⟲', mailed: '✉', 'mail-failed': '✖', resolved: '☑', documenting: '📝', documented: '📚', 'docs-merged': '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', bisecting: '⑂', bisected: '🎯', guard: '🛡', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-retry': '↻', 'merge-check': '🔀', 'fix-notified': '📣', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺', reviewing: '👀', reviewed: '🧐', 'review-skipped': '–' };
 
 const tickets = new Map();
 const teams = [];
@@ -1088,6 +1088,20 @@ function assignableUsers(project) {
 }
 
 // ---------------------------------------------------------------- knowledge gaps (K12)
+/** KG2: what the researcher made of a gap (a FAQ PR, a real gap, queued), or the button that asks it to look. */
+function researchCell(g, d) {
+  const r = g.research;
+  if (r?.outcome === 'faq') return r.url ? h('a', { href: r.url, target: '_blank', rel: 'noopener' }, 'FAQ PR ↗') : h('span', { class: 't-sub' }, 'in the FAQ');
+  if (r?.outcome === 'not-found') return h('span', { class: 't-sub', title: 'the researcher found no answer in the code, its history or the tickets' }, 'a real gap');
+  if (r?.outcome === 'queued') return h('span', { class: 't-sub' }, 'queued…');
+  if (d.researchGaps === 'off') return h('span', { class: 't-sub' }, '–');
+  const newest = [...g.questions].sort((a, b) => String(b.at).localeCompare(String(a.at)))[0];
+  return h('button', { class: 'small', title: `${r?.outcome === 'failed' ? `the last try failed: ${r.why ?? ''}. ` : ''}A deeper, read-only look in the code, its history and the tickets; a checked answer becomes a FAQ entry in a documentation PR (about $0.30)`, onclick: async (e) => {
+    e.target.disabled = true;
+    e.target.textContent = 'Queuing…';
+    try { await post('/api/knowledge/research', { project: d.project, question: newest.question }); e.target.textContent = 'Queued ✓'; } catch (err) { e.target.textContent = 'Not queued'; e.target.title = err.message; }
+  } }, r?.outcome === 'failed' ? 'Research again' : 'Research');
+}
 /** Questions without an answer, and the coverage per component (Insights components × entries on main). */
 function renderGaps() {
   const d = insightsData;
@@ -1101,10 +1115,11 @@ function renderGaps() {
     return { name: c.name, resolved, missing: resolved.filter((k) => !documented.includes(k)) };
   }).filter((c) => c.resolved.length) : null;
   box.replaceChildren(
-    gaps.length ? table(['Questions', 'About', 'Asked'].map((x) => h('th', {}, x)), gaps.slice(0, 8).map((g) => h('tr', {},
+    gaps.length ? table(['Questions', 'About', 'Asked', 'Research'].map((x) => h('th', {}, x)), gaps.slice(0, 8).map((g) => h('tr', {},
       h('td', {}, h('b', {}, String(g.count))),
       h('td', {}, h('div', {}, g.terms.join(', ')), h('div', { class: 't-sub' }, g.questions.slice(0, 3).map((q) => `"${q.question}"${q.why === 'marked as wrong' ? ' (marked wrong)' : ''}`).join(' · '))),
-      h('td', { class: 't-sub' }, ago(g.questions.at(-1).at)))))
+      h('td', { class: 't-sub' }, ago(g.questions.at(-1).at)),
+      h('td', {}, researchCell(g, d)))))
       : h('div', { class: 'empty' }, 'No open questions: everything asked here was answered (or nothing was asked yet).'),
     coverage ? h('div', { style: 'margin-top:10px' }, h('div', { class: 't-sub', style: 'margin-bottom:4px' }, 'Resolved bugs documented in the knowledge base, per component'),
       table(['Component', 'Documented', 'Without an entry'].map((x) => h('th', {}, x)), coverage.map((c) => h('tr', {},

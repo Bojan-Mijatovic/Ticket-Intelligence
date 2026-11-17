@@ -167,7 +167,7 @@ One plan for this document and [GIT_GRAPH.md](GIT_GRAPH.md) (GG0, G1–G3, A1–
 | 9 | **AG1** agent contracts (refactor, no behaviour change) | prerequisite for AG2 and AG3 | 1.5 d | |
 | 10 | **AG2** trust ladder | autonomy by evidence; needs 1 and 9 | 1 d | |
 | 11 | **WF1** intake check | fewer low-confidence analyses; cheap model | 1 d | |
-| 12 | **KG1** + **KG2** gaps from all signals, researcher agent | knowledge grows where it is missing | 2 d | |
+| 12 | **KG1** + **KG2** gaps from all signals, researcher agent | knowledge grows where it is missing | 2 d | **KG2 built 2026-11-17** (FR-100): the researcher takes the gaps Ask leaves (not found, marked wrong) and writes a checked FAQ entry into the documentation PR, or marks the gap real; `researchGaps: auto`, 3 runs a day. KG1 (gaps from the analyses, stopped fixes, reviews, reopened tickets) still open |
 | 13 | G2 bug lineage, G3 relationship graph (KB3), A4 branch care, A5 port fixes, A6 releases, A7 orphan commits, J4 links written into Jira, T3 links into Teams (with WF2), KB2, WF4, AI2–AI4, AG3 | after the above shows where it pays | ~11.5 d | |
 
 About **30.5 working days** without the deferred items (25 before G1b, J4 and T3, and 27.5 before the live demo work of step 2c, all added on 2026-11-16; steps 2e, 1 d and done, and 2f, 3–3.5 d, added on 2026-11-17), in three blocks: **measure and show** (1–4), **act on the code** (5–8), **earn autonomy and grow** (9–13).

@@ -24,8 +24,11 @@
     "promoteFaq": "draft",
     "askFromTeams": "auto",
     "approveFix": "draft",
-    "ownerReply": "draft"
+    "ownerReply": "draft",
+    "researchGaps": "auto"
   },
+  "researchPerDay": 3,
+  "_researchGapsComment": "researchGaps = the researcher (KG2 of docs/AUTONOMY_AND_NEXT.md): a knowledge gap (a question Ask answered \"not found\", or an answer a person marked wrong; Insights → Knowledge gaps) gets a deeper, read-only Claude run over the code, its history and the tickets (lib/ask.mjs research: 30 turns, 6 minutes), and a checked answer goes into docs/knowledge/faq.md through the documentation PR, marked as researched, for a person to check (merged by mergeDocs). Without an answer the gap stays, marked a real gap. auto = when the agent is idle, the most asked gap whose newest question is at least 30 minutes old, at most researchPerDay runs a day (about /usr/bin/bash.30 each); draft = only on a person's Research button; off = neither.",
   "_ownerReplyComment": "ownerReply = the owner's answer to the agent's handoff in Teams (ROADMAP #9 C): under the handoff card (or the fix ready card) the person it was for, a person it was handed on to since, or a name in agent.config.json teams.approvers replies \"preuzimam\" / \"I take it\" / \"prendo io\" (assigned in Jira to the Jira user of the same name, when there is one; a Jira comment; label ai-owner-taken) or \"nije moje: <who>\" / \"not mine: <who>\" (a Jira comment, and the agent hands the ticket to that person in the thread, @mentioned). Named with its ticket (\"preuzimam VAX-21\") it counts anywhere the agent is addressed. draft = a person decides each time; off = replies are not acted on.",
   "_createTicketComment": "createTicket = tickets suggested on the Insights tab (from the AI review and the facts). 'draft' = shown with a Create in Jira button: a person checks and edits the ticket, then confirms; 'off' = shown only as suggestions. Never 'auto'.",
   "_askFromTeamsComment": "askFromTeams = Ask in the team's Teams channel (ROADMAP #9): the agent reads the channel through Microsoft Graph as one signed-in account (node agent/teams-login.mjs) and answers a message that starts with \"ti:\" (or @mentions it) in its thread, through the same Ask as the dashboard, masked. auto = it answers (it only answers: nothing else changes); off = it does not read the channel.",
