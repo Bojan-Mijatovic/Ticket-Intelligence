@@ -262,13 +262,15 @@ export function knownTestVerdict(output, key) {
 }
 
 /** J2: the internal Jira comment of the light path. */
-export function triageComment(answers, header = '(robot) *System 1 triage*') {
+export function triageComment(answers, header = '(robot) *System 1 triage*', { watch = false } = {}) {
   const a = answers ?? {};
   const pc = (p) => `${Math.round(100 * (p ?? 0))} %`;
   return [
     `${header}: recognised as *${a.type?.choice}* (${pc(a.type?.p)}), so no code analysis was run.`,
     `Answers of the local model: needs code? ${a.code ? `${a.code.choice} (${pc(a.code.p)})` : '–'} · side: ${a.side?.choice} (${pc(a.side?.p)}) · urgency: ${a.urgency?.choice}${a.component ? ` · part of the application: ${a.component.choice}` : ''}.`,
-    'If this ticket does need a change in the code, use *Run again* on the agent dashboard (or remove the label ai-triaged): it then gets the full analysis.',
+    watch
+      ? 'If this is a problem in the application, reply here with what goes wrong: a reply starts the full analysis. (A person can also use *Run again* on the agent dashboard.)'
+      : 'If this ticket does need a change in the code, use *Run again* on the agent dashboard (or remove the label ai-triaged): it then gets the full analysis.',
   ].join('\n');
 }
 

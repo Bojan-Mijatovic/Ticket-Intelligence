@@ -50,7 +50,8 @@ import { laneLayout } from './lib/graph-lanes.mjs';
 import { shareAnswer, teamsInfo } from './lib/notify.mjs';
 import { impactOf } from './lib/impact.mjs';
 import { guardCommit } from './lib/regression-guard.mjs';
-import { askReporter, askReporterText, createSystem1, currentCheckpoint, describeAnswers, fastAnswer, intentQuestion, knownEntries, knownIssue, knownTestVerdict, missingInfo, nextIndex, questionsFor, stillNamesSomeone, system1Report } from './lib/system1.mjs';
+import { askReporter, askReporterText, createSystem1, currentCheckpoint, describeAnswers, fastAnswer, intentQuestion, knownEntries, knownIssue, knownTestVerdict, languageOf, missingInfo, nextIndex, questionsFor, stillNamesSomeone, system1Report } from './lib/system1.mjs';
+import { askComment, lightPathMiss, nextStep, readWaiting, textHash, writeWaiting } from './lib/reporter-wait.mjs';
 import { createRedactor } from '../.claude/skills/analyze-ticket/scripts/lib/redact.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -381,6 +382,7 @@ async function poll() {
       events.emit(issue.kind === 'document' ? 'resolved' : 'queued', { key: issue.key, text: issue.kind === 'document' ? docText : issue.summary, url: jira.browseUrl(issue.key), priority: issue.priority, reporter: issue.reporter });
       if (issue.kind === 'analyze') askSystem1(issue);
     }
+    await checkWaiting(); // J7/J2 auto: the reporter's answers
   } catch (e) {
     events.emit('error', { text: `poll failed: ${e.message}` });
   } finally {
@@ -403,6 +405,7 @@ async function rerun(key) {
   if (!issue) throw Object.assign(new Error(`${key} not found`), { status: 404 });
   if (issue.labels.includes(L.skip)) throw Object.assign(new Error(`${key} has the ${L.skip} label`), { status: 409 });
   await jira.labels(key, { remove: [L.done, L.failed, L.fixProposed, L.triaged, L.held] });
+  forgetWaiting(key);
   // A person asked for the full flow: System 1 still answers (shown), but its light path and hold are skipped.
   status.queue.push({ ...issue, kind: 'analyze', skipGate: true });
   events.emit('queued', { key, text: issue.summary, url: jira.browseUrl(key), priority: issue.priority, reporter: issue.reporter, rerun: true });
@@ -421,6 +424,7 @@ async function decideHeld(key, action) {
   if (!issue) throw Object.assign(new Error(`${key} not found`), { status: 404 });
   if (action === 'analyze') {
     await jira.labels(key, { remove: [L.held] });
+    forgetWaiting(key);
     status.queue.push({ ...issue, kind: 'analyze', skipGate: true });
     events.emit('queued', { key, text: issue.summary, url: jira.browseUrl(key), priority: issue.priority, rerun: true });
     askSystem1(issue, { byPerson: true });
@@ -435,8 +439,100 @@ async function decideHeld(key, action) {
   const a = system1Resolved.get(key);
   if (!a) throw Object.assign(new Error('System 1 gave no answer for this ticket; analyze it instead'), { status: 409 });
   const p = all.ofTicket(key);
-  await triageTicket({ issue, answers: a.answers, cfg: p.cfg, policy, jira, events, by: 'person' });
+  if (await triageTicket({ issue, answers: a.answers, cfg: p.cfg, policy, jira, events, by: 'person', watch: true })) watchLightPath(key, p);
   return { triaged: true };
+}
+
+// ---------------------------------------------------------------- waiting for the reporter (J7 and J2 in auto)
+// lib/reporter-wait.mjs: a ticket asked about waits for the reporter's answer (or askReporterWaitHours); a ticket on
+// the light path is watched for lightPathWatchDays: a reply gets the full analysis, a fix or a commit naming it is a
+// miss and puts the light path back in shadow (state/autonomy.json, so a restart keeps it there).
+const AUTONOMY_FILE = join(rootState, 'autonomy.json');
+const readAutonomy = () => {
+  try {
+    return JSON.parse(readFileSync(AUTONOMY_FILE, 'utf8'));
+  } catch {
+    return {};
+  }
+};
+for (const [k, v] of Object.entries(readAutonomy())) if (v?.mode && k in S1) S1[k] = v.mode; // lowered by a miss
+/** Changes a project's waiting tickets on the file as it is now (two flows may change it). */
+function updateWaiting(p, change) {
+  const w = readWaiting(p.stateDir);
+  change(w);
+  writeWaiting(p.stateDir, w);
+}
+const forgetWaiting = (key) => {
+  const p = all.ofTicket(key);
+  if (p && readWaiting(p.stateDir)[key]) updateWaiting(p, (w) => delete w[key]);
+};
+function watchLightPath(key, p) {
+  updateWaiting(p, (w) => (w[key] = { kind: 'light', at: new Date().toISOString(), hash: null }));
+}
+async function askTheReporter(issue, a, p) {
+  const { key } = issue;
+  const ask = askReporter(a.answers, Number(S1.askReporterThreshold ?? 0.6));
+  const waitHours = Number(S1.askReporterWaitHours ?? 24);
+  const at = new Date().toISOString();
+  try {
+    const before = await jira.getIssueFull(key, { maxComments: 0 });
+    const c = await jira.comment(key, askComment(askReporterText({ missing: ask.missing, text: a.text }), { waitHours, language: languageOf(a.text) }));
+    await jira.labels(key, { add: [L.held], remove: [L.inProgress] });
+    updateWaiting(p, (w) => (w[key] = { kind: 'ask', at, hash: textHash(before), missing: ask.missing, url: c.url }));
+    events.emit('system1-held', { key, kind: 'asked', text: `asked the reporter in Jira what the report does not tell (${ask.missing.map((f) => MISSING_WORDS[f]).join(', ')}); the analysis starts on the answer, or in ${waitHours} h`, answers: a.answers, url: c.url });
+  } catch (e) {
+    // The question could not be asked: analyzed as before rather than left waiting for nothing.
+    events.emit('error', { key, text: `question to the reporter not posted (${e.message.split('\n')[0]}): analyzed as it is` });
+    status.queue.unshift({ ...issue, kind: 'analyze', skipGate: true });
+  }
+}
+let lastWaitCheck = 0;
+async function checkWaiting() {
+  if (Date.now() - lastWaitCheck < 60_000) return;
+  lastWaitCheck = Date.now();
+  let allEvents = null;
+  for (const p of all.projects) {
+    const waiting = readWaiting(p.stateDir);
+    for (const [key, entry] of Object.entries(waiting)) {
+      if (isBusyWith(key)) continue;
+      let issue;
+      try {
+        issue = await jira.getIssueFull(key, { maxComments: 10 });
+      } catch (e) {
+        if (e.jiraStatus === 404) updateWaiting(p, (w) => delete w[key]);
+        continue;
+      }
+      if (entry.kind === 'light') {
+        allEvents ??= readEvents(rootState);
+        const named = await execFileAsync('git', ['log', 'origin/main', `--since=${entry.at}`, `--grep=${key}`, '--format=%s'], { cwd: p.repoDir, encoding: 'utf8', windowsHide: true }).then((r) => r.stdout.split('\n').filter(Boolean)).catch(() => []);
+        const miss = lightPathMiss({ key, at: entry.at, events: allEvents, commitsNaming: named });
+        if (miss) {
+          updateWaiting(p, (w) => delete w[key]);
+          if (S1.lightPath === 'auto') {
+            S1.lightPath = 'shadow';
+            writeFileSync(AUTONOMY_FILE, JSON.stringify({ ...readAutonomy(), lightPath: { mode: 'shadow', at: new Date().toISOString(), key, why: miss.why } }, null, 2));
+          }
+          events.emit('system1-demoted', { key, text: `the light path was wrong for ${key} (${miss.why}): light path back to shadow until a person raises it again (agent/state/autonomy.json)` });
+          continue;
+        }
+      }
+      const { step, answer } = nextStep(entry, issue, { waitHours: Number(S1.askReporterWaitHours ?? 24), watchDays: Number(S1.lightPathWatchDays ?? 14) });
+      if (step === 'wait') continue;
+      updateWaiting(p, (w) => delete w[key]);
+      if (step === 'expired') continue;
+      const [row] = await jira.search(`key = ${key}`, 1).catch(() => []);
+      if (!row || row.status === 'Done') continue;
+      await jira.labels(key, { remove: [L.held, L.triaged] }).catch(() => {});
+      const why = step === 'timeout'
+        ? `no answer from the reporter in ${S1.askReporterWaitHours ?? 24} h: analyzed as it is`
+        : `${answer.how === 'edited' ? 'the reporter edited the report' : `${answer.by ?? 'the reporter'} answered in Jira`}${entry.kind === 'light' ? ' after the light path: the full analysis' : ': the analysis starts with the answer'}`;
+      events.emit('reporter-answered', { key, text: why, kind: entry.kind, step });
+      status.queue.push({ ...row, kind: 'analyze', skipGate: true });
+      askSystem1(row, { byPerson: true });
+      pushStatus();
+      drain();
+    }
+  }
 }
 
 async function documentTicket(issue, p) {
@@ -482,17 +578,25 @@ async function drain() {
     else if (issue.kind === 'review') await reviewPullRequest({ key: issue.key, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, events, jira });
     else {
       // System 1's answers before the analysis starts: its synchronous git steps would otherwise hold them back by
-      // 20 s (DEM-46, 2026-11-15), and the light path and the hold need them here. At most system1.waitSeconds.
+      // 20 s (DEM-46, 2026-11-15), and the light path and the hold need them here. At most system1.waitSeconds; when
+      // an answer decides the path (a gate in auto, or a hold), at most gateWaitSeconds: two tickets queued together
+      // were answered one after the other, 25 s for the second, and BIL-26 went to the analysis without its question.
       const s1 = system1Answers.get(issue.key);
-      if (s1) await Promise.race([s1, new Promise((r) => setTimeout(r, 1000 * Number(cfg.system1?.waitSeconds ?? 10)))]);
+      const gated = !issue.skipGate && (['askReporter', 'lightPath', 'privacy'].some((k) => S1[k] === 'auto') || S1.lightPath === 'draft' || (S1.askReporter === 'draft' && S1.askReporterHold === true));
+      const waitSeconds = Number(gated ? cfg.system1?.gateWaitSeconds ?? 60 : cfg.system1?.waitSeconds ?? 10);
+      if (s1) await Promise.race([s1, new Promise((r) => setTimeout(r, 1000 * waitSeconds))]);
       const a = system1Resolved.get(issue.key);
       const lightMode = S1.lightPath ?? 'shadow';
       if (!issue.skipGate && a && (S1.privacy ?? 'shadow') === 'auto' && stillNamesSomeone(a.answers, Number(S1.privacyThreshold ?? 0.7))) {
         await holdTicket(issue, 'privacy', a.answers); // J6: nothing goes to a cloud model
+      } else if (!issue.skipGate && a && (S1.askReporter ?? 'shadow') === 'auto' && askReporter(a.answers, Number(S1.askReporterThreshold ?? 0.6))) {
+        await askTheReporter(issue, a, p); // J7 auto: asked in Jira; the analysis starts on the answer or the timeout
       } else if (!issue.skipGate && a && (S1.askReporter ?? 'shadow') === 'draft' && S1.askReporterHold === true && askReporter(a.answers, Number(S1.askReporterThreshold ?? 0.6))) {
         await holdTicket(issue, 'incomplete', a.answers); // J7: the analysis waits for the reporter's answer
       } else if (!issue.skipGate && a?.lightPath && lightMode === 'auto') {
-        await triageTicket({ issue, answers: a.answers, cfg: p.cfg, policy, jira, events }); // J2
+        // J2: a reply from the reporter still gets the full analysis, and a light path that turns out to be about code
+        // puts the light path back in shadow (checkWaiting).
+        if (await triageTicket({ issue, answers: a.answers, cfg: p.cfg, policy, jira, events, watch: true })) watchLightPath(issue.key, p);
       } else if (!issue.skipGate && a?.lightPath && lightMode === 'draft') {
         await holdTicket(issue, 'light', a.answers); // J2: a person chooses
       } else {

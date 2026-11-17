@@ -274,13 +274,14 @@ export function suggestOwnerFromBisect({ key, result, bisect, policy, events }) 
  * analysis, no worktree and no owner notice; an internal comment says what it was recognised as and how to have it
  * analysed anyway, and the label `triaged` keeps it from being picked again. Run again sends it through the full flow.
  */
-export async function triageTicket({ issue, answers, cfg, policy, jira, events, by = 'policy' }) {
+/** @param {boolean} [p.watch]  the reporter is told that a reply gets the full analysis (the watcher watches for it) */
+export async function triageTicket({ issue, answers, cfg, policy, jira, events, by = 'policy', watch = false }) {
   const { key } = issue;
   const started = Date.now();
   events.emit('picked', { key, text: issue.summary, url: jira.browseUrl(key) });
   try {
     if (policy.actions.postInternalComment === 'auto') {
-      const c = await jira.comment(key, triageComment(answers));
+      const c = await jira.comment(key, triageComment(answers, undefined, { watch }));
       events.emit('commented', { key, text: 'light path: System 1 triage comment posted to Jira', url: c.url });
     }
     await jira.labels(key, { add: [cfg.labels.triaged], remove: [cfg.labels.inProgress, cfg.labels.held, cfg.labels.failed].filter(Boolean) });
