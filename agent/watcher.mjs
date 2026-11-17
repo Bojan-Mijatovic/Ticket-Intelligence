@@ -31,6 +31,7 @@ import { waitUntilIdle } from './lib/replace.mjs';
 import { describeMergeCheck, mergeCheck, mergeCheckComment } from './lib/merge-check.mjs';
 import { ticketKeyQuestion, ticketStatus } from './lib/ticket-status.mjs';
 import { componentInQuestion, fastMore, ruleIntent } from './lib/ask-fast.mjs';
+import { pageAnswer, pageInQuestion, pageOnly, traceAddress } from './lib/page-code.mjs';
 import { actionsOn, faqRefusal, findAnswer, followUpChain, logAsk, maskAnswer, peopleFor, priorArtItem, recordAction, saveFaq, ticketDraft, viaText, voteOn } from './lib/ask-actions.mjs';
 import { readEvents } from './lib/git-graph.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
@@ -784,6 +785,41 @@ async function repoFiles(p) {
   }
 }
 
+// Ask 5/7: a page or an API path of an app, traced through its code on main (lib/page-code.mjs).
+const fileTextCache = new Map(); // `${project}@${main}:${path}` → the file's text on that main
+async function traceIn(p, where) {
+  const files = await repoFiles(p);
+  const head = repoFilesCache.get(p.key)?.head;
+  if (!files.length || !head) return null;
+  const read = async (f) => {
+    const k = `${p.key}@${head}:${f}`;
+    if (!fileTextCache.has(k)) {
+      if (fileTextCache.size > 3000) fileTextCache.clear();
+      fileTextCache.set(k, (await execFileAsync('git', ['show', `${head}:${f}`], { cwd: p.repoDir, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, windowsHide: true })).stdout);
+    }
+    return fileTextCache.get(k);
+  };
+  return traceAddress({ where, files, read });
+}
+/**
+ * The trace as an Ask answer, in the project whose app the address is on (its port), else the selected one.
+ * @returns {Promise<{ p: object, answer: object }|null>}
+ */
+async function pageTraceAnswer(where, question, selected, followUp = null) {
+  const byPort = where.port ? all.projects.find((x) => (x.app?.frontend === where.port || x.app?.backend === where.port) && existsSync(x.repoDir)) : null;
+  const p = byPort ?? selected;
+  const started = Date.now();
+  const trace = await traceIn(p, where);
+  if (!trace) return null;
+  const insights = await insightsForAsk(p).catch(() => null);
+  const repo = status.projects.find((x) => x.key === p.key)?.github?.repo;
+  const a = pageAnswer({ question, trace, rules: p.cfg.insights?.components ?? [], insights, ticketUrl: (k) => jira.browseUrl(k), fileUrl: (f) => (repo ? `https://github.com/${repo}/blob/main/${f}` : null) });
+  return {
+    p,
+    answer: { ...a, project: p.key, routed: { intent: 'page', intentP: 1, via: 'rule', model: 'a rule' }, warnings: [], dropped: 0, closest: [], meta: { durationMs: Date.now() - started, costUsd: 0, model: 'plain code: routes, components, services, controllers' }, at: new Date().toISOString(), ...(followUp ? { followUp } : {}) },
+  };
+}
+
 /**
  * The fast ways to answer (J5 and Ask 2/7): a clear wording decides the intent (lib/ask-fast.mjs), else System 1
  * does; the component is the one the question names, never a model's guess for "latest", "history" or "where". Plain
@@ -1352,7 +1388,7 @@ const server = createServer(async (req, res) => {
     const body = await readBody(req);
     asking = true;
     try {
-      const p = readyProject(body);
+      let p = readyProject(body);
       await health.require(); // otherwise "not in the knowledge base" when Jira only could not be searched
       // Ask 4/7: a follow-up names the answer it follows (in this project); the conversation, up to three answers back.
       const previous = body.followUp ? followUpChain(p.stateDir, String(body.followUp)) : [];
@@ -1361,6 +1397,22 @@ const server = createServer(async (req, res) => {
       // A ticket key alone ("VAX-21", "status of VAX-21") is answered from the agent's records, in about a second.
       const statusKey = body.full === true ? null : ticketKeyQuestion(String(body.question ?? ''));
       if (statusKey && all.ofTicket(statusKey)) return json(res, 200, { ok: true, ...(await ticketStatusAnswer(statusKey, String(body.question), followUp)) });
+      // Ask 5/7: the address of a page ("http://localhost:4204/pazienti/12", "/scadenze") or an API path ("/api/due"):
+      // its code, traced by plain code, in the project whose app the address is on. A question about why it misbehaves
+      // goes to Claude, with the trace as a hint.
+      const where = pageInQuestion(String(body.question ?? ''));
+      let hint = null;
+      if (where) {
+        const traced = await pageTraceAnswer(where, String(body.question), p, followUp).catch(() => null);
+        if (traced && body.full !== true && pageOnly(String(body.question))) {
+          logAsk(traced.p.stateDir, traced.answer);
+          return json(res, 200, { ok: true, ...traced.answer });
+        }
+        if (traced && (traced.p.key === p.key || !previous.length)) {
+          p = traced.p;
+          hint = traced.answer.answer;
+        }
+      }
       // J5 (System 1): "who knows X" and "the latest tickets" are answered from the Insights data, no Claude call.
       const routedAnswer = await askRouted(p, String(body.question ?? ''), body.full === true, previous);
       if (routedAnswer?.fast) return json(res, 200, { ok: true, project: p.key, ...routedAnswer });
@@ -1368,7 +1420,7 @@ const server = createServer(async (req, res) => {
       if (body.fastOnly === true) return json(res, 200, { ok: false, notRouted: true, routed: routedAnswer?.routed ?? null });
       // The linked apps too (K11): read-only checkouts of their main, apart from the analysis' (ask-peer-repo).
       const peers = peerCheckouts(p, all, (text) => broadcast({ type: 'ask-progress', id: body.id, step: `warning: ${text}` }), { name: 'ask-peer-repo' });
-      const answer = await askQuestion({ question: body.question, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira, project: { key: p.key, name: p.name }, peers, previous, onProgress: (step) => broadcast({ type: 'ask-progress', id: body.id, step }) });
+      const answer = await askQuestion({ question: body.question, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira, project: { key: p.key, name: p.name }, peers, previous, hint, onProgress: (step) => broadcast({ type: 'ask-progress', id: body.id, step }) });
       return json(res, 200, { ok: true, project: p.key, ...answer, routed: routedAnswer?.routed ?? null });
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
