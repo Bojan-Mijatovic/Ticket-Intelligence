@@ -29,6 +29,8 @@ import { reviewPullRequest } from './lib/review.mjs';
 import { readRecommendations, savedAnalyses, writeRecommendations } from './lib/insights.mjs';
 import { waitUntilIdle } from './lib/replace.mjs';
 import { describeMergeCheck, mergeCheck, mergeCheckComment } from './lib/merge-check.mjs';
+import { ticketKeyQuestion, ticketStatus } from './lib/ticket-status.mjs';
+import { readEvents } from './lib/git-graph.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
 import { createSuggested, readCreated, suggestTickets } from './lib/suggestions.mjs';
 import { suiteInsights } from './lib/suite.mjs';
@@ -713,6 +715,36 @@ async function insightsForAsk(p) {
  * "latest" question at 0.6 or more (a component at 0.4 or more for "who") gets a fast answer from the Insights data,
  * logged like any answer; otherwise null and Claude answers, with the routing attached ('shadow' and 'auto' alike).
  */
+/**
+ * Ask about a ticket's status (lib/ticket-status.mjs): the agent's events, the ticket in Jira, and the state of its
+ * PRs on GitHub. No model. The ticket's own project answers, whatever project the Ask tab shows.
+ */
+async function ticketStatusAnswer(key, question) {
+  const p = all.ofTicket(key);
+  const started = Date.now();
+  const events = readEvents(rootState);
+  let issue = null;
+  try {
+    issue = await jira.getIssue(key);
+  } catch (e) {
+    if (!/\b404\b/.test(e.message)) throw e; // Jira down is not "no such ticket"
+  }
+  const urls = [...new Set(events.filter((e) => e.key === key && ['pr', 'fix-proposed', 'documented'].includes(e.type) && e.url).map((e) => e.url))];
+  const prs = {};
+  for (const url of urls) {
+    try {
+      const j = JSON.parse((await execFileAsync('gh', ['pr', 'view', url, '--json', 'state,isDraft,mergedAt,mergeCommit'], { cwd: p.repoDir, encoding: 'utf8', timeout: 20_000, windowsHide: true })).stdout);
+      prs[url] = { ...j, mergeCommit: j.mergeCommit?.oid ?? null };
+    } catch {
+      /* its state stays unknown: the answer says what the records say */
+    }
+  }
+  const s = ticketStatus({ key, issue, events, prs, now: { processing: status.processing, queued: status.queue.map((q) => q.key) }, ticketUrl: (k) => jira.browseUrl(k) });
+  const answer = { question, project: p.key, found: s.found, fast: true, via: 'records', intent: 'ticket', answer: s.answer, sources: s.sources, warnings: [], dropped: 0, closest: [], meta: { durationMs: Date.now() - started, costUsd: 0, model: "the agent's records" }, at: new Date().toISOString() };
+  appendFileSync(join(p.stateDir, 'asks.jsonl'), `${JSON.stringify({ at: answer.at, question, found: s.found, fast: true, intent: 'ticket', sources: s.sources.map((x) => x.ref), warnings: [], costUsd: 0, durationMs: answer.meta.durationMs })}\n`);
+  return answer;
+}
+
 async function askRouted(p, question, full) {
   const mode = S1.askRouter ?? 'auto';
   if (mode === 'off' || system1.mode === 'off' || !question.trim()) return null;
@@ -1148,6 +1180,9 @@ const server = createServer(async (req, res) => {
     try {
       const p = readyProject(body);
       await health.require(); // otherwise "not in the knowledge base" when Jira only could not be searched
+      // A ticket key alone ("VAX-21", "status of VAX-21") is answered from the agent's records, in about a second.
+      const statusKey = body.full === true ? null : ticketKeyQuestion(String(body.question ?? ''));
+      if (statusKey && all.ofTicket(statusKey)) return json(res, 200, { ok: true, ...(await ticketStatusAnswer(statusKey, String(body.question))) });
       // J5 (System 1): "who knows X" and "the latest tickets" are answered from the Insights data, no Claude call.
       const routedAnswer = await askRouted(p, String(body.question ?? ''), body.full === true);
       if (routedAnswer?.fast) return json(res, 200, { ok: true, project: p.key, ...routedAnswer });
