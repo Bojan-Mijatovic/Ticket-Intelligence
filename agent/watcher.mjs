@@ -30,6 +30,7 @@ import { readRecommendations, savedAnalyses, writeRecommendations } from './lib/
 import { waitUntilIdle } from './lib/replace.mjs';
 import { describeMergeCheck, mergeCheck, mergeCheckComment } from './lib/merge-check.mjs';
 import { ticketKeyQuestion, ticketStatus } from './lib/ticket-status.mjs';
+import { componentInQuestion, fastMore, ruleIntent } from './lib/ask-fast.mjs';
 import { readEvents } from './lib/git-graph.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
 import { createSuggested, readCreated, suggestTickets } from './lib/suggestions.mjs';
@@ -745,26 +746,61 @@ async function ticketStatusAnswer(key, question) {
   return answer;
 }
 
+/** The repository's files on origin/main, for "where is …" (cached per main commit). */
+const repoFilesCache = new Map();
+async function repoFiles(p) {
+  try {
+    const head = (await execFileAsync('git', ['rev-parse', 'origin/main'], { cwd: p.repoDir, encoding: 'utf8', windowsHide: true })).stdout.trim();
+    const hit = repoFilesCache.get(p.key);
+    if (hit?.head === head) return hit.files;
+    const files = (await execFileAsync('git', ['ls-tree', '-r', '--name-only', head], { cwd: p.repoDir, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, windowsHide: true })).stdout.split('\n').filter(Boolean);
+    repoFilesCache.set(p.key, { head, files });
+    return files;
+  } catch {
+    return []; // SVN or no clone: "where" goes the full way
+  }
+}
+
+/**
+ * The fast ways to answer (J5 and Ask 2/7): a clear wording decides the intent (lib/ask-fast.mjs), else System 1
+ * does; the component is the one the question names, never a model's guess for "latest", "history" or "where". Plain
+ * code then answers from the Insights data and the file list, or the question goes to Claude.
+ */
 async function askRouted(p, question, full) {
   const mode = S1.askRouter ?? 'auto';
-  if (mode === 'off' || system1.mode === 'off' || !question.trim()) return null;
+  if (mode === 'off' || !question.trim()) return null;
   const started = Date.now();
-  let routed;
-  try {
-    const comps = (p.cfg.insights?.components ?? []).map((c) => c.name);
-    const r = await system1.decide(question, { ...intentQuestion(), ...(comps.length ? { component: questionsFor(comps).component } : {}) });
-    if (!r) return null;
-    routed = { intent: r.answers.intent?.choice, intentP: r.answers.intent?.p, component: r.answers.component?.choice, componentP: r.answers.component?.p, ms: r.ms, model: system1.model };
-  } catch {
-    return null; // the question goes to Claude
+  const rules = p.cfg.insights?.components ?? [];
+  // System 1 is still asked when it runs: a rule gives the intent, but for "who" its component counts too ("Ko zna kod
+  // za pacijente?" names Pazienti in Serbian, which no rule reads).
+  const byRule = ruleIntent(question);
+  let model = null;
+  if (system1.mode !== 'off') {
+    try {
+      const comps = rules.map((c) => c.name);
+      const r = await system1.decide(question, { ...intentQuestion(), ...(comps.length ? { component: questionsFor(comps).component } : {}) });
+      if (r) model = { intent: r.answers.intent?.choice, intentP: r.answers.intent?.p, component: r.answers.component?.choice, componentP: r.answers.component?.p, ms: r.ms };
+    } catch {
+      /* no model answer: a rule may still decide */
+    }
   }
-  if (mode !== 'auto' || full || routed.intentP < Number(S1.askIntentThreshold ?? 0.6) || !['who', 'latest'].includes(routed.intent)) return { routed };
-  // 0.7: on 48 "who" questions (demo/system1/ask-components.json) ft-2 named the wrong component 8 times at 0.4, none at 0.7.
-  const component = routed.componentP >= Number(S1.askComponentThreshold ?? 0.7) ? routed.component : null;
+  if (!byRule && !model) return null; // the question goes to Claude
+  const routed = byRule
+    ? { intent: byRule, intentP: 1, component: model?.component ?? null, componentP: model?.componentP ?? 0, ms: model?.ms ?? 0, via: 'rule', model: 'a rule' }
+    : { ...model, via: 'System 1', model: system1.model };
+  if (mode !== 'auto' || full || routed.intentP < Number(S1.askIntentThreshold ?? 0.6) || !['who', 'latest', 'history', 'where'].includes(routed.intent)) return { routed };
+  // The component the question names. For "who" only, System 1's own at 0.7 too: on 48 "who" questions
+  // (demo/system1/ask-components.json) ft-2 named the wrong component 8 times at 0.4, none at 0.7. For "latest" it
+  // always names one, asked or not ("What are the latest tickets?": "Report", 78 %), so not there.
+  const named = componentInQuestion(question, rules);
+  const component = named ?? (routed.intent === 'who' && routed.componentP >= Number(S1.askComponentThreshold ?? 0.7) ? routed.component : null);
   if (routed.intent === 'who' && !component) return { routed };
-  const fast = fastAnswer({ question, intent: routed.intent, component, insights: await insightsForAsk(p), ticketUrl: (k) => jira.browseUrl(k) });
+  const insights = await insightsForAsk(p);
+  const repo = status.projects.find((x) => x.key === p.key)?.github?.repo; // read once at start: no gh call here
+  const fast = fastAnswer({ question, intent: routed.intent, component, insights, ticketUrl: (k) => jira.browseUrl(k) })
+    ?? fastMore({ question, intent: routed.intent, component, insights, rules, files: routed.intent === 'where' ? await repoFiles(p) : [], ticketUrl: (k) => jira.browseUrl(k), fileUrl: (f) => (repo ? `https://github.com/${repo}/blob/main/${f}` : null) });
   if (!fast) return { routed };
-  const answer = { ...fast, warnings: [], dropped: 0, closest: [], routed, meta: { durationMs: Date.now() - started, costUsd: 0, model: `System 1 (${system1.model})` }, at: new Date().toISOString() };
+  const answer = { ...fast, warnings: [], dropped: 0, closest: [], routed, meta: { durationMs: Date.now() - started, costUsd: 0, model: routed.via === 'rule' ? 'a rule and plain code' : `System 1 (${system1.model})` }, at: new Date().toISOString() };
   appendFileSync(join(p.stateDir, 'asks.jsonl'), `${JSON.stringify({ at: answer.at, question, found: true, fast: true, intent: routed.intent, component, sources: answer.sources.map((s) => s.ref), warnings: [], costUsd: 0, durationMs: answer.meta.durationMs })}\n`);
   return answer;
 }
