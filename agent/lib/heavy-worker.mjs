@@ -10,22 +10,31 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { readBlameOrigins, recordAccuracy, scoreAccuracy } from './accuracy.mjs';
 import { createDocsPrs } from './docs-prs.mjs';
 import { loadGraph, readSuitePullRequests } from './git-graph.mjs';
-import { buildInsights } from './insights.mjs';
+import { buildInsights, savedAnalyses } from './insights.mjs';
 import { createJira } from './jira-actions.mjs';
+import { codeVerdict, loadPriorArtSources, priorArtCandidates } from './prior-art.mjs';
 import { loadProjects } from './projects.mjs';
 import { readReplays } from './replay.mjs';
 
 /**
- * @param {'insights'|'graph'|'knowledge'} job
+ * @param {'insights'|'graph'|'knowledge'|'prior-art'} job
  * @param {string} key          the project
  * @param {Map} [suitePrs]      the suite's pull requests, when the watcher has them fresh; read here otherwise and
  *                              sent back for the next project
+ * @param {object} [item]       prior-art: what to check (ask-actions.mjs priorArtItem), against `tickets` (Insights)
  */
-export async function heavyJob({ job, agentDir, key, eventsDir, suitePrs = null }) {
+export async function heavyJob({ job, agentDir, key, eventsDir, suitePrs = null, item = null, tickets = [] }) {
   const all = loadProjects(agentDir);
   const p = all.byKey(key);
   if (!p) throw new Error(`no project ${key}`);
   if (job === 'knowledge') return { data: await createDocsPrs({ repoDir: p.repoDir }).list() };
+  // K19 for a draft that is not an Insights suggestion (an Ask answer, Ask 3/7): git log, the knowledge base on main and
+  // gh pr list, a few seconds.
+  if (job === 'prior-art') {
+    const sources = loadPriorArtSources({ repoDir: p.repoDir, analyses: savedAnalyses(p.stateDir) });
+    const candidates = priorArtCandidates(item, { ...sources, tickets });
+    return { data: { ...codeVerdict(candidates), candidates, notes: sources.notes ?? [] } };
+  }
   const jira = createJira();
   if (job === 'insights') {
     const peers = all.projects.filter((x) => x.key !== p.key).map((x) => ({ key: x.key, name: x.name, repoDir: x.repoDir }));

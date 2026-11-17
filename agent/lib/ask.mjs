@@ -6,9 +6,10 @@
 // Every source it cites is checked against that data before the answer is shown.
 
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runClaude } from './analyze.mjs';
+import { logAsk } from './ask-actions.mjs';
 import { savedAnalyses } from './insights.mjs';
 import { analysisCheckout } from './workspace.mjs';
 
@@ -227,7 +228,7 @@ export async function askQuestion({ question, repoDir, stateDir, logDir = stateD
     at: new Date().toISOString(),
   }, data.warnings);
   writeFileSync(join(dir, 'answer.json'), JSON.stringify(answer, null, 2));
-  // Audit trail, local only (agent/state is not committed).
-  appendFileSync(join(logDir, 'asks.jsonl'), `${JSON.stringify({ at: answer.at, question: q, found: answer.found, sources: sources.map((s) => s.ref), warnings: answer.warnings.map((w) => w.text), costUsd: out.meta.costUsd, durationMs: out.meta.durationMs })}\n`);
+  // Audit trail, local only (agent/state is not committed); since Ask 3/7 with the answer, which its actions start from.
+  logAsk(logDir, answer);
   return answer;
 }

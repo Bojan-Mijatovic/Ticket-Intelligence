@@ -226,7 +226,7 @@ export function readCreated(stateDir) {
  *   assigneeId (a string)  the person picked on the dashboard; it must be assignable in the project (checked in Jira)
  *   assigneeId '' or null  nobody
  *   assigneeId undefined   the suggested person, when a Jira user of the project has that name (with assign: true)
- * When the suggested person has no Jira account, the description says so.
+ * When the suggested person has no Jira account, the description says so. `labels`: more labels (from-ask, Ask 3/7).
  */
 /**
  * What was checked before the ticket was created (K19), for its description: the verdict, the reason a person gave
@@ -240,7 +240,7 @@ export function priorArtSection(priorArt, reason = '') {
   return ['', 'h3. Checked before creating', ...(reason ? [`Created although the check said *${priorArt.verdict}${priorArt.key ? ` ${priorArt.key}` : ''}*. Reason: ${reason}`] : []), ...(lines.length ? ['Related:', ...lines] : [])].join('\n');
 }
 
-export async function createSuggested({ jira, project, stateDir, suggestion, edits = {}, assign = true, assigneeId = undefined, analyze = false, reason = '' }) {
+export async function createSuggested({ jira, project, stateDir, suggestion, edits = {}, assign = true, assigneeId = undefined, analyze = false, reason = '', labels: extraLabels = [] }) {
   const summary = clean(edits.summary ?? suggestion.summary);
   const type = edits.type ?? suggestion.type;
   const priority = edits.priority ?? suggestion.priority;
@@ -265,7 +265,7 @@ export async function createSuggested({ jira, project, stateDir, suggestion, edi
       ? `\n\n_Suggested: ${suggestion.person.name}; ${assignee ? `assigned to ${assignee.name}` : 'left unassigned'} when it was created._`
       : `\n\n_${suggestion.person.name} has no Jira account in ${project}${assignee ? `; assigned to ${assignee.name}` : ', so the ticket is not assigned'}._`;
   }
-  const labels = ['ai-suggested', ...(analyze ? [] : ['no-ai'])];
+  const labels = ['ai-suggested', ...extraLabels, ...(analyze ? [] : ['no-ai'])];
   const res = await jira.createIssue({ project, summary, description, type, priority, labels, assigneeId: assignee?.accountId ?? null });
   const created = { key: res.key, url: res.url, at: new Date().toISOString(), summary, assignee: assignee?.name ?? null };
   const all = readCreated(stateDir);

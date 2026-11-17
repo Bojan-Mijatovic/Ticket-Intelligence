@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { createRedactor, IDENTIFIER_RULES, isToolEmail } from '../../.claude/skills/analyze-ticket/scripts/lib/redact.mjs';
 
 // Statements about the state of a pull request or a branch: true when written, wrong a week later.
-const TIME_BOUND = /\b(not (yet )?merged|may not be merged|is not merged|not been merged|still (open|in review)|as of \d{4}-\d{2}-\d{2}|draft (pull request|PR)\b)/i;
+export const TIME_BOUND = /\b(not (yet )?merged|may not be merged|is not merged|not been merged|still (open|in review)|as of \d{4}-\d{2}-\d{2}|draft (pull request|PR)\b)/i;
 
 /** Patient (or other personal) data that must never be in the repository. */
 // The same identifier rules as the redaction (one source of truth, redact.mjs): the lint reports what the redaction

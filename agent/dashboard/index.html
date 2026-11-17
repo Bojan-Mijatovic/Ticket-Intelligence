@@ -500,6 +500,8 @@ function ticketOf(ev) {
 }
 
 function apply(ev) {
+  // Ask 3/7: an answer a person sent to Teams belongs to a project, not to a ticket.
+  if (ev.type === 'ask-shared' && ev.card) { teams.unshift({ ...ev.card, at: ev.at, channel: ev.channel, error: ev.error ?? null }); return; }
   if (!ev.key) return;
   // A documentation merge (Insights → Knowledge base) is shown on the ticket's card when it has one; it opens none.
   if (ev.type === 'docs-merged' && !tickets.has(ev.key)) return;
@@ -751,7 +753,7 @@ function render() {
   const stepsBox = box.querySelector('.steps');
   if (stepsBox) stepsBox.scrollTop = stepsBox.scrollHeight;
 
-  const shownTeams = teams.filter((m) => !m.key || visible(m.key));
+  const shownTeams = teams.filter((m) => (m.kind === 'ask' ? selected === 'all' || m.project === selected : !m.key || visible(m.key)));
   $('#teams').replaceChildren(...(shownTeams.length ? shownTeams.map((m) => h('div', { class: 'msg' },
     h('span', { class: 'avatar', style: 'background:linear-gradient(135deg,var(--accent),var(--teams))' }, '✦'),
     h('div', {}, h('div', { class: 'who' }, h('b', {}, 'Ticket Intelligence'), ` · ${ago(m.at)}`), teamsCard(m)))) : [h('div', { class: 'empty' }, 'Handoff messages to owners appear here.')]));
@@ -773,7 +775,7 @@ function render() {
   $('#k-done').textContent = done.length;
   const timed = done.filter((t) => (t.meta?.durationMs ?? 0) > 0);
   $('#k-time').textContent = timed.length ? `${Math.round(timed.reduce((s, t) => s + t.totalMs, 0) / timed.length / 1000)} s` : '–';
-  $('#k-notified').textContent = shownTeams.filter((m) => m.kind !== 'fix').length; // handoffs; "fix ready" messages follow them
+  $('#k-notified').textContent = shownTeams.filter((m) => !m.kind).length; // handoffs; "fix ready" messages follow them, shared answers are a person's
   $('#k-esc').textContent = done.filter((t) => t.result?.escalate?.yes).length;
   $('#k-queue').textContent = `${(status?.queue ?? []).filter((q) => visible(q.key)).length} / ${list.filter((t) => t.state === 'failed').length}`;
   // System 1 in shadow: its side and component against the files the analysis named.
@@ -878,6 +880,7 @@ const jiraLink = (key) => h('a', { href: jiraHref(key), target: '_blank' }, key)
 /** An owner's message as Teams shows it; "Open in Teams" when it was posted and the channel's link is known. */
 function teamsCard(m) {
   const channelUrl = m.channel === 'teams' ? status?.teams?.channelUrl : null;
+  if (m.kind === 'ask') return askCard(m, channelUrl);
   return h('div', { class: 'card' }, h('div', { class: 'to' }, `@${m.to}${m.mentioned && m.channel === 'teams' ? ' · mentioned in Teams' : ''}`), h('div', { class: 'ct' }, m.title), h('div', {}, m.message),
     m.why || m.where || m.tests ? h('div', { class: 'facts' }, m.why ? h('div', {}, h('b', {}, 'Why you '), m.why) : null, m.where ? h('div', {}, h('b', {}, 'Where '), h('code', {}, m.where)) : null,
       m.tests ? h('div', {}, h('b', {}, 'Checked '), m.tests) : null, m.broke ? h('div', {}, h('b', {}, 'Broken by '), m.broke) : null) : null,
@@ -885,6 +888,18 @@ function teamsCard(m) {
     m.channel === 'failed' ? h('div', { class: 'esc' }, `Not posted to Teams${m.error ? `: ${m.error}` : ''}`) : null,
     h('div', { class: 'actions', style: 'margin-top:8px' }, m.prUrl ? h('a', { href: m.prUrl, target: '_blank' }, 'Review the pull request ↗') : null, m.url ? h('a', { href: m.url, target: '_blank' }, 'Open in Jira ↗') : null,
       channelUrl ? h('a', { href: channelUrl, target: '_blank' }, 'Open in Teams ↗') : null));
+}
+/** Ask 3/7: an answer a person sent to the channel, as Teams shows it. */
+function askCard(m, channelUrl) {
+  return h('div', { class: 'card' },
+    h('div', { class: 'to' }, m.to ? `@${m.to}${m.mentioned && m.channel === 'teams' ? ' · mentioned in Teams' : ''}` : `${projectInfo(m.project)?.name ?? m.project} · for the channel`),
+    h('div', { class: 'ct' }, m.title),
+    m.note ? h('div', { style: 'color:var(--accent)' }, m.note) : null,
+    h('details', {}, h('summary', { class: 't-sub' }, `The answer (${m.message.length > 160 ? `${Math.round(m.message.length / 100) / 10}k characters` : 'short'})`), h('div', { style: 'white-space:pre-wrap' }, m.message)),
+    m.sources?.length ? h('div', { class: 'facts' }, h('div', {}, h('b', {}, 'Sources '), m.sources.flatMap((s, i) => [i ? ' · ' : '', s.url ? h('a', { href: s.url, target: '_blank' }, s.ref.split('/').pop()) : h('code', {}, s.ref)]))) : null,
+    h('div', { class: 't-sub' }, `Answered ${m.how}; shared from Ask by a person.`),
+    m.channel === 'failed' ? h('div', { class: 'esc' }, `Not posted to Teams${m.error ? `: ${m.error}` : ''}`) : null,
+    channelUrl ? h('div', { class: 'actions', style: 'margin-top:8px' }, h('a', { href: channelUrl, target: '_blank' }, 'Open in Teams ↗')) : null);
 }
 
 /**
@@ -1216,7 +1231,11 @@ function renderSuggestions(d) {
   $('#ins-suggestions').replaceChildren(table(['Type', 'Ticket', 'Suggested person', ''].map((x) => h('th', {}, x)), rows));
 }
 
-function suggestionEditor(s) {
+/**
+ * A ticket draft to check, edit and create: an Insights suggestion, or an Ask answer (Ask 3/7, with `submit` and
+ * `done`). The prior-art check (K19) is shown first; when it says "not new", creating it needs a reason.
+ */
+function suggestionEditor(s, { submit = null, done = null } = {}) {
   const summary = h('input', { type: 'text', value: s.summary, maxlength: 250, style: 'width:100%' });
   const type = h('select', {}, ['Bug', 'Task', 'Story'].map((t) => h('option', { value: t, ...(t === s.type ? { selected: '' } : {}) }, t)));
   const priority = h('select', {}, ['Highest', 'High', 'Medium', 'Low', 'Lowest'].map((p) => h('option', { value: p, ...(p === s.priority ? { selected: '' } : {}) }, p)));
@@ -1253,11 +1272,12 @@ function suggestionEditor(s) {
     if (!confirm(`Create this ${type.value} in Jira (${s.project}), assigned to ${who}?\n\n${summary.value}`)) return;
     go.disabled = true; state.textContent = 'Checking again and creating…';
     try {
-      const r = await post('/api/insights/tickets', { project: s.project, id: s.id, assigneeId: assignee.value || null, analyze: analyze.checked, reason: reason.value.trim(),
-        edits: { summary: summary.value, type: type.value, priority: priority.value, description: description.value } });
-      openSuggestion = null;
+      const payload = { assigneeId: assignee.value || null, analyze: analyze.checked, reason: reason.value.trim(),
+        edits: { summary: summary.value, type: type.value, priority: priority.value, description: description.value } };
+      const r = await (submit ? submit(payload) : post('/api/insights/tickets', { project: s.project, id: s.id, ...payload }));
       state.textContent = `Created ${r.key}`;
-      await loadInsights();
+      if (done) done(r);
+      else { openSuggestion = null; await loadInsights(); }
     } catch (err) { state.textContent = ''; go.disabled = false; alert(`Not created: ${err.message}`); }
   } }, 'Create in Jira');
   return h('div', { style: 'display:flex;flex-direction:column;gap:8px;padding:8px 0' },
@@ -1956,7 +1976,94 @@ function renderAnswers() {
       a.closest?.length ? h('div', { class: 't-sub' }, 'Closest tickets: ', a.closest.flatMap((c) => [jiraLink(c.key), ' '])) : null,
       a.dropped ? h('div', { class: 't-sub' }, `${a.dropped} cited source(s) were not found in the data and were left out.`) : null,
       feedbackRow(a),
+      answerActions(a),
     ])));
+}
+
+/**
+ * Ask 3/7: what a person can do with an answer: send it to Teams, make a Jira ticket of it, and, once it is rated
+ * right, save it as an FAQ of the knowledge base. The server acts on the answer it recorded, never on this page's copy.
+ * An open form is kept across re-renders (a new answer must not wipe what is being typed).
+ */
+function answerActions(a) {
+  if (!a.at || !a.project || a.tourReplay) return null; // a replayed answer of the tour is an old one: nothing to act on
+  const pol = status?.policy ?? {};
+  const done = a.done ?? [];
+  const toggle = (panel) => { a.panel = a.panel === panel ? null : panel; a.panelEl = null; renderAnswers(); };
+  const canFaq = pol.promoteFaq !== 'off' && a.vote === 'up' && !a.fast && a.via !== 'records' && a.found && a.sources?.length && !done.some((d) => d.action === 'faq');
+  const doneText = (d) => d.action === 'teams' ? h('span', { class: `chip ${d.channel === 'failed' ? 'failed' : 'done'}` }, `${d.channel === 'teams' ? 'posted to Teams' : d.channel === 'failed' ? 'not posted to Teams' : 'shared (simulated)'}${d.to ? ` for ${d.to}` : ''}${d.masked ? ` · ${d.masked} masked` : ''}`)
+    : d.action === 'ticket' ? h('a', { class: 'chip done', href: d.url, target: '_blank' }, `ticket ${d.key} ↗`)
+    : d.action === 'faq' ? h('a', { class: 'chip done', href: d.url, target: '_blank' }, `FAQ in PR #${d.number} ↗`) : null;
+  if (a.panel && !a.panelEl) a.panelEl = a.panel === 'teams' ? sharePanel(a) : askTicketPanel(a);
+  return h('div', {},
+    h('div', { class: 'actions', style: 'display:flex;gap:8px;flex-wrap:wrap;align-items:center' },
+      pol.shareAnswer !== 'off' ? h('button', { class: 'small', onclick: () => toggle('teams') }, a.panel === 'teams' ? 'Close' : 'Send to Teams…') : null,
+      pol.createTicket !== 'off' && !done.some((d) => d.action === 'ticket') ? h('button', { class: 'small', onclick: () => toggle('ticket') }, a.panel === 'ticket' ? 'Close' : 'Create a ticket…') : null,
+      canFaq ? h('button', { class: 'small', title: 'Into docs/knowledge/faq.md through a documentation PR; a person merges it', onclick: (e) => saveAsFaq(a, e.target) }, 'Save as FAQ') : null,
+      ...done.map(doneText)),
+    a.panel ? a.panelEl : null);
+}
+
+async function getJson(url) {
+  const res = await fetch(url);
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok || out.ok === false) throw new Error(out.error ?? `HTTP ${res.status}`);
+  return out;
+}
+const answerQuery = (a) => `project=${encodeURIComponent(a.project)}&answerAt=${encodeURIComponent(a.at)}`;
+const closePanel = (a) => { a.panel = null; a.panelEl = null; renderAnswers(); };
+
+function sharePanel(a) {
+  const box = h('div', { class: 'panel', style: 'padding:8px 12px;margin-top:6px;display:flex;flex-direction:column;gap:6px' }, h('span', { class: 't-sub' }, 'Loading the people of this answer…'));
+  getJson(`/api/ask/actions?${answerQuery(a)}`).then((d) => {
+    const to = h('select', {}, h('option', { value: '' }, 'Nobody: the channel'), ...d.people.map((p) => h('option', { value: p.name }, `${p.name} · ${p.why}`)));
+    const note = h('input', { type: 'text', maxlength: 500, style: 'width:100%', placeholder: 'A line before the answer (optional), e.g. "Is this still how it works?"' });
+    const state = h('span', { class: 'meta' });
+    const send = async (again) => {
+      go.disabled = true; state.textContent = 'Posting…';
+      try {
+        const r = await post('/api/ask/share', { project: a.project, answerAt: a.at, to: to.value || null, note: note.value.trim(), again });
+        (a.done ??= []).push({ action: 'teams', to: r.to, channel: r.channel, masked: r.masked });
+        closePanel(a);
+      } catch (e) {
+        go.disabled = false; state.textContent = '';
+        if (/^already shared/.test(e.message) && confirm(`This answer was ${e.message}. Send it again?`)) return send(true);
+        if (!/^already shared/.test(e.message)) alert(`Not sent: ${e.message}`);
+      }
+    };
+    const go = h('button', { class: 'primary small', onclick: () => send(false) }, d.teams.live ? 'Post to Teams' : 'Share (simulated)');
+    box.replaceChildren(
+      h('div', { class: 't-sub' }, d.teams.live
+        ? `Posts the question, the answer, its sources and how it was made to the Teams channel${d.teams.mentions ? '; the person picked is @mentioned' : ''}. Names outside the team and personal data are masked first.`
+        : 'No Teams webhook is set: the message is shown in the Teams panel of the Tickets tab only.'),
+      h('label', {}, h('span', { class: 't-sub' }, 'For '), to, d.people.length ? null : h('span', { class: 't-sub' }, ' (the answer names nobody of the team)')),
+      note,
+      h('div', { style: 'display:flex;gap:10px;align-items:center' }, go, state));
+  }).catch((e) => box.replaceChildren(h('span', { class: 'err' }, `Could not load: ${e.message}`)));
+  return box;
+}
+
+function askTicketPanel(a) {
+  const box = h('div', { style: 'margin-top:6px' }, h('span', { class: 't-sub' }, 'Drafting it, and checking what Jira, the knowledge base and the open pull requests already have…'));
+  getJson(`/api/ask/ticket?${answerQuery(a)}`).then((d) => {
+    if (d.created) { box.replaceChildren(h('span', { class: 't-sub' }, 'Already created as ', h('a', { href: d.created.url, target: '_blank' }, d.created.key))); return; }
+    box.replaceChildren(suggestionEditor(d.draft, {
+      submit: (payload) => post('/api/ask/ticket', { project: a.project, answerAt: a.at, ...payload }),
+      done: (r) => { (a.done ??= []).push({ action: 'ticket', key: r.key, url: r.url }); closePanel(a); },
+    }));
+  }).catch((e) => box.replaceChildren(h('span', { class: 'err' }, `Could not draft it: ${e.message}`)));
+  return box;
+}
+
+async function saveAsFaq(a, button) {
+  const name = projectInfo(a.project)?.name ?? a.project;
+  if (!confirm(`Save this question and its answer in the knowledge base of ${name}?\n\nIt goes into docs/knowledge/faq.md through a documentation PR (an open FAQ PR collects the next ones). A person merges it: Insights → Knowledge base. Names outside the team and personal data are masked first.`)) return;
+  button.disabled = true; button.textContent = 'Saving…';
+  try {
+    const r = await post('/api/ask/faq', { project: a.project, answerAt: a.at });
+    (a.done ??= []).push({ action: 'faq', number: r.number, url: r.url });
+    renderAnswers();
+  } catch (e) { alert(`Not saved: ${e.message}`); button.disabled = false; button.textContent = 'Save as FAQ'; }
 }
 
 /** 👍 / 👎 under an answer (K12): a 👎 or a "not found" becomes a knowledge gap on the Insights tab. */

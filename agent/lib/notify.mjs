@@ -117,9 +117,49 @@ export async function notifyFixReady({ key, url, prUrl, title, to, checks = {}, 
   return { ...(await post(webhook, adaptiveCard({ to, upn, body, actions }))), card };
 }
 
-/** An Adaptive Card for a person, @mentioned when they have a Teams account: the <at> text and its entity must match. */
-function adaptiveCard({ to, upn, body, actions }) {
+/**
+ * Ask 3/7: an answer a person chose to share, as asked and answered, with its sources and how it was made; for a
+ * person of the team when one was picked (@mentioned like an owner). `answer` comes masked (ask-actions.mjs).
+ * @param {string} p.project  the project's key (the dashboard shows the card under it); `projectName` on the card
+ * @param {{ ref: string, url?: string }[]} p.sources
+ * @param {string} p.how   how it was answered, in words ("by Claude from the tickets, the code and the knowledge base")
+ */
+export async function shareAnswer({ project, projectName = project, question, answer, sources = [], how, to = null, note = '' }) {
+  const webhook = String(process.env.TEAMS_WEBHOOK_URL ?? '').trim();
+  const upn = to ? mentionFor(to) : null;
+  const shown = sources.slice(0, 8);
+  const card = {
+    kind: 'ask',
+    project,
+    to: to || null,
+    title: `Ask · ${clip(question, 200)}`,
+    message: clip(answer, 3000),
+    note: clip(note, 500) || null,
+    sources: shown.map((s) => ({ ref: s.ref, url: s.url ?? null })),
+    how,
+    ...(upn && webhook ? { mentioned: true } : {}),
+  };
+  if (!webhook) return { channel: 'dashboard', card };
+  // Teams reads a TextBlock as Markdown: a ref is the link text, so its brackets go.
+  const link = (s) => (s.url ? `[${String(s.ref).replace(/[[\]]/g, '')}](${s.url})` : String(s.ref));
+  const body = [
+    { type: 'TextBlock', text: card.title, weight: 'Bolder', size: 'Medium', wrap: true },
+    ...(card.note ? [{ type: 'TextBlock', text: card.note, wrap: true, color: 'Accent' }] : []),
+    { type: 'TextBlock', text: card.message, wrap: true },
+    ...(shown.length ? [{ type: 'TextBlock', text: `Sources: ${shown.map(link).join(' · ')}`, wrap: true, size: 'Small' }] : []),
+    { type: 'TextBlock', text: `Answered ${how}; shared from Ask by a person.`, wrap: true, isSubtle: true, size: 'Small' },
+  ];
+  const actions = shown.filter((s) => s.url).slice(0, 2).map((s) => ({ type: 'Action.OpenUrl', title: `Open ${clip(String(s.ref).split('/').pop(), 40)}`, url: s.url }));
+  return { ...(await post(webhook, adaptiveCard({ to, upn, body, actions, heading: `From Ask · ${projectName}` }))), card };
+}
+
+/**
+ * An Adaptive Card for a person, @mentioned when they have a Teams account: the <at> text and its entity must match.
+ * Without a person, `heading` is the first line.
+ */
+function adaptiveCard({ to, upn, body, actions, heading = null }) {
   const at = `<at>${to}</at>`;
+  const first = to ? `For ${upn ? at : to}` : heading;
   return {
     type: 'message',
     attachments: [
@@ -129,9 +169,9 @@ function adaptiveCard({ to, upn, body, actions }) {
           $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
           type: 'AdaptiveCard',
           version: '1.4',
-          body: [{ type: 'TextBlock', text: `For ${upn ? at : to}`, weight: 'Bolder', size: 'Small', color: 'Accent' }, ...body],
+          body: [...(first ? [{ type: 'TextBlock', text: first, weight: 'Bolder', size: 'Small', color: 'Accent' }] : []), ...body],
           actions,
-          ...(upn ? { msteams: { entities: [{ type: 'mention', text: at, mentioned: { id: upn, name: to } }] } } : {}),
+          ...(to && upn ? { msteams: { entities: [{ type: 'mention', text: at, mentioned: { id: upn, name: to } }] } } : {}),
         },
       },
     ],

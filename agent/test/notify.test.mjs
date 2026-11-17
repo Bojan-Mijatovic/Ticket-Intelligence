@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { mentionFor, notifyFixReady, notifyOwner, teamsInfo } from '../lib/notify.mjs';
+import { mentionFor, notifyFixReady, notifyOwner, shareAnswer, teamsInfo } from '../lib/notify.mjs';
 
 const MSG = { key: 'DEM-40', url: 'https://jira.example/browse/DEM-40', title: 'Red background', handoff: { to: 'Marta Ricci', message: 'Please take a look' }, confidence: 'high', escalate: { yes: false } };
 const realFetch = globalThis.fetch;
@@ -147,4 +147,40 @@ test('a channel that refuses or does not answer does not stop the ticket: the me
   };
   const down = await notifyOwner(MSG);
   assert.deepEqual([down.channel, down.error], ['failed', 'Teams webhook: fetch failed']);
+});
+
+test('Ask 3/7: an answer shared for the team, or for a person who is @mentioned; the sources are links', async () => {
+  const ANSWER = {
+    project: 'VAX', projectName: 'MediVax', question: 'Why is the third dose due too early?', answer: 'It was counted from the first dose (VAX-21).',
+    sources: [{ ref: 'VAX-21', url: 'https://jira.example/browse/VAX-21' }, { ref: 'frontend/src/app/shared/utils/dates.ts', url: 'https://github.example/blob/main/dates.ts' }, { ref: '6e8e6e1', url: null }],
+    how: 'by Claude from the tickets, the code and the knowledge base',
+  };
+  delete process.env.TEAMS_WEBHOOK_URL;
+  globalThis.fetch = () => assert.fail('nothing is posted');
+  const shown = await shareAnswer(ANSWER);
+  assert.deepEqual([shown.channel, shown.card.kind, shown.card.project, shown.card.to, shown.card.title], ['dashboard', 'ask', 'VAX', null, 'Ask · Why is the third dose due too early?']);
+
+  process.env.TEAMS_WEBHOOK_URL = 'https://hook.example/workflows/1';
+  process.env.TEAMS_MENTION_DOMAIN = 'contoso.onmicrosoft.com';
+  let sent = null;
+  globalThis.fetch = async (url, opts) => {
+    sent = JSON.parse(opts.body);
+    return new Response('', { status: 202 });
+  };
+  const forTeam = await shareAnswer({ ...ANSWER, note: 'Is this still how it works?' });
+  let content = sent.attachments[0].content;
+  assert.equal(content.body[0].text, 'From Ask · MediVax', 'no person: the card says where it comes from');
+  assert.equal(content.msteams, undefined, 'nobody is mentioned');
+  assert.equal(content.body[2].text, 'Is this still how it works?', "the person's note comes before the answer");
+  assert.match(content.body.find((b) => /^Sources:/.test(b.text)).text, /^Sources: \[VAX-21\]\(https:\/\/jira\.example\/browse\/VAX-21\) · \[frontend\/src\/app\/shared\/utils\/dates\.ts\]\(https:\/\/github\.example\/blob\/main\/dates\.ts\) · 6e8e6e1$/);
+  assert.deepEqual(content.actions.map((a) => a.title), ['Open VAX-21', 'Open dates.ts'], 'at most two buttons, for sources with a link; a file by its name');
+  assert.match(content.body.at(-1).text, /^Answered by Claude from the tickets, the code and the knowledge base; shared from Ask by a person\.$/);
+  assert.deepEqual([forTeam.channel, forTeam.card.mentioned], ['teams', undefined]);
+
+  const forPerson = await shareAnswer({ ...ANSWER, to: 'Irene Fabbri' });
+  content = sent.attachments[0].content;
+  assert.equal(content.body[0].text, 'For <at>Irene Fabbri</at>');
+  assert.equal(content.msteams.entities[0].mentioned.id, 'irene.fabbri@contoso.onmicrosoft.com');
+  assert.equal(forPerson.card.mentioned, true);
+  assert.ok(!JSON.stringify(forPerson.card).includes('contoso'), 'the card the dashboard keeps has no sign-in name');
 });

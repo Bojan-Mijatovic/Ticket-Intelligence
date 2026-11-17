@@ -31,6 +31,7 @@ import { waitUntilIdle } from './lib/replace.mjs';
 import { describeMergeCheck, mergeCheck, mergeCheckComment } from './lib/merge-check.mjs';
 import { ticketKeyQuestion, ticketStatus } from './lib/ticket-status.mjs';
 import { componentInQuestion, fastMore, ruleIntent } from './lib/ask-fast.mjs';
+import { actionsOn, faqRefusal, findAnswer, logAsk, maskAnswer, peopleFor, priorArtItem, recordAction, saveFaq, ticketDraft, viaText, voteOn } from './lib/ask-actions.mjs';
 import { readEvents } from './lib/git-graph.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
 import { createSuggested, readCreated, suggestTickets } from './lib/suggestions.mjs';
@@ -40,7 +41,7 @@ import { recordedAsks, recordedRuns, system1Privacy, system1Runs } from './lib/t
 import { attachMailUpdates } from './lib/mail-updates.mjs';
 import { loadProjects, peerCheckouts, teamOf } from './lib/projects.mjs';
 import { laneLayout } from './lib/graph-lanes.mjs';
-import { teamsInfo } from './lib/notify.mjs';
+import { shareAnswer, teamsInfo } from './lib/notify.mjs';
 import { impactOf } from './lib/impact.mjs';
 import { guardCommit } from './lib/regression-guard.mjs';
 import { askReporter, askReporterText, createSystem1, currentCheckpoint, describeAnswers, fastAnswer, intentQuestion, knownEntries, knownIssue, knownTestVerdict, missingInfo, nextIndex, questionsFor, stillNamesSomeone, system1Report } from './lib/system1.mjs';
@@ -674,7 +675,7 @@ const suggestionsOf = (p, data, review, refresh = false) =>
  */
 const heavyRuns = new Map();
 function runHeavy(job, key, extra = {}) {
-  const id = `${job}:${key}`;
+  const id = `${job}:${key}${extra.runId ? `:${extra.runId}` : ''}`; // runId: one prior-art check per draft
   if (heavyRuns.has(id)) return heavyRuns.get(id);
   const run = new Promise((resolveRun, rejectRun) => {
     const w = new Worker(new URL('./lib/heavy-worker.mjs', import.meta.url), { workerData: { job, key, agentDir: HERE, eventsDir: rootState, ...extra } });
@@ -703,6 +704,28 @@ async function insightsCached(p, refresh = false) {
   insightsCache.set(p.key, { at: Date.now(), data });
   return data;
 }
+// Ask 3/7: actions on an answer (lib/ask-actions.mjs).
+let savingFaq = false;
+let teamCache = null;
+/** The team (git authors, staff): who may be @mentioned, and whose names stay readable when an answer is masked. */
+function teamNames() {
+  if (!teamCache || Date.now() - teamCache.at > 600_000) teamCache = { at: Date.now(), names: teamOf(all.projects) };
+  return teamCache.names;
+}
+/** The recorded answer a request names (project and answerAt): the page sends which answer, never its text. */
+function answerOf(body) {
+  const p = readyProject(body);
+  const record = findAnswer(p.stateDir, String(body.answerAt ?? ''));
+  if (!record) throw Object.assign(new Error('this answer is not in the records (it was given before answers were kept): ask the question again'), { status: 404 });
+  return { p, record };
+}
+/** K19 for a draft that is not an Insights suggestion, in a worker: Jira (the Insights tickets), the knowledge base, open PRs. */
+async function priorArtOf(p, item, insights) {
+  const { data } = await runHeavy('prior-art', p.key, { item, tickets: insights?.tickets ?? [], runId: item.summary });
+  return data;
+}
+const askTime = (iso) => new Date(iso).toLocaleString('sv-SE', { hour12: false }).slice(0, 16);
+
 /** The insights for a fast Ask answer: the cached ones at any age (refreshed in the background when older than 2 min). */
 async function insightsForAsk(p) {
   const hit = insightsCache.get(p.key);
@@ -742,7 +765,7 @@ async function ticketStatusAnswer(key, question) {
   }
   const s = ticketStatus({ key, issue, events, prs, now: { processing: status.processing, queued: status.queue.map((q) => q.key) }, ticketUrl: (k) => jira.browseUrl(k) });
   const answer = { question, project: p.key, found: s.found, fast: true, via: 'records', intent: 'ticket', answer: s.answer, sources: s.sources, warnings: [], dropped: 0, closest: [], meta: { durationMs: Date.now() - started, costUsd: 0, model: "the agent's records" }, at: new Date().toISOString() };
-  appendFileSync(join(p.stateDir, 'asks.jsonl'), `${JSON.stringify({ at: answer.at, question, found: s.found, fast: true, intent: 'ticket', sources: s.sources.map((x) => x.ref), warnings: [], costUsd: 0, durationMs: answer.meta.durationMs })}\n`);
+  logAsk(p.stateDir, answer);
   return answer;
 }
 
@@ -801,7 +824,7 @@ async function askRouted(p, question, full) {
     ?? fastMore({ question, intent: routed.intent, component, insights, rules, files: routed.intent === 'where' ? await repoFiles(p) : [], ticketUrl: (k) => jira.browseUrl(k), fileUrl: (f) => (repo ? `https://github.com/${repo}/blob/main/${f}` : null) });
   if (!fast) return { routed };
   const answer = { ...fast, warnings: [], dropped: 0, closest: [], routed, meta: { durationMs: Date.now() - started, costUsd: 0, model: routed.via === 'rule' ? 'a rule and plain code' : `System 1 (${system1.model})` }, at: new Date().toISOString() };
-  appendFileSync(join(p.stateDir, 'asks.jsonl'), `${JSON.stringify({ at: answer.at, question, found: true, fast: true, intent: routed.intent, component, sources: answer.sources.map((s) => s.ref), warnings: [], costUsd: 0, durationMs: answer.meta.durationMs })}\n`);
+  logAsk(p.stateDir, answer);
   return answer;
 }
 
@@ -913,6 +936,8 @@ const server = createServer(async (req, res) => {
       reviewing && `AI review of ${reviewing}`,
       recommending && 'hotspot recommendations',
       mergingDocs && 'a documentation merge',
+      asking && 'an Ask question',
+      savingFaq && 'saving an Ask answer as an FAQ',
     ].filter(Boolean);
     return json(res, 200, { busy: what.length > 0, what, draining });
   }
@@ -923,7 +948,7 @@ const server = createServer(async (req, res) => {
     if (!draining) drain();
     return json(res, 200, { ok: true, draining });
   }
-  if (draining && req.method === 'POST' && ['/api/insights/review', '/api/insights/recommend', '/api/knowledge/merge', '/api/run'].includes(path)) {
+  if (draining && req.method === 'POST' && ['/api/insights/review', '/api/insights/recommend', '/api/knowledge/merge', '/api/run', '/api/ask', '/api/ask/faq'].includes(path)) {
     return json(res, 503, { ok: false, error: 'this watcher is about to be replaced by a newer one: try again in a minute' });
   }
   // Evidence screenshots: /evidence/<KEY>/before.png|after.png (only these names, only from the project's state/work).
@@ -1208,6 +1233,116 @@ const server = createServer(async (req, res) => {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     }
   }
+  // Ask 3/7: what was done with an answer, and whom it can go to in Teams.
+  if (req.method === 'GET' && path === '/api/ask/actions') {
+    try {
+      const q = queryOf(req);
+      const { p, record } = answerOf({ project: q.get('project'), answerAt: q.get('answerAt') });
+      const insights = record.component ? await insightsForAsk(p).catch(() => null) : null;
+      const done = actionsOn(p.stateDir, record.at);
+      return json(res, 200, {
+        people: peopleFor(record, { team: teamNames(), insights }),
+        teams: teamsInfo(),
+        done,
+        faq: { why: faqRefusal(record, voteOn(p.stateDir, record.at)) },
+      });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    }
+  }
+  // Ask 3/7: an answer to the Teams channel, as recorded and masked, for a person of the team when one is picked.
+  if (req.method === 'POST' && path === '/api/ask/share') {
+    try {
+      if ((policy.actions.shareAnswer ?? 'draft') === 'off') return json(res, 403, { ok: false, error: 'shareAnswer is "off" in policy.json' });
+      const body = await readBody(req);
+      const { p, record } = answerOf(body);
+      const team = teamNames();
+      const insights = record.component ? await insightsForAsk(p).catch(() => null) : null;
+      const to = body.to ? peopleFor(record, { team, insights }).find((x) => x.name === body.to)?.name ?? null : null;
+      if (body.to && !to) throw badRequest(`${body.to} is not one of the people of this answer`);
+      const before = actionsOn(p.stateDir, record.at).filter((a) => a.action === 'teams' && a.channel !== 'failed');
+      if (before.length && body.again !== true) return json(res, 409, { ok: false, already: true, error: `already shared on ${askTime(before.at(-1).at)}${before.at(-1).to ? ` for ${before.at(-1).to}` : ''}` });
+      const answer = maskAnswer(record.answer, team);
+      const n = await shareAnswer({ project: p.key, projectName: p.name, question: maskAnswer(record.question, team).text, answer: answer.text, sources: record.cited, how: viaText(record.via), to, note: maskAnswer(String(body.note ?? '').slice(0, 500), team).text });
+      recordAction(p.stateDir, { answerAt: record.at, action: 'teams', to, channel: n.channel, error: n.error ?? null, masked: answer.masked });
+      const where = n.channel === 'teams' ? 'posted to Teams' : n.channel === 'failed' ? 'NOT posted to Teams' : 'shared (simulated: no Teams webhook)';
+      events.emit('ask-shared', { project: p.key, text: `${p.key}: an Ask answer ${where}${to ? ` for ${to}` : ''}: ${record.question.slice(0, 120)}`, channel: n.channel, error: n.error ?? null, card: n.card });
+      if (n.channel === 'failed') return json(res, 502, { ok: false, error: n.error });
+      return json(res, 200, { ok: true, channel: n.channel, to, mentioned: n.card.mentioned === true, masked: answer.masked });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    }
+  }
+  // Ask 3/7: a Jira draft from an answer, checked against what the project already has (K19); a person edits it.
+  if (req.method === 'GET' && path === '/api/ask/ticket') {
+    try {
+      const q = queryOf(req);
+      const { p, record } = answerOf({ project: q.get('project'), answerAt: q.get('answerAt') });
+      const created = readCreated(p.stateDir)[`ask-${record.at}`] ?? null;
+      if (created) return json(res, 200, { created });
+      await health.require(); // the check compares with the tickets in Jira
+      const insights = await insightsForAsk(p);
+      const person = peopleFor(record, { team: teamNames(), insights })[0] ?? null;
+      const draft = ticketDraft(record, { person, time: askTime });
+      return json(res, 200, { draft: { ...draft, project: p.key, priorArt: await priorArtOf(p, priorArtItem(record, draft.summary), insights) }, created: null });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    }
+  }
+  // Ask 3/7: create that draft in Jira, after a person checked and confirmed it (policy createTicket, as for Insights).
+  if (req.method === 'POST' && path === '/api/ask/ticket') {
+    try {
+      if ((policy.actions.createTicket ?? 'draft') === 'off') return json(res, 403, { ok: false, error: 'createTicket is "off" in policy.json' });
+      const body = await readBody(req);
+      const { p, record } = answerOf(body);
+      await health.require();
+      const id = `ask-${record.at}`;
+      const already = readCreated(p.stateDir)[id];
+      if (already) return json(res, 409, { ok: false, error: `already created as ${already.key}` });
+      // Checked again live, on the summary the person wrote: Jira and the open PRs may have changed meanwhile.
+      const insights = await insightsCached(p, true);
+      const person = peopleFor(record, { team: teamNames(), insights })[0] ?? null;
+      const draft = ticketDraft(record, { person, time: askTime });
+      const summary = String(body.edits?.summary ?? draft.summary);
+      const priorArt = await priorArtOf(p, priorArtItem(record, summary), insights);
+      const reason = String(body.reason ?? '').trim();
+      if (priorArt.verdict !== 'new' && !reason) {
+        const what = { 'duplicate-of': `${priorArt.key} is open and says the same`, 'fixed-by': `${priorArt.key} fixed it`, 'in-progress': `pull request #${priorArt.pr} is changing the same files` }[priorArt.verdict] ?? priorArt.verdict;
+        return json(res, 409, { ok: false, error: `${what}; to create it anyway, give the reason`, priorArt });
+      }
+      insightsCache.delete(p.key);
+      const created = await createSuggested({ jira, project: p.key, stateDir: p.stateDir, suggestion: { ...draft, priorArt }, edits: body.edits ?? {}, assign: body.assign !== false, assigneeId: body.assigneeId, analyze: body.analyze === true, reason, labels: ['from-ask'] });
+      recordAction(p.stateDir, { answerAt: record.at, action: 'ticket', key: created.key, url: created.url });
+      events.emit('insights', { project: p.key, text: `${created.key} created from an Ask answer: ${created.summary}${created.assignee ? ` (assigned to ${created.assignee})` : ''}` });
+      return json(res, 200, { ok: true, ...created });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    }
+  }
+  // Ask 3/7 (K15): an answer rated right goes into docs/knowledge/faq.md through a documentation PR; merging stays a
+  // person's (policy promoteFaq: draft; mergeDocs for the merge).
+  if (req.method === 'POST' && path === '/api/ask/faq') {
+    if ((policy.actions.promoteFaq ?? 'draft') === 'off') return json(res, 403, { ok: false, error: 'promoteFaq is "off" in policy.json' });
+    if (savingFaq) return json(res, 409, { ok: false, error: 'another answer is being saved; try again in a moment' });
+    savingFaq = true;
+    try {
+      const body = await readBody(req);
+      const { p, record } = answerOf(body);
+      const why = faqRefusal(record, voteOn(p.stateDir, record.at));
+      if (why) return json(res, 409, { ok: false, error: `not saved as an FAQ: ${why}` });
+      const before = actionsOn(p.stateDir, record.at).find((a) => a.action === 'faq');
+      if (before) return json(res, 409, { ok: false, error: `already saved: PR #${before.number} (${before.url})` });
+      const r = await saveFaq({ repoDir: p.repoDir, workDir: join(p.stateDir, 'faq-work'), record, date: askTime(record.at), team: teamNames() });
+      recordAction(p.stateDir, { answerAt: record.at, action: 'faq', number: r.number, url: r.url, branch: r.branch, masked: r.masked });
+      knowledgeCache.delete(p.key);
+      events.emit('insights', { project: p.key, text: `${p.key}: an Ask answer saved as an FAQ ${r.created ? 'in a new documentation PR' : 'in the open FAQ PR'} #${r.number}: ${record.question.slice(0, 120)}`, url: r.url });
+      return json(res, 200, { ok: true, ...r });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: String(e.stderr || e.message).trim().split('\n')[0] });
+    } finally {
+      savingFaq = false;
+    }
+  }
   // Ask the knowledge base of one project (FR-65): one question at a time; progress goes to the dashboard stream.
   if (req.method === 'POST' && path === '/api/ask') {
     if (asking) return json(res, 409, { ok: false, error: 'another question is being answered; try again in a minute' });
@@ -1295,3 +1430,12 @@ await poll();
 setInterval(poll, cfg.pollSeconds * 1000);
 await checkMains();
 setInterval(checkMains, GUARD_SECONDS * 1000);
+// Ask's fast answers read the Insights data (insightsForAsk keeps it at any age). Built once in the background after a
+// start, one project at a time in a worker, so the first question after a restart does not wait for it: 52 s on
+// 2026-11-17, for "Which bugs did Scadenze have?".
+(async () => {
+  for (const p of all.projects.filter((x) => existsSync(x.repoDir))) {
+    if (draining) return;
+    if (!insightsCache.has(p.key)) await insightsCached(p).catch(() => {});
+  }
+})();

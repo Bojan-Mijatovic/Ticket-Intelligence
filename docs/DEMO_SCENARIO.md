@@ -165,6 +165,17 @@ The pilot's tickets so far: analysis in about a minute, the Teams message right 
 
 On stage, with **Run ticket**, both cards come about a minute sooner.
 
+**While the fix runs (optional, 2 minutes): Ask.** The minutes between the first card and the PR can show the Ask tab on MediVax. None of it touches the ticket on stage:
+
+| Presenter types or clicks | Audience sees | Talking point |
+|---|---|---|
+| the new ticket's key alone | in about a second: what happened so far and **Now**: what waits, for whom (a chip "from the agent's records · no AI") | "The first question support asks: where is my ticket. No model, no cost." |
+| "Which bugs did Scadenze have?" | the component's bugs newest first, what was fixed twice, what came back, who knows it, in under a second ("plain code · no AI") | "Most questions are answered by plain code; Claude only gets the rest." |
+| **Send to Teams…** on that answer, for the channel | the card in `support-triage`, with the sources as links | "An answer is something you pass on, not a chat you copy from." |
+| **Create a ticket…** (not created) | the draft with the question, the answer, the sources and **Before you create**: what Jira already has | "Every new ticket is checked against what we already know." |
+
+**Save as FAQ** needs a Claude answer and a 👍; MediVax PR #14 is the first one, to show instead of saving a new one on stage.
+
 ### If something goes wrong
 
 | Problem | Fallback |

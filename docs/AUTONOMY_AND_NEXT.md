@@ -58,6 +58,7 @@ Seven places call a model. Everything else, including every decision about what 
 | **AI review** of the PR | after a draft PR | yes (read-only, no shell) | COMMENT review with risk and inline findings | never approves or merges |
 | **Document** a resolved ticket | ticket → Done (also bugs fixed without the agent) | yes (writes `docs/knowledge` only, lint-checked) | branch + **draft** PR, Jira comment, label | **merge from the dashboard** (`mergeDocs: draft`) |
 | **Ask** | a question on the dashboard | yes (read-only, no shell) | answer with checked sources | none (it only answers) |
+| Ask actions (Ask 3/7) | a person, under an answer | no (plain code on the recorded answer) | — | **every one is a person's click**: Send to Teams (`shareAnswer: draft`), Create a ticket (`createTicket: draft`), Save as FAQ after 👍 → a draft documentation PR (`promoteFaq: draft`) |
 | **App review** / recommendations | a button | yes (read-only) | findings, refactors, ways to grow → suggested tickets | **creating a ticket** (`createTicket: draft`) |
 | Prior art of suggestions, gaps, Insights, refresh, backfill selection, redaction, lint | page load or command | no | — | — |
 
@@ -67,7 +68,7 @@ In autonomy levels:
 |---|---|---|
 | L3: acts, a person approves the result | does the work, a person merges | fix PRs, documentation PRs |
 | L2: acts and reports | does it and tells | analysis comment, labels, owner notice, AI review, update emails, documenting on Done |
-| L1: drafts, a person sends | prepares, a person decides | reporter reply, assignee, ticket from a suggestion |
+| L1: drafts, a person sends | prepares, a person decides | reporter reply, assignee, ticket from a suggestion or an Ask answer, an answer to Teams, an FAQ PR |
 | L0: never | not allowed | change priority or status, merge a fix |
 
 ## 3. What makes it more than an app

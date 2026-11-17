@@ -234,8 +234,9 @@ Phase 0 sets the baseline. Phases 1–4 then change **one lever at a time**, re-
 - When two or more entries share a root cause (the lint and the recurrence links show it), the documentation run proposes a line for a **Known pitfalls** section of the app's `CLAUDE.md` / `.github/copilot-instructions.md`, in the same documentation PR, for a person to accept.
 - **Acceptance:** a draft line appears in the PR, never committed to `main` without review.
 
-**K15. A good answer becomes an FAQ entry** · 0.5 d · later
+**K15. A good answer becomes an FAQ entry** · 0.5 d · **done 2026-11-17** (Ask 3/7)
 - An answer with 👍 can be promoted (button, `policy.json` → `promoteFaq: draft`) to `docs/knowledge/faq.md` (question, answer, sources) through a documentation PR. Only after K12 shows which questions repeat.
+- **As built** (`agent/lib/ask-actions.mjs`, FR-91): **Save as FAQ** appears after 👍, only on an answer Claude gave from sources; a fast answer (status, history, who, where) is computed again from fresh data, so a saved copy would only go stale. Built before K12 showed repeats, because the button is a person's choice per answer, not a batch. The entry is a `## question` with **Asked**, **Answer** and **Sources** fields; it has no ticket key, so the entry rules of the lint do not apply to it, and the file rules (personal data, names outside the team) do. The answer is masked as for the analysis, the lint runs before the push, and a statement about a PR's state is refused. The first FAQ PR opens on `docs/faq-<date>`; while it is open, the next saved answers are added to it, so FAQ PRs never conflict with each other. Merged by a person like any documentation PR (`mergeDocs`). First one: MediVax PR #14.
 
 ### Phase 5: prior art before a new ticket
 

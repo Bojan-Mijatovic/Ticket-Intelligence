@@ -19,9 +19,12 @@
     "documentOnDone": "auto",
     "mergeDocs": "draft",
     "emailUpdates": "auto",
-    "createTicket": "draft"
+    "createTicket": "draft",
+    "shareAnswer": "draft",
+    "promoteFaq": "draft"
   },
   "_createTicketComment": "createTicket = tickets suggested on the Insights tab (from the AI review and the facts). 'draft' = shown with a Create in Jira button: a person checks and edits the ticket, then confirms; 'off' = shown only as suggestions. Never 'auto'.",
+  "_askActionsComment": "Ask 3/7: actions under an Ask answer, each started by a person, each on the answer as the agent recorded it (never text the page sends). shareAnswer = Send to Teams: the answer, masked like the analysis (R-02), with its sources, for a person of the team the answer names or who knows its component (@mentioned). promoteFaq = Save as FAQ (K15): an answer Claude gave from the sources and a person rated right goes into docs/knowledge/faq.md through a documentation PR; the open FAQ PR collects the next ones until a person merges it (mergeDocs). Create ticket uses createTicket. draft = the button is there; off = it is not. Never auto.",
   "system1": {
     "intake": "shadow",
     "lightPath": "shadow",
