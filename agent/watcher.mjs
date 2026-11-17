@@ -443,6 +443,69 @@ async function decideHeld(key, action) {
   return { triaged: true };
 }
 
+// ---------------------------------------------------------------- documentation PRs (K2, K22, mergeDocs)
+
+/**
+ * One documentation PR merged into main, in a worker (gh and git are synchronous): by a person's Merge on the
+ * dashboard, or by mergeDocs: auto (`auto`: its age in hours). A PR in conflict with main is brought up to date entry
+ * by entry and linted first (K22). Then the event and a Jira comment on its ticket.
+ */
+async function mergeDocsPr(p, number, { auto = null } = {}) {
+  const { data: m } = await runHeavy('docs-merge', p.key, { number, runId: String(number) });
+  knowledgeCache.delete(p.key);
+  const how = [auto != null && `automatically, ${auto} h after it was opened`, m.reopened && 'the closed PR was reopened', m.mergedFiles?.length && `brought up to date with main first, ${m.mergedFiles.length} knowledge file(s) merged entry by entry`].filter(Boolean).join('; ');
+  const text = `documentation merged into main${how ? ` (${how})` : ''}: PR #${m.number}`;
+  // A backfill PR (docs/backfill-…) covers several tickets: one event without a ticket; its tickets were told about it
+  // when it was opened.
+  events.emit('docs-merged', m.key ? { key: m.key, text, url: m.url } : { text: `${p.key}: ${text} (${m.branch})`, url: m.url });
+  // Best effort: the ticket may be gone (a demo reset) or Jira unavailable; the merge stands either way.
+  if (m.key) {
+    try {
+      await jira.comment(m.key, `(robot) *Knowledge base* — the documentation of this ticket is merged into main${auto != null ? ` automatically, ${auto} h after its PR was opened with no hold on it` : ''}: [PR #${m.number}|${m.url}]. The analysis and Ask read it from now on.`);
+    } catch (e) {
+      events.emit('error', { text: `${m.key}: Jira comment after the documentation merge skipped: ${e.message.split('\n')[0]}` });
+    }
+  }
+  return m;
+}
+
+/**
+ * mergeDocs: auto. Every 10 minutes, when the agent is idle: an open documentation PR that changes only
+ * docs/knowledge/*.md, opened mergeDocsAfterHours ago or more (24), with no review asking for changes and no label
+ * hold / no-auto-merge / do-not-merge, is merged (mergeDocsPr). One that fails is left for a person and not tried
+ * again by this watcher.
+ */
+const docsAutoFailed = new Set();
+let lastDocsAuto = 0;
+const HOLD_LABEL = /^(hold|no-auto-merge|do-not-merge)$/i;
+async function autoMergeDocs() {
+  if ((policy.actions.mergeDocs ?? 'draft') !== 'auto' || mergingDocs || draining || status.processing || status.queue.length || Date.now() - lastDocsAuto < 10 * 60_000) return;
+  lastDocsAuto = Date.now();
+  const after = Number(policy.mergeDocsAfterHours ?? 24);
+  for (const p of all.projects.filter((x) => existsSync(x.repoDir))) {
+    let list;
+    try {
+      list = (await runHeavy('knowledge', p.key)).data;
+    } catch {
+      continue;
+    }
+    const due = (list.prs ?? []).filter((x) => x.state !== 'closed' && x.mergeable && x.ageHours >= after && !x.changesRequested && !(x.labels ?? []).some((l) => HOLD_LABEL.test(l)) && !docsAutoFailed.has(`${p.key}#${x.number}`));
+    for (const pr of due.sort((a, b) => a.number - b.number)) {
+      if (mergingDocs || draining || status.processing) return;
+      mergingDocs = true;
+      try {
+        await mergeDocsPr(p, pr.number, { auto: pr.ageHours });
+      } catch (e) {
+        docsAutoFailed.add(`${p.key}#${pr.number}`);
+        events.emit('error', { ...(pr.key ? { key: pr.key } : {}), text: `${p.key}: documentation PR #${pr.number} not merged automatically, left for a person: ${String(e.message).split('\n')[0]}`, url: pr.url });
+      } finally {
+        mergingDocs = false;
+      }
+    }
+  }
+}
+setInterval(() => autoMergeDocs().catch((e) => events.emit('error', { text: `automatic documentation merge: ${e.message}` })), 60_000).unref();
+
 // ---------------------------------------------------------------- waiting for the reporter (J7 and J2 in auto)
 // lib/reporter-wait.mjs: a ticket asked about waits for the reporter's answer (or askReporterWaitHours); a ticket on
 // the light path is watched for lightPathWatchDays: a reply gets the full analysis, a fix or a commit naming it is a
@@ -1631,7 +1694,7 @@ const server = createServer(async (req, res) => {
       } catch {
         /* not run yet */
       }
-      return json(res, 200, { project: p.key, ...data, tests, mergeDocs: policy.actions.mergeDocs ?? 'draft' });
+      return json(res, 200, { project: p.key, ...data, tests, mergeDocs: policy.actions.mergeDocs ?? 'draft', mergeDocsAfterHours: Number(policy.mergeDocsAfterHours ?? 24) });
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     }
@@ -1646,20 +1709,7 @@ const server = createServer(async (req, res) => {
       const p = readyProject(body);
       const number = Number(body.number);
       if (!Number.isInteger(number) || number < 1) throw badRequest('which pull request? (number)');
-      const m = await createDocsPrs({ repoDir: p.repoDir }).merge(number);
-      knowledgeCache.delete(p.key);
-      const text = `documentation merged into main${m.reopened ? ' (the closed PR was reopened)' : ''}: PR #${m.number}`;
-      // A backfill PR (docs/backfill-…) covers several tickets: one event without a ticket; its tickets were told
-      // about it when it was opened.
-      events.emit('docs-merged', m.key ? { key: m.key, text, url: m.url } : { text: `${p.key}: ${text} (${m.branch})`, url: m.url });
-      // Best effort: the ticket may be gone (a demo reset) or Jira unavailable; the merge stands either way.
-      if (m.key) {
-        try {
-          await jira.comment(m.key, `(robot) *Knowledge base* — the documentation of this ticket is merged into main: [PR #${m.number}|${m.url}]. The analysis and Ask read it from now on.`);
-        } catch (e) {
-          events.emit('error', { text: `${m.key}: Jira comment after the documentation merge skipped: ${e.message.split('\n')[0]}` });
-        }
-      }
+      const m = await mergeDocsPr(p, number);
       return json(res, 200, { ok: true, project: p.key, ...m });
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });

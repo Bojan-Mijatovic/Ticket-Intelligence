@@ -17,7 +17,7 @@
     "mergeFix": "off",
     "reviewFix": "auto",
     "documentOnDone": "auto",
-    "mergeDocs": "draft",
+    "mergeDocs": "auto",
     "emailUpdates": "auto",
     "createTicket": "draft",
     "shareAnswer": "draft",
@@ -93,5 +93,6 @@
   "_reviewComment": "reviewFix = after a draft PR is opened, a second read-only agent reviews it and posts a COMMENT review with a risk level (it never approves or merges).",
   "_emailComment": "emailUpdates = mail a status update to MAIL_TO (per-user .env) at each milestone listed in agent.config.json mail.on (analysis ready, draft fix PR, fix stopped, AI review, documentation PR, failures). Needs SMTP_* settings; without them it is off and the watcher says why at start.",
   "_documentComment": "documentOnDone = when a ticket the agent analyzed moves to Done, write docs/knowledge on branch docs/<KEY> and open a DRAFT pull request.",
-  "_mergeDocsComment": "mergeDocs = the documentation PRs on the Insights tab (Knowledge base). 'draft' = a Merge button; a person confirms each merge. 'off' = listed only. Only a docs/ branch that changes nothing but docs/knowledge/*.md can be merged from there. 'auto' is not used (decision 1 of docs/KNOWLEDGE_PLAN.md: a person merges until the knowledge lint has run for a few weeks without a miss) and behaves like 'draft'."
+  "mergeDocsAfterHours": 24,
+  "_mergeDocsComment": "mergeDocs = the documentation PRs on the Insights tab (Knowledge base). 'auto' (since 2026-11-17) = the agent merges an open one itself, every 10 minutes when it is idle, once it has been open mergeDocsAfterHours (24) with no review asking for changes and no label hold / no-auto-merge / do-not-merge; a person may still merge earlier with the Merge button. 'draft' = a Merge button only; a person confirms each merge. 'off' = listed only. Only a docs/ branch that changes nothing but docs/knowledge/*.md is merged. A PR in conflict with main (another documentation PR merged first) is brought up to date entry by entry and linted before it is merged (K22, lib/knowledge-merge.mjs); what cannot be placed, or a lint finding, leaves it for a person. Decision 1 of docs/KNOWLEDGE_PLAN.md waited for weeks of the lint without a miss; the owner asked for auto earlier, and the 24 hours, the hold label, the review and the lint on every merge stand in for that wait."
 }

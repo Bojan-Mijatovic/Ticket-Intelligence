@@ -1167,7 +1167,7 @@ function knowledgeTestsBlock(t, p) {
 
 function renderKnowledgeBase(d, p) {
   const on = d.onMain;
-  $('#ins-docs-state').textContent = on ? `on main: ${on.entries} documented ticket${on.entries === 1 ? '' : 's'} in ${on.files} file${on.files === 1 ? '' : 's'}` : '';
+  $('#ins-docs-state').textContent = (on ? `on main: ${on.entries} documented ticket${on.entries === 1 ? '' : 's'} in ${on.files} file${on.files === 1 ? '' : 's'}` : '') + (d.mergeDocs === 'auto' ? ` · merged automatically ${d.mergeDocsAfterHours} h after they are opened, unless a review asks for changes or the PR has the label hold` : '');
   if (d.error) { $('#ins-docs').replaceChildren(h('div', { class: 'empty' }, d.error)); return; }
   const canMerge = d.mergeDocs !== 'off';
   const testsBlock = knowledgeTestsBlock(d.tests, p);

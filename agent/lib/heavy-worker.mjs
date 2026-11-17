@@ -13,21 +13,28 @@ import { loadGraph, readSuitePullRequests } from './git-graph.mjs';
 import { buildInsights, savedAnalyses } from './insights.mjs';
 import { createJira } from './jira-actions.mjs';
 import { codeVerdict, loadPriorArtSources, priorArtCandidates } from './prior-art.mjs';
-import { loadProjects } from './projects.mjs';
+import { lintKnowledge } from './knowledge.mjs';
+import { loadProjects, teamOf } from './projects.mjs';
 import { readReplays } from './replay.mjs';
 
 /**
- * @param {'insights'|'graph'|'knowledge'|'prior-art'} job
+ * @param {'insights'|'graph'|'knowledge'|'docs-merge'|'prior-art'} job
  * @param {string} key          the project
  * @param {Map} [suitePrs]      the suite's pull requests, when the watcher has them fresh; read here otherwise and
  *                              sent back for the next project
  * @param {object} [item]       prior-art: what to check (ask-actions.mjs priorArtItem), against `tickets` (Insights)
  */
-export async function heavyJob({ job, agentDir, key, eventsDir, suitePrs = null, item = null, tickets = [] }) {
+export async function heavyJob({ job, agentDir, key, eventsDir, suitePrs = null, item = null, tickets = [], number = null }) {
   const all = loadProjects(agentDir);
   const p = all.byKey(key);
   if (!p) throw new Error(`no project ${key}`);
   if (job === 'knowledge') return { data: await createDocsPrs({ repoDir: p.repoDir }).list() };
+  // One documentation PR merged (a person's Merge, or mergeDocs: auto); one in conflict with main is brought up to date
+  // entry by entry first (K22) and linted (K5) before it is pushed.
+  if (job === 'docs-merge') {
+    const lint = (files, o) => lintKnowledge(files, { ...o, projects: all.projects.map((x) => x.key), team: teamOf(all.projects) });
+    return { data: await createDocsPrs({ repoDir: p.repoDir, lint }).merge(number) };
+  }
   // K19 for a draft that is not an Insights suggestion (an Ask answer, Ask 3/7): git log, the knowledge base on main and
   // gh pr list, a few seconds.
   if (job === 'prior-art') {

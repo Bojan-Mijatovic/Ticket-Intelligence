@@ -91,5 +91,5 @@ Likelihood and impact: L = low, M = medium, H = high.
 | The watcher answered a status in up to 3.6 s on a busy machine, and the pilot took it for dead | app branches read from the HEAD files instead of five git processes per request (7 ms) |
 | A restart in the middle of a job killed it; the first fix of that dropped a job too (a closed keep-alive connection read as "an older watcher") | `--replace` drains and waits; a failed request is asked again, only a 404 means an older watcher |
 | A fix stopped on EBUSY: killing the shell left the real process holding the worktree (VAX-17) | `killTree` ends the whole process tree; the worktree removal retries |
-| Several documentation PRs from the same main conflict | resolved by hand, entry by entry, then linted; automation planned (KNOWLEDGE_PLAN K22) |
+| Several documentation PRs from the same main conflict | merged entry by entry and linted automatically since 2026-11-17 (KNOWLEDGE_PLAN K22); what cannot be placed is left for a person |
 | The agent stopped a right fix because an existing test asserted the bug (LAB-24) | fixed by hand with the test updated (MediLab #8); the analysis should list such tests in `supersedes` (AGENT_TRAINING) |

@@ -82,5 +82,5 @@ test('merge refuses: code changes, a fix branch, a merged PR, a closed one witho
   await refused(pr({ state: 'CLOSED' }), { branches: [] });
   assert.match(refused.last, /branch docs\/LAB-23 is gone/);
   await refused(pr({}), { mergeFails: true });
-  assert.match(refused.last, /GitHub did not merge PR #3: Pull request is not mergeable/);
+  assert.match(refused.last, /PR #3 conflicts with main and was left for a person: bringing it up to date failed/, 'K22 tried, here without a repository');
 });

@@ -7,9 +7,13 @@
 // hand) is listed too: the knowledge is still there, and it can be reopened and merged.
 
 import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { mergeKnowledgeText } from './knowledge-merge.mjs';
 
 export const DOCS_DIR = 'docs/knowledge/';
-const FIELDS = 'number,title,url,state,isDraft,createdAt,closedAt,mergedAt,headRefName,files';
+const FIELDS = 'number,title,url,state,isDraft,createdAt,closedAt,mergedAt,headRefName,files,labels,reviewDecision';
 
 /** docs/DEM-5 → DEM-5; docs/backfill-… (several tickets, K4) → null. */
 export const ticketOfBranch = (branch) => (/^docs\/[A-Z][A-Z0-9_]+-\d+$/.test(branch) ? branch.slice(5) : null);
@@ -37,6 +41,9 @@ export function classifyDocsPrs(prs, branches, now = Date.now()) {
         url: p.url,
         state: p.state === 'OPEN' ? (p.isDraft ? 'draft' : 'open') : 'closed',
         ageDays: Math.floor((now - Date.parse(p.createdAt)) / 864e5),
+        ageHours: Math.floor((now - Date.parse(p.createdAt)) / 36e5),
+        labels: (p.labels ?? []).map((l) => l.name ?? l),
+        changesRequested: p.reviewDecision === 'CHANGES_REQUESTED',
         closedAt: p.closedAt ?? null,
         files,
         mergeable: safe,
@@ -56,7 +63,12 @@ export function entryKeys(text) {
  * @param {string} p.repoDir  the app's clone
  * @param {(cmd: string, args: string[], opts?: object) => string} [p.sh]
  */
-export function createDocsPrs({ repoDir, sh = (cmd, args) => execFileSync(cmd, args, { cwd: repoDir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 }).trim() }) {
+/**
+ * @param {(files: {file, text}[], o: { commitExists, testFileExists }) => object[]} [p.lint]  the knowledge lint (K5)
+ *   for a branch brought up to date with main (K22); its findings stop the merge
+ * @param {number} [p.wait]  ms between GitHub's merge attempts after the branch was brought up to date
+ */
+export function createDocsPrs({ repoDir, lint = null, wait = 3000, sh = (cmd, args) => execFileSync(cmd, args, { cwd: repoDir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 }).trim() }) {
   const slug = () => sh('git', ['remote', 'get-url', 'origin']).match(/github\.com[/:]([^/]+)\/([^/.\s]+)/)?.slice(1, 3).join('/') ?? null;
   const remoteDocsBranches = () => new Set(sh('git', ['ls-remote', '--heads', 'origin', 'docs/*']).split('\n').filter(Boolean).map((l) => l.split('refs/heads/')[1]));
 
@@ -100,11 +112,29 @@ export function createDocsPrs({ repoDir, sh = (cmd, args) => execFileSync(cmd, a
       reopened = true;
     }
     if (pr.isDraft) sh('gh', ['pr', 'ready', String(number), '--repo', repo]);
+    const ghMerge = () => sh('gh', ['pr', 'merge', String(number), '--repo', repo, '--squash', '--delete-branch']);
+    let upToDate = null;
     try {
-      sh('gh', ['pr', 'merge', String(number), '--repo', repo, '--squash', '--delete-branch']);
+      ghMerge();
     } catch (e) {
-      // Usually a conflict in the README index with another documentation PR merged meanwhile.
-      throw Object.assign(new Error(`GitHub did not merge PR #${number}: ${String(e.stderr || e.message).trim().split('\n')[0]}`), { status: 409 });
+      const why = String(e.stderr || e.message).trim().split('\n')[0];
+      if (!/not mergeable|conflict/i.test(why)) throw Object.assign(new Error(`GitHub did not merge PR #${number}: ${why}`), { status: 409 });
+      // K22: another documentation PR merged meanwhile; its entries and this one's are merged file by file.
+      try {
+        upToDate = bringUpToDate(pr.headRefName);
+      } catch (err) {
+        upToDate = { conflict: `bringing it up to date failed: ${String(err.stderr || err.message).trim().split('\n')[0]}` };
+      }
+      if (upToDate.conflict) throw Object.assign(new Error(`PR #${number} conflicts with main and was left for a person: ${upToDate.conflict}`), { status: 409 });
+      for (let attempt = 1; ; attempt++) {
+        await new Promise((r) => setTimeout(r, wait)); // GitHub works out the new head's mergeability
+        try {
+          ghMerge();
+          break;
+        } catch (again) {
+          if (attempt >= 5) throw Object.assign(new Error(`GitHub did not merge PR #${number} after it was brought up to date: ${String(again.stderr || again.message).trim().split('\n')[0]}`), { status: 409 });
+        }
+      }
     }
     sh('git', ['fetch', '-q', '--prune', 'origin']);
     try {
@@ -113,7 +143,64 @@ export function createDocsPrs({ repoDir, sh = (cmd, args) => execFileSync(cmd, a
     } catch {
       /* none */
     }
-    return { number, key: ticketOfBranch(pr.headRefName), branch: pr.headRefName, url: pr.url, reopened };
+    return { number, key: ticketOfBranch(pr.headRefName), branch: pr.headRefName, url: pr.url, reopened, ...(upToDate ? { mergedFiles: upToDate.files } : {}) };
+  }
+
+  /**
+   * K22: main merged into a documentation branch in a throwaway worktree, each conflicting knowledge file merged entry
+   * by entry (knowledge-merge.mjs), the knowledge linted (`lint`), then pushed to the branch. { files } or { conflict }.
+   */
+  function bringUpToDate(branch) {
+    const wt = join(tmpdir(), `docs-merge-${process.pid}-${Date.now()}`);
+    sh('git', ['fetch', '-q', 'origin']);
+    sh('git', ['worktree', 'add', '-q', '--detach', wt, `origin/${branch}`]);
+    const g = (args) => execFileSync('git', args, { cwd: wt, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 32 * 1024 * 1024, timeout: 120_000 });
+    try {
+      try {
+        g(['merge', '--no-ff', '--no-commit', 'origin/main']);
+      } catch {
+        /* conflicts: below */
+      }
+      const conflicted = g(['diff', '--name-only', '--diff-filter=U']).split('\n').filter(Boolean);
+      for (const f of conflicted) {
+        if (!(f.startsWith(DOCS_DIR) && f.endsWith('.md'))) return { conflict: `${f} is not a knowledge file` };
+        const stage = (n) => {
+          try {
+            return g(['show', `:${n}:${f}`]);
+          } catch {
+            return null; // added on both sides: no base
+          }
+        };
+        const r = mergeKnowledgeText(f, { base: stage(1), main: stage(3), branch: stage(2) });
+        if (r.conflict) return { conflict: r.conflict };
+        writeFileSync(join(wt, f), r.text);
+        g(['add', '--', f]);
+      }
+      if (lint) {
+        const names = g(['ls-files', '--', DOCS_DIR]).split('\n').filter((f) => f.endsWith('.md'));
+        const files = names.map((file) => ({ file, text: readFileSync(join(wt, file), 'utf8') }));
+        const commitExists = (h) => {
+          try {
+            g(['cat-file', '-e', `${h}^{commit}`]);
+            return true;
+          } catch {
+            return false;
+          }
+        };
+        const findings = lint(files, { commitExists, testFileExists: (f) => existsSync(join(wt, f)) });
+        if (findings.length) return { conflict: `the knowledge lint after the merge: ${findings.slice(0, 3).map((x) => `${x.file}${x.key ? ` ${x.key}` : ''}: ${x.message ?? x.rule ?? 'finding'}`).join('; ')}` };
+      }
+      g(['commit', '-q', '--no-edit', '-m', `Merge main into ${branch}: the knowledge entries of both kept (K22)`]);
+      g(['push', '-q', 'origin', `HEAD:refs/heads/${branch}`]);
+      return { files: conflicted };
+    } finally {
+      try {
+        sh('git', ['worktree', 'remove', '--force', wt]);
+      } catch {
+        rmSync(wt, { recursive: true, force: true });
+        sh('git', ['worktree', 'prune']);
+      }
+    }
   }
 
   return { list, merge };
