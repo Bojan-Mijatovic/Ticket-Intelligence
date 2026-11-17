@@ -57,6 +57,7 @@ export function askRecord(answer, extra = {}) {
     ...(answer.followUp?.at ? { followUp: answer.followUp.at } : {}), // Ask 4/7: the answer this question followed
     ...(answer.main ? { main: answer.main } : {}), // Ask 6/7: the commit of main the answer was read on
     ...(answer.cachedFrom?.at ? { cachedFrom: answer.cachedFrom.at } : {}), // Ask 6/7: given again from that answer
+    ...(answer.origin ? { origin: answer.origin } : {}), // ROADMAP #9: 'teams' for a question asked in the channel
     ...extra,
   };
 }
@@ -114,6 +115,7 @@ export function askHistory(stateDir, { limit = 50 } = {}) {
     warnings: (r.warnings ?? []).map((text) => ({ text })),
     followUp: r.followUp ? { at: r.followUp, question: byAt.get(r.followUp)?.question ?? '(an earlier question)' } : null,
     cachedFrom: r.cachedFrom ? { at: r.cachedFrom } : null,
+    origin: r.origin ?? null, // 'teams' when it was asked in the channel (ROADMAP #9)
     vote: votes.get(r.at) ?? null,
     done: done.get(r.at) ?? [],
     meta: { costUsd: r.costUsd ?? 0, durationMs: r.durationMs ?? null },

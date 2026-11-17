@@ -192,8 +192,9 @@ export function checkSources(sources, { tickets, analyses, log, peerLogs = {}, r
  * @param {object[]} [p.previous]  Ask 4/7: the conversation a follow-up continues, oldest first (ask-actions.mjs
  *   followUpChain): its words and cited tickets are searched too, and the run reads it as context, not as a source
  * @param {string} [p.hint]  Ask 5/7: the code trace of a page or API path the question names (page-code.mjs)
+ * @param {string} [p.origin]  where the question came from ('teams', ROADMAP #9), kept in the record
  */
-export async function askQuestion({ question, repoDir, stateDir, logDir = stateDir, cfg, jira, project = null, peers = [], previous = [], hint = null, onProgress = () => {} }) {
+export async function askQuestion({ question, repoDir, stateDir, logDir = stateDir, cfg, jira, project = null, peers = [], previous = [], hint = null, origin = null, onProgress = () => {} }) {
   project ??= { key: cfg.project, name: cfg.name ?? cfg.project };
   const q = String(question ?? '').trim();
   if (q.length < 3) throw Object.assign(new Error('the question is empty'), { status: 400 });
@@ -258,6 +259,7 @@ export async function askQuestion({ question, repoDir, stateDir, logDir = stateD
     at: new Date().toISOString(),
     ...(last ? { followUp: { at: last.at, question: last.question } } : {}),
     ...(main ? { main } : {}),
+    ...(origin ? { origin } : {}),
   }, data.warnings);
   writeFileSync(join(dir, 'answer.json'), JSON.stringify(answer, null, 2));
   // Audit trail, local only (agent/state is not committed); since Ask 3/7 with the answer, which its actions start from.

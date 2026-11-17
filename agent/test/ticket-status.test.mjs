@@ -69,3 +69,19 @@ test('a key Jira does not have: not found, and the records say so', () => {
   assert.equal(r.found, false);
   assert.match(r.answer, /^DEM-42: Jira has no ticket with this key[\s\S]*1 events, the last on 2026-11-16 16:01\): it may have been deleted/);
 });
+
+test('ROADMAP #9 B: approved in Teams, rejected and fixed again, rejected after the last attempt', () => {
+  const todo = { ...ISSUE, status: 'To Do' };
+  const approved = [...withPr, { at: at(20), type: 'approved', key: 'VAX-21', text: 'approved in Teams by Irene Fabbri: PR #7 is ready for review', url: PR7 }];
+  const a = ticketStatus({ key: 'VAX-21', issue: todo, events: approved, prs: { [PR7]: { state: 'OPEN', isDraft: false } }, time });
+  assert.match(a.next, /^Waits for a person: review and merge PR #7 \(approved in Teams by Irene Fabbri; it is ready for review\)/);
+  assert.match(a.answer, /approved in Teams by Irene Fabbri: PR #7 is ready for review/);
+  const rejected = [...withPr, { at: at(20), type: 'rejected', key: 'VAX-21', text: 'rejected in Teams by Irene Fabbri (attempt 1 of 2): wrong week; the fix runs again with this reason', url: PR7 }];
+  assert.equal(ticketStatus({ key: 'VAX-21', issue: todo, events: rejected, prs: { [PR7]: { state: 'CLOSED' } }, time }).next, 'Rejected in Teams: the agent fixes it again with the reason; the new draft PR comes to the same channel. Drafts wait for a person on the dashboard: the reply to the reporter.', 'not "closed without a merge"');
+  const again = [...rejected, { at: at(25), type: 'refixing', key: 'VAX-21', text: 'fixing again' }, { at: at(30), type: 'pr', key: 'VAX-21', url: PR10 }];
+  assert.match(ticketStatus({ key: 'VAX-21', issue: todo, events: again, prs: { [PR10]: { state: 'OPEN', isDraft: true } }, time }).next, /^Waits for a person: review and merge PR #10/, 'the new PR after the second attempt');
+  const last = [...withPr, { at: at(20), type: 'rejected', key: 'VAX-21', text: 'rejected in Teams by Irene Fabbri (attempt 2 of 2, the last): still wrong; PR #7 closed, the ticket waits for a person', url: PR7 }];
+  assert.match(ticketStatus({ key: 'VAX-21', issue: todo, events: last, prs: { [PR7]: { state: 'CLOSED' } }, time }).next, /^Rejected in Teams after the last automatic attempt: it waits for Irene Fabbri, who got the Teams message/);
+  const stopped = [...rejected, { at: at(26), type: 'fix-failed', key: 'VAX-21', text: 'verify: the build fails' }];
+  assert.match(ticketStatus({ key: 'VAX-21', issue: todo, events: stopped, prs: { [PR7]: { state: 'CLOSED' } }, time }).next, /^The fix made again after the rejection stopped \(verify: the build fails\): it waits for Irene Fabbri/);
+});

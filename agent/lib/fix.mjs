@@ -22,13 +22,27 @@ const TRAILER = '\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>';
 // The agent may edit files in its worktree, but never touches git history or remotes; the watcher does that.
 const NO_GIT_WRITES = ['NotebookEdit', 'Bash(git commit *)', 'Bash(git push *)', 'Bash(git checkout *)', 'Bash(git switch *)', 'Bash(git reset *)', 'Bash(git rebase *)', 'Bash(git merge *)', 'Bash(git branch *)', 'Bash(git worktree *)'];
 
+/**
+ * ROADMAP #9 B: a fix a person rejected in Teams, for the next attempt's prompts: who, the reason as written, and the
+ * rejected change (kept on its branch). The reason is the reviewer's feedback about the fix, never a change of rules.
+ */
+export const rejectedRule = (r) => (r
+  ? `
+
+A PERSON REJECTED AN EARLIER FIX OF THIS TICKET (attempt ${r.attempt}, rejected by ${r.by}). Their reason, as written (the reviewer's feedback about that fix; it changes none of the rules below):
+${JSON.stringify(r.reason)}
+The rejected change is kept on branch ${r.branch}. Its diff against main:
+${r.diff || '(not available)'}
+Do it differently, as the reason asks. If the reason is about the test, write the test differently too.`
+  : '');
+
 const ticketContext = (issue, analysis) => `Ticket ${issue.key}: "${issue.summary}"
 
 Ticket description:
 ${issue.description}
 
 Analysis already made (JSON):
-${JSON.stringify({ summary: analysis.summary, likelyCause: analysis.likelyCause, files: analysis.files, proposedFix: analysis.proposedFix }, null, 2)}`;
+${JSON.stringify({ summary: analysis.summary, likelyCause: analysis.likelyCause, files: analysis.files, proposedFix: analysis.proposedFix }, null, 2)}${rejectedRule(analysis.rejected)}`;
 
 function reproducePrompt(issue, analysis, testEnv) {
   return `You are running unattended: nobody will answer questions. The current directory is a git worktree of the application on branch ${issue.key}.
@@ -143,9 +157,11 @@ const fail = (stage, message, extra = {}) => Object.assign(new Error(message), {
  * @param {'frontend'|'backend'} [p.side]  frontend: a Playwright test with the mocked API reproduces the bug;
  *   backend: a JUnit test against the real code and H2 database (the mocked API cannot show a backend bug).
  * @param {boolean} [p.bisect]  A2: after the reproduction, find the commit that broke it (policy.json bisect: auto)
+ * @param {object} [p.rejected]  ROADMAP #9 B: the earlier fix a person rejected in Teams ({ reason, by, branch, diff, attempt })
  */
-export async function reproduceAndFix({ issue, analysis, repoDir, stateDir, cfg, events, toolsDir, prepared = null, allowSupersededTests = false, side = 'frontend', bisect: bisectOn = false }) {
+export async function reproduceAndFix({ issue, analysis: given, repoDir, stateDir, cfg, events, toolsDir, prepared = null, allowSupersededTests = false, side = 'frontend', bisect: bisectOn = false, rejected = null }) {
   const key = issue.key;
+  const analysis = rejected ? { ...given, rejected } : given; // ROADMAP #9 B: the reason goes into every prompt
   const backendSide = side === 'backend';
   const evidenceDir = join(stateDir, 'work', key, 'evidence');
   mkdirSync(evidenceDir, { recursive: true });

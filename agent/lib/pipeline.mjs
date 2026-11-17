@@ -8,6 +8,8 @@ import { execFileSync } from 'node:child_process';
 import { bisectJira } from './bisect.mjs';
 import { reproduceAndFix } from './fix.mjs';
 import { analysisCheckout, createWorkspace, startDevServer } from './workspace.mjs';
+import { savedAnalyses } from './insights.mjs';
+import { setAsideRejected } from './fix-approval.mjs';
 import { notifyFixReady, notifyOwner } from './notify.mjs';
 import { publishFix } from './publish.mjs';
 import { compare as compareSystem1, describeCompare, triageComment } from './system1.mjs';
@@ -170,7 +172,7 @@ export function retryableFixError(e) {
 }
 
 /** Reproduce → fix → verify → draft PR. Returns true when a pull request was opened. Never throws. */
-async function maybeFix({ issue, result, cfg, policy, jira, events, repoDir, stateDir, prepared, attempt = 1 }) {
+async function maybeFix({ issue, result, cfg, policy, jira, events, repoDir, stateDir, prepared, attempt = 1, rejected = null }) {
   const key = issue.key;
   const blocker = fixBlocker({ issue, result, policy });
   const ws = prepared ? await prepared : null;
@@ -184,7 +186,7 @@ async function maybeFix({ issue, result, cfg, policy, jira, events, repoDir, sta
     const toolsDir = cfg.toolsDir ? resolve(AGENT_DIR, cfg.toolsDir) : null;
     const allowSupersededTests = policy.proposeFixWhen?.allowSupersededTestUpdates === true;
     const side = fixSide({ issue, result, policy });
-    const fix = await reproduceAndFix({ issue: full, analysis: result, repoDir, stateDir, cfg, events, toolsDir, prepared: ws, allowSupersededTests, side, bisect: policy.actions.bisect === 'auto' });
+    const fix = await reproduceAndFix({ issue: full, analysis: result, repoDir, stateDir, cfg, events, toolsDir, prepared: ws, allowSupersededTests, side, bisect: policy.actions.bisect === 'auto', rejected });
     suggestOwnerFromBisect({ key, result, bisect: fix.bisect, policy, events });
     const pub = await publishFix({ key, analysis: result, result: fix, jira, events, stateDir });
     // What the reviewer (review.mjs) and agent/review-one.mjs need later, after the worktree is gone.
@@ -214,7 +216,7 @@ async function maybeFix({ issue, result, cfg, policy, jira, events, repoDir, sta
       if (ws) discardWorkspace(ws, repoDir, key);
       events.emit('fix-retry', { key, text: `the fix stopped on ${why}: trying once more in 30 s (${String(e.message).split('\n')[0].slice(0, 160)})`, error: e.message });
       await new Promise((r) => setTimeout(r, 30_000));
-      return maybeFix({ issue, result, cfg, policy, jira, events, repoDir, stateDir, prepared: null, attempt: 2 });
+      return maybeFix({ issue, result, cfg, policy, jira, events, repoDir, stateDir, prepared: null, attempt: 2, rejected });
     }
     events.emit('fix-failed', { key, text: `${e.stage ? `${e.stage}: ` : ''}${e.message}${attempt > 1 ? ' (second try)' : ''}`, checks: e.checks });
     // The fix failed, but the commit that broke it is still evidence worth having on the ticket.
@@ -391,5 +393,27 @@ export async function processTicket({ issue, cfg, policy, jira, events, repoDir,
       /* best effort */
     }
     return null;
+  }
+}
+
+/**
+ * ROADMAP #9 B (T9): a fix its owner rejected in Teams, fixed again with the reason. The rejected attempt is kept on
+ * the branch <KEY>-rejected-<n> and its PR closed with the reason; the ticket's branch is freed (on GitHub and here),
+ * and the usual flow runs again: reproduce, bisect, fix, every check, a draft PR, the "fix ready" card in Teams. The
+ * reason and the rejected diff are in its prompts. The caller counts the attempts (maxFixAttempts). Never throws.
+ * @param {number} p.attempt  the attempt that was rejected (1 for the first fix)
+ * @param {(url: string, comment: string) => Promise} [p.closePr]  closes the rejected PR (fix-approval.mjs)
+ */
+export async function refixTicket({ key, reason, by, prUrl = null, attempt = 1, cfg, policy, jira, events, repoDir, stateDir, closePr = null }) {
+  try {
+    const result = savedAnalyses(stateDir).get(key)?.result;
+    if (!result) throw new Error('the analysis of the ticket is not saved here, so there is nothing to fix again from');
+    const aside = await setAsideRejected({ repoDir, key, attempt, closePr: prUrl && closePr ? (comment) => closePr(prUrl, comment) : null, by, reason });
+    events.emit('refixing', { key, text: `fixing again: ${by} rejected attempt ${attempt} in Teams (${String(reason).slice(0, 200)}); the rejected change is kept on ${aside.branch}`, branch: aside.branch });
+    const issue = await jira.getIssue(key);
+    return await maybeFix({ issue, result, cfg, policy, jira, events, repoDir, stateDir, prepared: null, rejected: { reason, by, branch: aside.branch, diff: aside.diff, attempt } });
+  } catch (e) {
+    events.emit('fix-failed', { key, text: `fixing again after the rejection: ${String(e.message).split('\n')[0]}` });
+    return false;
   }
 }

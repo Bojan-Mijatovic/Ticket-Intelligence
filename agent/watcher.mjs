@@ -24,7 +24,7 @@ import { repoKnowledge } from './lib/doc-candidates.mjs';
 import { loadPriorArtSources } from './lib/prior-art.mjs';
 import { knowledgeGaps, readAsks } from './lib/gaps.mjs';
 import { askStats } from './lib/ask-stats.mjs';
-import { processTicket, triageTicket } from './lib/pipeline.mjs';
+import { processTicket, triageTicket, refixTicket } from './lib/pipeline.mjs';
 import { currentBranch, previewBranch } from './lib/preview.mjs';
 import { reviewPullRequest } from './lib/review.mjs';
 import { readRecommendations, savedAnalyses, writeRecommendations } from './lib/insights.mjs';
@@ -33,7 +33,10 @@ import { describeMergeCheck, mergeCheck, mergeCheckComment } from './lib/merge-c
 import { ticketKeyQuestion, ticketStatus } from './lib/ticket-status.mjs';
 import { componentInQuestion, fastMore, ruleIntent } from './lib/ask-fast.mjs';
 import { pageAnswer, pageInQuestion, pageOnly, traceAddress } from './lib/page-code.mjs';
-import { actionsOn, askHistory, faqRefusal, findAnswer, followUpChain, logAsk, reusableAnswer, maskAnswer, peopleFor, priorArtItem, recordAction, saveFaq, ticketDraft, viaText, voteOn } from './lib/ask-actions.mjs';
+import { channelApi, createGraph, graphSettings } from './lib/teams-graph.mjs';
+import { answerHtml, mentionOf, newQuestions, noteHtml, projectOf, readInboxState, writeInboxState } from './lib/teams-inbox.mjs';
+import { closePullRequest, mayDecide, newDecisions, prOfTicket, readyPullRequest, recordRejection, rejectionsOf } from './lib/fix-approval.mjs';
+import { actionsOn, askHistory, faqRefusal, findAnswer, followUpChain, logAsk, reusableAnswer, maskAnswer, peopleFor, priorArtItem, recordAction, saveFaq, ticketDraft, viaOf, viaText, voteOn } from './lib/ask-actions.mjs';
 import { readEvents } from './lib/git-graph.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
 import { createSuggested, readCreated, suggestTickets } from './lib/suggestions.mjs';
@@ -473,6 +476,8 @@ async function drain() {
   else {
     const p = all.ofTicket(issue.key);
     if (issue.kind === 'document') await documentTicket(issue, p);
+    // ROADMAP #9 B: a fix rejected in Teams, fixed again with the reason.
+    else if (issue.kind === 'refix') await refixTicket({ key: issue.key, reason: issue.reason, by: issue.by, prUrl: issue.prUrl, attempt: issue.attempt, cfg: p.cfg, policy, jira, events, repoDir: p.repoDir, stateDir: p.stateDir, closePr: (url, comment) => closePullRequest(url, comment, { cwd: p.repoDir }) });
     else if (issue.kind === 'review') await reviewPullRequest({ key: issue.key, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, events, jira });
     else {
       // System 1's answers before the analysis starts: its synchronous git steps would otherwise hold them back by
@@ -745,7 +750,7 @@ async function insightsForAsk(p) {
  * Ask about a ticket's status (lib/ticket-status.mjs): the agent's events, the ticket in Jira, and the state of its
  * PRs on GitHub. No model. The ticket's own project answers, whatever project the Ask tab shows.
  */
-async function ticketStatusAnswer(key, question, followUp = null) {
+async function ticketStatusAnswer(key, question, followUp = null, origin = null) {
   const p = all.ofTicket(key);
   const started = Date.now();
   const events = readEvents(rootState);
@@ -766,7 +771,7 @@ async function ticketStatusAnswer(key, question, followUp = null) {
     }
   }
   const s = ticketStatus({ key, issue, events, prs, now: { processing: status.processing, queued: status.queue.map((q) => q.key) }, ticketUrl: (k) => jira.browseUrl(k) });
-  const answer = { question, project: p.key, found: s.found, fast: true, via: 'records', intent: 'ticket', answer: s.answer, sources: s.sources, warnings: [], dropped: 0, closest: [], meta: { durationMs: Date.now() - started, costUsd: 0, model: "the agent's records" }, at: new Date().toISOString(), ...(followUp ? { followUp } : {}) };
+  const answer = { question, project: p.key, found: s.found, fast: true, via: 'records', intent: 'ticket', answer: s.answer, sources: s.sources, warnings: [], dropped: 0, closest: [], meta: { durationMs: Date.now() - started, costUsd: 0, model: "the agent's records" }, at: new Date().toISOString(), ...(followUp ? { followUp } : {}), ...(origin ? { origin } : {}) };
   logAsk(p.stateDir, answer);
   return answer;
 }
@@ -826,7 +831,7 @@ async function pageTraceAnswer(where, question, selected, followUp = null) {
  * does; the component is the one the question names, never a model's guess for "latest", "history" or "where". Plain
  * code then answers from the Insights data and the file list, or the question goes to Claude.
  */
-async function askRouted(p, question, full, previous = []) {
+async function askRouted(p, question, full, previous = [], origin = null) {
   const mode = S1.askRouter ?? 'auto';
   if (mode === 'off' || !question.trim()) return null;
   const started = Date.now();
@@ -863,7 +868,7 @@ async function askRouted(p, question, full, previous = []) {
   const fast = fastAnswer({ question, intent: routed.intent, component, insights, ticketUrl: (k) => jira.browseUrl(k) })
     ?? fastMore({ question, intent: routed.intent, component, insights, rules, files: routed.intent === 'where' ? await repoFiles(p) : [], ticketUrl: (k) => jira.browseUrl(k), fileUrl: (f) => (repo ? `https://github.com/${repo}/blob/main/${f}` : null) });
   if (!fast) return { routed };
-  const answer = { ...fast, warnings: [], dropped: 0, closest: [], routed, meta: { durationMs: Date.now() - started, costUsd: 0, model: routed.via === 'rule' ? 'a rule and plain code' : `System 1 (${system1.model})` }, at: new Date().toISOString(), ...(previous.length ? { followUp: { at: previous.at(-1).at, question: previous.at(-1).question } } : {}) };
+  const answer = { ...fast, warnings: [], dropped: 0, closest: [], routed, meta: { durationMs: Date.now() - started, costUsd: 0, model: routed.via === 'rule' ? 'a rule and plain code' : `System 1 (${system1.model})` }, at: new Date().toISOString(), ...(previous.length ? { followUp: { at: previous.at(-1).at, question: previous.at(-1).question } } : {}), ...(origin ? { origin } : {}) };
   logAsk(p.stateDir, answer);
   return answer;
 }
@@ -889,6 +894,217 @@ const readyProject = (sel) => {
   if (!existsSync(p.repoDir)) throw badRequest(`${p.name} (${p.key}) has no application clone yet: ${p.repoDir}`, 409);
   return p;
 };
+
+/**
+ * One Ask question, the whole way (FR-65 and Ask 1/7–6/7): a follow-up's conversation, a ticket's status, a page's
+ * code, plain-code answers, an earlier answer given again, then Claude. The dashboard and Teams (ROADMAP #9) both ask
+ * through here; `origin` says where the question came from, in the record. The caller holds `asking`.
+ */
+async function answerAsk(body, { origin = null, onProgress = () => {} } = {}) {
+  let p = readyProject(body);
+  await health.require(); // otherwise "not in the knowledge base" when Jira only could not be searched
+  // Ask 4/7: a follow-up names the answer it follows (in this project); the conversation, up to three answers back.
+  const previous = body.followUp ? followUpChain(p.stateDir, String(body.followUp)) : [];
+  if (body.followUp && !previous.length) throw badRequest('the answer this question follows is not in the records: ask it on its own', 404);
+  const followUp = previous.length ? { at: previous.at(-1).at, question: previous.at(-1).question } : null;
+  // A ticket key alone ("VAX-21", "status of VAX-21") is answered from the agent's records, in about a second.
+  const statusKey = body.full === true ? null : ticketKeyQuestion(String(body.question ?? ''));
+  if (statusKey && all.ofTicket(statusKey)) return { ok: true, ...(await ticketStatusAnswer(statusKey, String(body.question), followUp, origin)) };
+  // Ask 5/7: the address of a page ("http://localhost:4204/pazienti/12", "/scadenze") or an API path ("/api/due"):
+  // its code, traced by plain code, in the project whose app the address is on. A question about why it misbehaves
+  // goes to Claude, with the trace as a hint.
+  const where = pageInQuestion(String(body.question ?? ''));
+  let hint = null;
+  if (where) {
+    const traced = await pageTraceAnswer(where, String(body.question), p, followUp).catch(() => null);
+    if (traced && origin) traced.answer.origin = origin;
+    if (traced && body.full !== true && pageOnly(String(body.question))) {
+      logAsk(traced.p.stateDir, traced.answer);
+      return { ok: true, ...traced.answer };
+    }
+    if (traced && (traced.p.key === p.key || !previous.length)) {
+      p = traced.p;
+      hint = traced.answer.answer;
+    }
+  }
+  // J5 (System 1): "who knows X" and "the latest tickets" are answered from the Insights data, no Claude call.
+  const routedAnswer = await askRouted(p, String(body.question ?? ''), body.full === true, previous, origin);
+  if (routedAnswer?.fast) return { ok: true, project: p.key, ...routedAnswer };
+  // The tour asks with fastOnly: never a paid Claude run.
+  if (body.fastOnly === true) return { ok: false, notRouted: true, routed: routedAnswer?.routed ?? null };
+  // Ask 6/7: the same question, answered by Claude on the same main within a day, is given again with no new run
+  // ("Ask again" on the page asks for a fresh one). Not for a follow-up or a question with a page: their meaning
+  // depends on more than the words.
+  const reuseHours = Number(p.cfg.askReuseHours ?? 24);
+  if (body.fresh !== true && !previous.length && !hint && reuseHours > 0) {
+    const head = await execFileAsync('git', ['rev-parse', 'origin/main'], { cwd: p.repoDir, encoding: 'utf8', windowsHide: true }).then((r) => r.stdout.trim()).catch(() => null);
+    const r = reusableAnswer(p.stateDir, String(body.question ?? ''), { head, maxHours: reuseHours });
+    if (r) {
+      const answer = { question: String(body.question).trim(), found: true, answer: r.answer, sources: r.cited, warnings: [], dropped: 0, closest: [], meta: { durationMs: 0, costUsd: 0, model: `the answer of ${askTime(r.at)}` }, at: new Date().toISOString(), cachedFrom: { at: r.at, question: r.question }, main: head, ...(origin ? { origin } : {}) };
+      logAsk(p.stateDir, answer);
+      return { ok: true, project: p.key, ...answer, routed: routedAnswer?.routed ?? null };
+    }
+  }
+  // The linked apps too (K11): read-only checkouts of their main, apart from the analysis' (ask-peer-repo).
+  const peers = peerCheckouts(p, all, (text) => onProgress(`warning: ${text}`), { name: 'ask-peer-repo' });
+  const answer = await askQuestion({ question: body.question, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira, project: { key: p.key, name: p.name }, peers, previous, hint, origin, onProgress });
+  return { ok: true, project: p.key, ...answer, routed: routedAnswer?.routed ?? null };
+}
+
+// ---------------------------------------------------------------- Teams inbox (ROADMAP #9, T7 and T8)
+// The agent reads the team's channel through Microsoft Graph as one signed-in account (agent/teams-login.mjs) and
+// answers the questions asked there ("ti: …", or an @mention of it) in their thread, through the same Ask as the
+// dashboard. Outbound only. One question at a time, and the dashboard's too: a question waits for the other.
+const TEAMS_INBOX_FILE = join(rootState, 'teams-inbox.json');
+const teamsSettings = graphSettings();
+const teamsGraph = teamsSettings ? createGraph({ ...teamsSettings, tokenFile: join(rootState, 'teams-token.json') }) : null;
+const teamsInbox = { live: false, reason: null, account: null, channel: null, lastRead: null, answered: 0, error: null };
+let teamsReading = false;
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+/** Why the inbox does not read, in words for the dashboard, or null when it can. */
+function teamsInboxReason() {
+  if ((policy.actions.askFromTeams ?? 'auto') === 'off') return 'askFromTeams is "off" in policy.json';
+  if (!teamsGraph) return 'not set up: TEAMS_CLIENT_ID and TEAMS_TENANT_ID (docs/ROADMAP.md #9)';
+  if (!teamsGraph.signedIn()) return 'not signed in: node agent/teams-login.mjs';
+  if (!readInboxState(TEAMS_INBOX_FILE)?.channelId) return 'no channel yet: node agent/teams-login.mjs';
+  return null;
+}
+async function readTeams() {
+  if (teamsReading || draining) return;
+  teamsReading = true;
+  const was = `${teamsInbox.live}|${teamsInbox.error}`;
+  try {
+    teamsInbox.reason = teamsInboxReason();
+    if (teamsInbox.reason) {
+      teamsInbox.live = false;
+      return;
+    }
+    const st = readInboxState(TEAMS_INBOX_FILE);
+    const api = channelApi(teamsGraph, st);
+    const me = teamsGraph.account();
+    const roots = await api.recent(30);
+    Object.assign(teamsInbox, { live: true, error: null, account: me?.name ?? null, channel: st.channelName, lastRead: new Date().toISOString() });
+    // B (T9): "approve" / "reject: why" under a "fix ready" card first; then the questions ("ti: …").
+    const decisions = newDecisions(roots, { me, since: st.since, handled: st.handled });
+    for (const d of decisions) {
+      if (draining) break;
+      await decideInTeams(d, st, api);
+    }
+    const taken = new Set(decisions.map((d) => d.id));
+    for (const q of newQuestions(roots, { me, since: st.since, handled: st.handled }).filter((x) => !taken.has(x.id))) {
+      if (draining) break;
+      await answerInTeams(q, st, api);
+    }
+  } catch (e) {
+    Object.assign(teamsInbox, { live: false, error: String(e.message).split('\n')[0].slice(0, 240) });
+  } finally {
+    teamsReading = false;
+    if (`${teamsInbox.live}|${teamsInbox.error}` !== was) {
+      if (teamsInbox.error) events.emit('error', { text: `Teams inbox: ${teamsInbox.error}` });
+      pushStatus();
+    }
+  }
+}
+/**
+ * B (T9, ROADMAP #1): a decision under a "fix ready" card. Only the person the card was for (or teams.approvers) may
+ * decide. Approve: the draft PR is marked ready for review, Jira says who approved it. Reject with a reason: the fix
+ * runs again with it (a 'refix' job), at most maxFixAttempts in all; after the last one the PR is closed and the
+ * ticket waits for a person. Merging stays a person's, in GitHub.
+ */
+async function decideInTeams(d, st, api) {
+  st.handled = [...(st.handled ?? []), d.id];
+  writeInboxState(TEAMS_INBOX_FILE, st);
+  const say = (text, mention = true) => api.reply(d.rootId, `${mention ? '<at id="0">' + escHtml(d.from.name) + '</at> ' : ''}${escHtml(text)}`, mention ? mentionOf(d.from) : []).catch(() => {});
+  const key = d.card.key;
+  const p = all.ofTicket(key);
+  if ((policy.actions.approveFix ?? 'draft') === 'off') return say('Approving or rejecting a fix from Teams is off (policy.json approveFix).');
+  if (!p || !existsSync(p.repoDir)) return say(`${key} is not a ticket of the apps this agent watches.`);
+  const sender = await teamsGraph.get(`/users/${encodeURIComponent(d.from.id)}?$select=displayName,userPrincipalName`).catch(() => ({ displayName: d.from.name }));
+  const approvers = cfg.teams?.approvers ?? [];
+  if (!mayDecide({ sender, card: d.card, approvers })) {
+    return say(`Only ${d.card.to ?? 'the owner'}${approvers.length ? ` or ${approvers.join(', ')}` : ''} can approve or reject this fix; nothing changed.`);
+  }
+  const prUrl = prOfTicket(key, readEvents(rootState), d.card.prUrl);
+  if (!prUrl) return say(`No pull request of ${key} found; nothing changed.`);
+  const team = teamNames();
+  try {
+    if (d.verdict === 'approve') {
+      const r = await readyPullRequest(prUrl, { cwd: p.repoDir });
+      if (r.state !== 'OPEN') return say(`PR #${r.number} is ${r.state.toLowerCase()} already; nothing changed.`);
+      if (!r.readied) return say(`PR #${r.number} was already ready for review; nothing changed.`);
+      const note = d.note ? maskAnswer(d.note, team).text : '';
+      events.emit('approved', { key, text: `approved in Teams by ${d.from.name}: PR #${r.number} is ready for review${note ? ` (${note.slice(0, 160)})` : ''}`, url: r.url });
+      if (policy.actions.postInternalComment === 'auto') {
+        await jira.comment(key, `(robot) *Fix approved in Teams* by ${d.from.name}: [PR #${r.number}|${r.url}] is ready for review (no longer a draft).${note ? ` Note: ${note}` : ''}\n_Merging stays a person's, in GitHub._`).catch((e) => events.emit('error', { key, text: `approval comment skipped: ${e.message.split('\n')[0]}` }));
+      }
+      await jira.labels(key, { add: ['ai-fix-approved'] }).catch(() => {});
+      return say(`Approved: PR #${r.number} is ready for review now (no longer a draft). Merging stays in GitHub.`);
+    }
+    // reject
+    if (!d.reason || d.reason.length < 3) return say('Say why, so that the next attempt can do better: "reject: <what is wrong>".');
+    const reason = maskAnswer(d.reason, team).text;
+    const before = rejectionsOf(p.stateDir, key);
+    const attempt = before.length + 1; // the attempt that was rejected
+    const max = Number(p.cfg.maxFixAttempts ?? 2);
+    recordRejection(p.stateDir, key, { by: d.from.name, reason, prUrl, attempt });
+    await jira.labels(key, { add: ['ai-fix-rejected'] }).catch(() => {});
+    if (attempt >= max) {
+      const closed = await closePullRequest(prUrl, `Rejected in Teams by ${d.from.name}: ${reason}\n\nThat was attempt ${attempt} of ${max}: the agent stops here, and the ticket waits for a person. The branch stays.`, { cwd: p.repoDir });
+      events.emit('rejected', { key, text: `rejected in Teams by ${d.from.name} (attempt ${attempt} of ${max}, the last): ${reason.slice(0, 200)}; PR #${closed.number} closed, the ticket waits for a person`, url: prUrl });
+      if (policy.actions.postInternalComment === 'auto') await jira.comment(key, `(robot) *Fix rejected in Teams* by ${d.from.name}: ${reason}\nAttempt ${attempt} of ${max}: the agent stops; the ticket waits for a person. [The closed PR|${prUrl}] keeps its branch.`).catch(() => {});
+      return say(`Rejected. That was attempt ${attempt} of ${max}, so the agent stops here: PR #${closed.number} is closed (its branch stays) and the ticket waits for a person.`);
+    }
+    events.emit('rejected', { key, text: `rejected in Teams by ${d.from.name} (attempt ${attempt} of ${max}): ${reason.slice(0, 200)}; the fix runs again with this reason`, url: prUrl });
+    if (policy.actions.postInternalComment === 'auto') await jira.comment(key, `(robot) *Fix rejected in Teams* by ${d.from.name}: ${reason}\nThe agent fixes the ticket again with this reason (attempt ${attempt + 1} of ${max}); the rejected change is kept on branch {{${key}-rejected-${attempt}}}.`).catch(() => {});
+    status.queue.push({ kind: 'refix', key, project: p.key, reason, by: d.from.name, prUrl, attempt });
+    pushStatus();
+    drain();
+    return say(`Rejected: the agent fixes ${key} again with your reason (attempt ${attempt + 1} of ${max}). The rejected change is kept on branch ${key}-rejected-${attempt}; the new draft PR comes here when it is ready, in about five minutes.`);
+  } catch (e) {
+    const why = String(e.stderr || e.message).split('\n')[0].slice(0, 200);
+    events.emit('error', { key, text: `Teams decision on ${key} not carried out: ${why}` });
+    return say(`Not done: ${why}`);
+  }
+}
+const escHtml = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** One question from the channel: answered in its thread, the asker @mentioned; a follow-up in the thread of an answer. */
+async function answerInTeams(q, st, api) {
+  // Handled before it is answered: after a crash a question is lost rather than answered twice.
+  st.handled = [...(st.handled ?? []), q.id];
+  writeInboxState(TEAMS_INBOX_FILE, st);
+  const thread = q.inThread ? st.threads?.[q.rootId] : null;
+  const fallback = cfg.teams?.project ?? all.projects.find((x) => x.cfg?.pilot && existsSync(x.repoDir))?.key ?? all.projects.find((x) => existsSync(x.repoDir))?.key;
+  const asked = projectOf(q.question, all.projects, thread?.project ?? fallback);
+  const followUp = thread && thread.project === asked.project ? thread.lastAnswerAt : null;
+  events.emit('teams-asked', { project: asked.project, text: `${asked.project}: ${q.from.name} asked in Teams: ${asked.question.slice(0, 140)}` });
+  for (let i = 0; asking && i < 180; i++) await sleepMs(1000); // the dashboard's question first
+  if (asking) {
+    await api.reply(q.rootId, noteHtml('Busy with another question for three minutes: ask again in a moment.')).catch(() => {});
+    return;
+  }
+  asking = true;
+  // A Claude answer takes about a minute: say so after a few seconds, so that nobody asks twice.
+  const working = setTimeout(() => api.reply(q.rootId, noteHtml('Looking it up in the tickets, the code and the knowledge base: about a minute.')).catch(() => {}), 6000);
+  try {
+    const a = await answerAsk({ project: asked.project, question: asked.question, followUp }, { origin: 'teams' });
+    clearTimeout(working);
+    const p = all.byKey(a.project) ?? all.byKey(asked.project);
+    const html = answerHtml({ answer: maskAnswer(a.answer, teamNames()).text, sources: a.sources ?? [], found: a.found !== false }, { asker: q.from, projectName: p?.name ?? a.project, how: viaText(viaOf(a)), givenAgain: Boolean(a.cachedFrom), followUp: Boolean(followUp) });
+    await api.reply(q.rootId, html, mentionOf(q.from));
+    st.threads = { ...(st.threads ?? {}), [q.rootId]: { project: a.project, lastAnswerAt: a.at, at: new Date().toISOString() } };
+    writeInboxState(TEAMS_INBOX_FILE, st);
+    teamsInbox.answered++;
+    events.emit('teams-answered', { project: a.project, text: `${a.project}: answered in Teams ${viaText(viaOf(a))}${a.cachedFrom ? ', given again' : ''}: ${asked.question.slice(0, 120)}` });
+  } catch (e) {
+    clearTimeout(working);
+    const why = String(e.message).split('\n')[0].slice(0, 200);
+    await api.reply(q.rootId, noteHtml(`Not answered: ${why}`)).catch(() => {});
+    events.emit('error', { text: `Teams question not answered: ${why}` });
+  } finally {
+    asking = false;
+  }
+}
 
 // ---------------------------------------------------------------- dashboard
 
@@ -1409,53 +1625,7 @@ const server = createServer(async (req, res) => {
     const body = await readBody(req);
     asking = true;
     try {
-      let p = readyProject(body);
-      await health.require(); // otherwise "not in the knowledge base" when Jira only could not be searched
-      // Ask 4/7: a follow-up names the answer it follows (in this project); the conversation, up to three answers back.
-      const previous = body.followUp ? followUpChain(p.stateDir, String(body.followUp)) : [];
-      if (body.followUp && !previous.length) throw badRequest('the answer this question follows is not in the records: ask it on its own', 404);
-      const followUp = previous.length ? { at: previous.at(-1).at, question: previous.at(-1).question } : null;
-      // A ticket key alone ("VAX-21", "status of VAX-21") is answered from the agent's records, in about a second.
-      const statusKey = body.full === true ? null : ticketKeyQuestion(String(body.question ?? ''));
-      if (statusKey && all.ofTicket(statusKey)) return json(res, 200, { ok: true, ...(await ticketStatusAnswer(statusKey, String(body.question), followUp)) });
-      // Ask 5/7: the address of a page ("http://localhost:4204/pazienti/12", "/scadenze") or an API path ("/api/due"):
-      // its code, traced by plain code, in the project whose app the address is on. A question about why it misbehaves
-      // goes to Claude, with the trace as a hint.
-      const where = pageInQuestion(String(body.question ?? ''));
-      let hint = null;
-      if (where) {
-        const traced = await pageTraceAnswer(where, String(body.question), p, followUp).catch(() => null);
-        if (traced && body.full !== true && pageOnly(String(body.question))) {
-          logAsk(traced.p.stateDir, traced.answer);
-          return json(res, 200, { ok: true, ...traced.answer });
-        }
-        if (traced && (traced.p.key === p.key || !previous.length)) {
-          p = traced.p;
-          hint = traced.answer.answer;
-        }
-      }
-      // J5 (System 1): "who knows X" and "the latest tickets" are answered from the Insights data, no Claude call.
-      const routedAnswer = await askRouted(p, String(body.question ?? ''), body.full === true, previous);
-      if (routedAnswer?.fast) return json(res, 200, { ok: true, project: p.key, ...routedAnswer });
-      // The tour asks with fastOnly: never a paid Claude run.
-      if (body.fastOnly === true) return json(res, 200, { ok: false, notRouted: true, routed: routedAnswer?.routed ?? null });
-      // Ask 6/7: the same question, answered by Claude on the same main within a day, is given again with no new run
-      // ("Ask again" on the page asks for a fresh one). Not for a follow-up or a question with a page: their meaning
-      // depends on more than the words.
-      const reuseHours = Number(p.cfg.askReuseHours ?? 24);
-      if (body.fresh !== true && !previous.length && !hint && reuseHours > 0) {
-        const head = await execFileAsync('git', ['rev-parse', 'origin/main'], { cwd: p.repoDir, encoding: 'utf8', windowsHide: true }).then((r) => r.stdout.trim()).catch(() => null);
-        const r = reusableAnswer(p.stateDir, String(body.question ?? ''), { head, maxHours: reuseHours });
-        if (r) {
-          const answer = { question: String(body.question).trim(), found: true, answer: r.answer, sources: r.cited, warnings: [], dropped: 0, closest: [], meta: { durationMs: 0, costUsd: 0, model: `the answer of ${askTime(r.at)}` }, at: new Date().toISOString(), cachedFrom: { at: r.at, question: r.question }, main: head };
-          logAsk(p.stateDir, answer);
-          return json(res, 200, { ok: true, project: p.key, ...answer, routed: routedAnswer?.routed ?? null });
-        }
-      }
-      // The linked apps too (K11): read-only checkouts of their main, apart from the analysis' (ask-peer-repo).
-      const peers = peerCheckouts(p, all, (text) => broadcast({ type: 'ask-progress', id: body.id, step: `warning: ${text}` }), { name: 'ask-peer-repo' });
-      const answer = await askQuestion({ question: body.question, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira, project: { key: p.key, name: p.name }, peers, previous, hint, onProgress: (step) => broadcast({ type: 'ask-progress', id: body.id, step }) });
-      return json(res, 200, { ok: true, project: p.key, ...answer, routed: routedAnswer?.routed ?? null });
+      return json(res, 200, await answerAsk(body, { onProgress: (step) => broadcast({ type: 'ask-progress', id: body.id, step }) }));
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     } finally {
@@ -1532,3 +1702,10 @@ setInterval(checkMains, GUARD_SECONDS * 1000);
     if (!insightsCache.has(p.key)) await insightsCached(p).catch(() => {});
   }
 })();
+// ROADMAP #9: the Teams inbox, every teams.pollSeconds (15 by default; 5 for a demo).
+status.teamsInbox = teamsInbox;
+teamsInbox.reason = teamsInboxReason();
+if (!teamsInbox.reason) console.log(`Teams inbox: reading ${readInboxState(TEAMS_INBOX_FILE).channelName} as ${teamsGraph.account()?.name ?? 'the signed-in account'} every ${Number(cfg.teams?.pollSeconds ?? 15)}s ("ti: …")`);
+else console.log(`Teams inbox off: ${teamsInbox.reason}`);
+setInterval(() => readTeams().catch(() => {}), Math.max(3, Number(cfg.teams?.pollSeconds ?? 15)) * 1000);
+readTeams().catch(() => {});

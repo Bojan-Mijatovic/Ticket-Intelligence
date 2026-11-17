@@ -83,6 +83,13 @@ export function ticketStatus({ key, issue, events, prs = {}, now = {}, ticketUrl
   if (reviewed) say(reviewed, `AI review of the PR: ${reviewed.text}`);
   const mergeCheck = last('merge-check', ev);
   if (mergeCheck) say(mergeCheck, mergeCheck.text);
+  // ROADMAP #9 B: the owner's decision in Teams, and a fix made again after a rejection.
+  const approved = last('approved', ev);
+  if (approved) say(approved, approved.text);
+  const rejected = last('rejected', ev);
+  if (rejected) say(rejected, rejected.text);
+  const refixing = last('refixing', ev);
+  if (refixing) say(refixing, refixing.text);
   const fixNotified = last('fix-notified', ev);
   if (fixNotified) say(fixNotified, fixNotified.text);
   const resolved = last('resolved', ev);
@@ -99,12 +106,17 @@ export function ticketStatus({ key, issue, events, prs = {}, now = {}, ticketUrl
   const drafts = run.filter((e) => e.type === 'draft').map((e) => (e.kind === 'assign' ? e.text.replace(/^Suggested assignee: /, 'the assignee ') : e.kind === 'reply' ? 'the reply to the reporter' : e.kind === 'ask-reporter' ? 'the question to the reporter' : e.text));
   const waitingOwner = owner ? `${owner}${notified ? `, who got the Teams message on ${time(notified.at)}` : ''}` : 'a developer of that area';
   let next;
+  const rejectedAfterPr = rejected && (!fixPr || rejected.at >= fixPr.at);
+  const approvedNow = approved && fixPr && approved.at >= fixPr.at ? approved.text.match(/ by (.+?):/)?.[1] ?? 'its owner' : null;
   if (now.processing?.key === key) next = `The agent is working on it right now (${now.processing.kind}).`;
   else if ((now.queued ?? []).includes(key)) next = 'It waits in the agent\'s queue and is taken next in turn.';
   else if (!ev.length) next = done ? 'Done in Jira; the agent never worked on it.' : 'The agent has not picked it up (created before its look-back window, labelled no-ai, or not settled yet). "Run ticket" on the dashboard analyses it now.';
   else if (held && !released) next = `Waits for a person on the dashboard: it is held (${held.kind === 'privacy' ? 'the text may still name a person' : held.kind === 'incomplete' ? 'the report misses what is needed; the question to the reporter is in Drafts' : 'System 1 offers the light path'}). Release it or choose there.`;
   else if (failed && !analyzed) next = `The analysis failed (${failed.text}). "Run again" on its card retries it.`;
-  else if (fixPrUrl && pr?.state === 'OPEN') next = `Waits for a person: review and merge PR #${prNumber(fixPrUrl)}${reviewed ? ` (AI review: ${reviewed.text.split(' · ')[0]})` : ''}${mergeCheck ? `; ${mergeCheck.text}` : ''}.`;
+  else if (rejectedAfterPr && /, the last\)/.test(rejected.text)) next = `Rejected in Teams after the last automatic attempt: it waits for ${waitingOwner}.`;
+  else if (rejectedAfterPr && fixFailed && fixFailed.at > rejected.at) next = `The fix made again after the rejection stopped (${fixFailed.text}): it waits for ${waitingOwner}.`;
+  else if (rejectedAfterPr) next = 'Rejected in Teams: the agent fixes it again with the reason; the new draft PR comes to the same channel.';
+  else if (fixPrUrl && pr?.state === 'OPEN') next = `Waits for a person: review and merge PR #${prNumber(fixPrUrl)}${approvedNow ? ` (approved in Teams by ${approvedNow}; it is ready for review)` : ''}${reviewed ? ` (AI review: ${reviewed.text.split(' · ')[0]})` : ''}${mergeCheck ? `; ${mergeCheck.text}` : ''}.`;
   else if (fixPrUrl && pr?.state === 'CLOSED' && !done) next = `The fix PR #${prNumber(fixPrUrl)} was closed without a merge: reopen it, or ${waitingOwner} fixes it by hand.`;
   else if (fixPrUrl && pr?.state === 'MERGED' && !done) next = `Fixed on main (PR #${prNumber(fixPrUrl)} merged): it can be moved to Done.`;
   else if (done) {

@@ -208,7 +208,7 @@ Merge only after a merge check, as for the pilot's fixes ([PILOT.md](PILOT.md), 
 | `node demo/preflight.mjs --teams` | GO but for the reserved case | it is pushed on the morning of the demo, on purpose |
 | Fallback DEM-46 | ready | its Teams message came 61 and 74 s after the pick, twice |
 | Ask: an answer sent to Teams (Send to Teams) | ready | a MediVax answer posted from the dashboard arrived in `support-triage`, sources as links (2026-11-17) |
-| Ask in Teams ("ti: …" in the channel) and approval by a reply | in progress (ROADMAP #9) | needs the app registration and the Ticket Intelligence user on the test tenant |
+| Ask in Teams ("ti: …" in the channel) and approval by a reply ("approve" / "reject: why") | built, not yet live (ROADMAP #9) | needs the app registration and the Ticket Intelligence user on the test tenant, then `node agent/teams-login.mjs` |
 | The private laptop, the room's network, the recording | not done | only possible on the day before |
 | The test tenant | a 30-day trial from 2026-11-16 | a demo after mid-December needs one paid month |
 

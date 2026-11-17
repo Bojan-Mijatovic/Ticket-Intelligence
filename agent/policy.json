@@ -21,9 +21,13 @@
     "emailUpdates": "auto",
     "createTicket": "draft",
     "shareAnswer": "draft",
-    "promoteFaq": "draft"
+    "promoteFaq": "draft",
+    "askFromTeams": "auto",
+    "approveFix": "draft"
   },
   "_createTicketComment": "createTicket = tickets suggested on the Insights tab (from the AI review and the facts). 'draft' = shown with a Create in Jira button: a person checks and edits the ticket, then confirms; 'off' = shown only as suggestions. Never 'auto'.",
+  "_askFromTeamsComment": "askFromTeams = Ask in the team's Teams channel (ROADMAP #9): the agent reads the channel through Microsoft Graph as one signed-in account (node agent/teams-login.mjs) and answers a message that starts with \"ti:\" (or @mentions it) in its thread, through the same Ask as the dashboard, masked. auto = it answers (it only answers: nothing else changes); off = it does not read the channel.",
+  "_approveFixComment": "approveFix = the approval of a fix from Teams (ROADMAP #9 B, #1): under the agent's \"fix ready for review\" card the ticket's owner (or a name in agent.config.json teams.approvers) replies \"approve\" (the draft PR becomes ready for review, a Jira comment, label ai-fix-approved) or \"reject: <why>\" (the PR is closed with the reason, the change kept on <KEY>-rejected-<n>, and the fix runs again with the reason, at most maxFixAttempts, default 2; label ai-fix-rejected). draft = a person decides each time; off = replies are not acted on. Merging is never done: it stays a person's, in GitHub (mergeFix off).",
   "_askActionsComment": "Ask 3/7: actions under an Ask answer, each started by a person, each on the answer as the agent recorded it (never text the page sends). shareAnswer = Send to Teams: the answer, masked like the analysis (R-02), with its sources, for a person of the team the answer names or who knows its component (@mentioned). promoteFaq = Save as FAQ (K15): an answer Claude gave from the sources and a person rated right goes into docs/knowledge/faq.md through a documentation PR; the open FAQ PR collects the next ones until a person merges it (mergeDocs). Create ticket uses createTicket. draft = the button is there; off = it is not. Never auto.",
   "system1": {
     "intake": "shadow",

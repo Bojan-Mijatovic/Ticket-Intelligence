@@ -458,7 +458,7 @@ function h(tag, attrs = {}, ...kids) {
 const initials = (name = '?') => name.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
 const ago = (iso) => { if (!iso) return '–'; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`; };
 const KNOWN_TEXT = { documented: 'documented', duplicate: 'duplicate of', 'in-progress': 'fix in progress', 'fixed-on-main': 'fixed on main by', regression: 'regression of', 'solved-before': 'solved before as' };
-const ICON = { system1: '⚡', 'system1-compared': '⚖', 'system1-held': '⏸', 'system1-queue': '⇅', triaged: '➜', 'known-test': '🧪', 'prior-art': '⟲', mailed: '✉', 'mail-failed': '✖', resolved: '☑', documenting: '📝', documented: '📚', 'docs-merged': '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', bisecting: '⑂', bisected: '🎯', guard: '🛡', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-retry': '↻', 'merge-check': '🔀', 'fix-notified': '📣', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺', reviewing: '👀', reviewed: '🧐', 'review-skipped': '–' };
+const ICON = { approved: '✅', rejected: '✋', refixing: '↻', 'teams-asked': '💬', 'teams-answered': '💬', system1: '⚡', 'system1-compared': '⚖', 'system1-held': '⏸', 'system1-queue': '⇅', triaged: '➜', 'known-test': '🧪', 'prior-art': '⟲', mailed: '✉', 'mail-failed': '✖', resolved: '☑', documenting: '📝', documented: '📚', 'docs-merged': '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', bisecting: '⑂', bisected: '🎯', guard: '🛡', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-retry': '↻', 'merge-check': '🔀', 'fix-notified': '📣', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺', reviewing: '👀', reviewed: '🧐', 'review-skipped': '–' };
 
 const tickets = new Map();
 const teams = [];
@@ -550,14 +550,14 @@ function apply(ev) {
     case 'reviewed': t.review = { stage: 'done', ...ev.review, url: ev.url }; break;
     case 'review-skipped': t.review = { stage: 'skipped', error: ev.text }; break;
   }
-  if (['picked', 'system1', 'system1-compared', 'system1-held', 'system1-queue', 'triaged', 'known-test', 'analyzing', 'progress', 'cross-project', 'analyzed', 'commented', 'notified', 'fix-notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'prior-art', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'docs-merged', 'warmed', 'workspace', 'reproducing', 'reproduced', 'bisecting', 'bisected', 'guard', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-retry', 'merge-check', 'fix-skipped', 'reviewing', 'reviewed', 'review-skipped', 'mailed', 'mail-failed'].includes(ev.type)) {
+  if (['picked', 'system1', 'system1-compared', 'system1-held', 'system1-queue', 'triaged', 'known-test', 'analyzing', 'progress', 'cross-project', 'analyzed', 'commented', 'notified', 'fix-notified', 'draft', 'done', 'failed', 'recovered', 'duplicate', 'prior-art', 'skipped', 'resolved', 'documenting', 'documented', 'doc-failed', 'docs-merged', 'warmed', 'workspace', 'reproducing', 'reproduced', 'bisecting', 'bisected', 'guard', 'fixing', 'verifying', 'verified', 'pushed', 'pr', 'fix-proposed', 'fix-failed', 'fix-retry', 'merge-check', 'approved', 'rejected', 'refixing', 'fix-skipped', 'reviewing', 'reviewed', 'review-skipped', 'mailed', 'mail-failed'].includes(ev.type)) {
     t.steps.push({ at: ev.at, type: ev.type, text: ev.step ?? ev.text });
   }
 }
 
 function stepRow(t, s) {
   const secs = Math.max(0, Math.round((Date.parse(s.at) - Date.parse(t.startedAt)) / 1000));
-  const cls = ['done', 'commented', 'notified', 'fix-notified'].includes(s.type) || (s.type === 'merge-check' && /still green/.test(s.text)) ? 'ok' : s.type === 'failed' || (s.type === 'merge-check' && !/still green/.test(s.text)) ? 'bad' : '';
+  const cls = ['done', 'commented', 'notified', 'fix-notified', 'approved'].includes(s.type) || (s.type === 'merge-check' && /still green/.test(s.text)) ? 'ok' : s.type === 'failed' || (s.type === 'merge-check' && !/still green/.test(s.text)) ? 'bad' : '';
   return h('div', { class: `step ${cls}` }, h('span', { class: 't' }, `${secs}s`), h('span', { class: 'i' }, ICON[s.type] ?? '·'), h('span', { class: 'm' }, s.text));
 }
 
@@ -767,7 +767,10 @@ function render() {
     h('div', {}, h('div', { class: 'who' }, h('b', {}, 'Ticket Intelligence'), ` · ${ago(m.at)}`), teamsCard(m)))) : [h('div', { class: 'empty' }, 'Handoff messages to owners appear here.')]));
   const teamsLive = status?.teams?.live || teams.some((m) => m.channel === 'teams');
   // The panel is the agent's outbox, not a chat: the webhook only posts, replies stay in Teams.
-  $('#teams-mode').textContent = teamsLive ? `messages the agent posted · replies are in Teams · live channel${status?.teams?.mentions ? ', @mentions the owner' : ''}` : 'messages the agent would post · simulated: no Teams webhook set';
+  const inbox = status?.teamsInbox;
+  // ROADMAP #9: whether the agent also reads the channel and answers "ti: …" there.
+  const inboxText = !inbox ? '' : inbox.live ? ` · reads the channel as ${inbox.account ?? 'its account'} and answers "ti: …" (${inbox.answered} answered since the watcher started, read ${ago(inbox.lastRead)})` : inbox.error ? ` · reading the channel failed: ${inbox.error}` : inbox.reason && !/^not set up/.test(inbox.reason) ? ` · does not read the channel: ${inbox.reason}` : '';
+  $('#teams-mode').textContent = (teamsLive ? `messages the agent posted · replies are in Teams · live channel${status?.teams?.mentions ? ', @mentions the owner' : ''}` : 'messages the agent would post · simulated: no Teams webhook set') + inboxText;
   const channelUrl = status?.teams?.channelUrl ?? null;
   $('#teams-open').hidden = !channelUrl;
   if (channelUrl) $('#teams-open').href = channelUrl;
@@ -1997,6 +2000,7 @@ function renderAnswers() {
   $('#ask-answers').replaceChildren(...answers.map((a) => h('div', { class: 'panel answer' },
     h('div', { class: 'q' }, a.project ? h('span', { class: 'proj', style: 'margin-right:8px' }, projectInfo(a.project)?.name ?? a.project) : null, a.question),
     a.followUp ? h('div', { class: 't-sub' }, `↳ follow-up to: ${a.followUp.question}`) : null,
+    a.origin === 'teams' ? h('div', { class: 't-sub' }, 'Asked in the Teams channel; the answer was posted in its thread.') : null,
     a.error ? h('pre', { class: 'err' }, a.error) : [
       h('div', {}, h('span', { class: `chip ${a.found ? 'done' : a.searchFailed ? 'failed' : 'analyzing'}` }, a.found ? 'answered from sources' : a.searchFailed ? 'Jira could not be searched' : 'not in the knowledge base'),
         a.cachedFrom ? h('span', { class: 'chip', style: 'margin-left:6px', title: `The same question was answered by Claude ${ago(a.cachedFrom.at)}, on the same commit of main: given again, no new AI run. Tickets created since then are not in it.` }, `♻ asked before, ${ago(a.cachedFrom.at)} · no new AI run`)
@@ -2168,7 +2172,7 @@ function renderAskHistory() {
       filter,
       list.length ? h('table', {}, h('tbody', {}, list.slice(0, 60).map((a) => h('tr', { style: 'cursor:pointer', title: 'Open this answer again', onclick: () => open(a) },
         h('td', { class: 't-sub', style: 'white-space:nowrap' }, ago(a.at)),
-        h('td', {}, a.followUp ? h('span', { class: 't-sub' }, '↳ ') : null, a.question),
+        h('td', {}, a.followUp ? h('span', { class: 't-sub' }, '↳ ') : null, a.question, a.origin === 'teams' ? h('span', { class: 't-sub' }, ' · in Teams') : null),
         h('td', { style: 'white-space:nowrap' }, h('span', { class: `chip ${a.found ? 'done' : 'analyzing'}` }, a.cachedFrom ? 'given again' : VIA_CHIP[a.via] ?? a.via),
           a.vote ? ` ${a.vote === 'up' ? '👍' : '👎'}` : '', a.done?.length ? h('span', { class: 't-sub' }, ` · ${a.done.map((d) => (d.action === 'teams' ? 'Teams' : d.action === 'ticket' ? d.key : 'FAQ')).join(', ')}`) : null))))) : h('div', { class: 't-sub' }, 'No earlier question has these words.'),
     ]);

@@ -254,7 +254,24 @@ The message is an Adaptive Card: for whom, the ticket, the handoff text, then **
 
 **An Ask answer, sent by a person** (Ask 3/7): **Send to Teams…** under an answer posts it to the same channel, for the channel or for a person of the team, @mentioned (see [Ask the knowledge base](#ask-the-knowledge-base)). The card shows in the Teams panel too, under its project.
 
-**From Teams back to the agent: in progress** ([ROADMAP #9](../docs/ROADMAP.md#9-teams--agent-ask-and-approval-from-the-channel)). The webhook only posts. The agent will read the channel through Microsoft Graph as one signed-in account and answer in the thread: Ask in the channel first ("ti: status VAX-21"), then the approval of a fix by a reply under its "fix ready" card.
+### From Teams back to the agent (ROADMAP #9)
+
+The webhook only posts. To let the team ask and decide in the channel, the agent also **reads** it, through Microsoft Graph as one signed-in account, every `teams.pollSeconds` (15; 5 for a demo), and answers in the thread. Outbound only: nothing on this machine is opened to the network. ([ROADMAP #9](../docs/ROADMAP.md#9-teams--agent-ask-and-approval-from-the-channel) says why this way and not a bot.)
+
+**Setup, once (the tenant's admin, about 10 minutes):**
+1. A user **Ticket Intelligence** with a Teams licence, a member of the team: the replies show under that name.
+2. Microsoft Entra › App registrations › New registration (single tenant, no redirect URI). **Authentication** › Allow public client flows: Yes. **API permissions** › Microsoft Graph › Delegated: `ChannelMessage.Read.All`, `ChannelMessage.Send`, `Channel.ReadBasic.All`, `User.ReadBasic.All`, `offline_access` › **Grant admin consent**.
+3. In the `.env` that has `TEAMS_WEBHOOK_URL`: `TEAMS_CLIENT_ID=<Application (client) ID>`, `TEAMS_TENANT_ID=<Directory (tenant) ID>`, and `TEAMS_CHANNEL_NAME=<the channel>` when `TEAMS_CHANNEL_URL` is the team's link and the team has several channels.
+4. `node agent/teams-login.mjs`: sign in **as Ticket Intelligence** with the code it shows (a private browser window). It finds the channel and starts the inbox from now: nothing asked before is answered. `--check` says who is signed in and which channel is read. Restart the watcher with `--replace`. The refresh token is kept in `agent/state/teams-token.json`, a secret like the webhook (never shown or logged); when it expires the dashboard says so, and the same command signs in again.
+
+**Ask in the channel** (`policy.json` → `askFromTeams: auto`). A message that starts with **`ti:`** (or @mentions Ticket Intelligence) is a question: `ti: VAX-21`, `ti: http://localhost:4204/scadenze`, `ti: who knows Scadenze?`, `ti: MediLab: what are the latest tickets?` (a project's name or key before a colon picks it; otherwise `teams.project`, by default the pilot's). It goes through the same Ask as the dashboard (`answerAsk` in the watcher: a ticket's status, a page's code, plain-code answers, an earlier answer given again, Claude for the rest), and the answer comes in the thread: the asker @mentioned, the text masked as for Send to Teams, the sources as links, how it was made. A `ti:` reply in that thread follows the answer above it. A Claude answer takes about a minute, so after six seconds the thread says "looking it up". One question at a time, and the dashboard's too. A message is handled once (`agent/state/teams-inbox.json`), even across restarts; people talking in the channel are left alone. The questions are in `asks.jsonl` with `origin: "teams"`, and the earlier questions on the Ask tab mark them "in Teams".
+
+**Approve or reject a fix by a reply** (`approveFix: draft`, ROADMAP #1). Under the agent's **fix ready for review** card, the ticket's owner (the person the card was for, matched by their sign-in name) or a name in `agent.config.json` → `teams.approvers` replies:
+- **`approve`** (also `odobri`, `approva`): the draft PR becomes ready for review, Jira gets a comment "Fix approved in Teams by …" and the label `ai-fix-approved`, and the thread says so. Merging stays a person's, in GitHub.
+- **`reject: <why>`** (also `odbij:`, `rifiuta:`): the PR is closed with the reason, the change is kept on the branch `<KEY>-rejected-<n>`, and the fix runs again with the reason and the rejected diff in its prompts (a `refix` job in the queue: reproduce, bisect, fix, every check, a new draft PR and a new "fix ready" card). At most `maxFixAttempts` fixes in all (default 2); after the last rejection the PR is closed and the ticket waits for a person. Label `ai-fix-rejected`; the reason is kept in `state/<project>/work/<KEY>/rejections.json`.
+- Anyone else's reply changes nothing, and the thread says who can decide. A reject without a reason asks for one.
+
+Ask's status of a ticket tells these too ("approved in Teams by …", "rejected in Teams: the agent fixes it again").
 
 ### Update emails
 
