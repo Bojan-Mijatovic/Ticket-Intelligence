@@ -158,6 +158,18 @@
   #ins-kpis, #suite-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   @media (max-width: 1100px) { #ins-kpis, #suite-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .ins-list { padding: 12px 16px; margin-bottom: 20px; overflow-x: auto; }
+  /* Insights: each section folds (foldSections); the heading row is the summary, its buttons work without folding it. */
+  details.ins-sec { border-top: 1px solid var(--border); }
+  details.ins-sec > summary { list-style: none; display: flex; align-items: center; gap: 8px; padding: 12px 2px; cursor: pointer; }
+  details.ins-sec > summary::-webkit-details-marker { display: none; }
+  details.ins-sec > summary::before { content: "▸"; flex: none; width: 12px; color: var(--muted); font-size: 13px; transition: transform 0.15s; }
+  details.ins-sec[open] > summary::before { transform: rotate(90deg); }
+  details.ins-sec > summary > h2, details.ins-sec > summary > div { margin: 0 !important; }
+  details.ins-sec > summary > div { flex: 1; min-width: 0; }
+  details.ins-sec > summary:hover h2 { color: var(--text); }
+  details.ins-sec > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+  details.ins-sec[open] { padding-bottom: 6px; }
+  .ins-fold-bar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin: 4px 0 8px; }
   .ins-list table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .ins-list th, .ins-list td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
   .ins-list th { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
@@ -410,7 +422,7 @@
     <aside>
       <h2>Microsoft Teams · #support-triage</h2>
       <div class="panel">
-        <div class="teams-head"><span class="teams-logo">T</span><div><b>support-triage</b><div class="meta" id="teams-mode">simulated channel</div></div><a id="teams-open" style="margin-left:auto;font-size:13px" target="_blank" hidden>Open in Teams ↗</a></div>
+        <div class="teams-head"><span class="teams-logo">T</span><div><b>support-triage</b><div class="meta" id="teams-mode">messages the agent posts</div></div><a id="teams-open" style="margin-left:auto;font-size:13px" target="_blank" hidden>Open in Teams ↗</a></div>
         <div class="teams-body" id="teams"><div class="empty">Handoff messages to owners appear here.</div></div>
       </div>
 
@@ -744,7 +756,8 @@ function render() {
     h('span', { class: 'avatar', style: 'background:linear-gradient(135deg,var(--accent),var(--teams))' }, '✦'),
     h('div', {}, h('div', { class: 'who' }, h('b', {}, 'Ticket Intelligence'), ` · ${ago(m.at)}`), teamsCard(m)))) : [h('div', { class: 'empty' }, 'Handoff messages to owners appear here.')]));
   const teamsLive = status?.teams?.live || teams.some((m) => m.channel === 'teams');
-  $('#teams-mode').textContent = teamsLive ? `live channel (webhook)${status?.teams?.mentions ? ' · @mentions the owner' : ''}` : 'simulated channel: no Teams webhook set';
+  // The panel is the agent's outbox, not a chat: the webhook only posts, replies stay in Teams.
+  $('#teams-mode').textContent = teamsLive ? `messages the agent posted · replies are in Teams · live channel${status?.teams?.mentions ? ', @mentions the owner' : ''}` : 'messages the agent would post · simulated: no Teams webhook set';
   const channelUrl = status?.teams?.channelUrl ?? null;
   $('#teams-open').hidden = !channelUrl;
   if (channelUrl) $('#teams-open').href = channelUrl;
@@ -873,6 +886,50 @@ function teamsCard(m) {
     h('div', { class: 'actions', style: 'margin-top:8px' }, m.prUrl ? h('a', { href: m.prUrl, target: '_blank' }, 'Review the pull request ↗') : null, m.url ? h('a', { href: m.url, target: '_blank' }, 'Open in Jira ↗') : null,
       channelUrl ? h('a', { href: channelUrl, target: '_blank' }, 'Open in Teams ↗') : null));
 }
+
+/**
+ * Insights is long: every section after the title and the KPIs folds into a <details>, so the page opens as a list of
+ * headings. Which are open is remembered in this browser (by the heading's text); by default only the first ones.
+ * Content is still rendered into the closed sections, so opening one shows it at once.
+ */
+const FOLD_KEY = 'ti-ins-open';
+function foldSections(root, { keep = [], openByDefault = [] }) {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(FOLD_KEY) || '{}'); } catch { /* storage blocked */ }
+  const headingOf = (el) => (el.tagName === 'H2' ? el : el.tagName === 'DIV' ? el.querySelector(':scope > h2') : null);
+  const all = [];
+  let current = null;
+  for (const el of [...root.children]) {
+    if (keep.includes(el)) { current = null; continue; }
+    const h = headingOf(el);
+    if (h) {
+      const title = h.textContent.trim();
+      const d = Object.assign(document.createElement('details'), { className: 'ins-sec' });
+      d.dataset.title = title;
+      root.insertBefore(d, el);
+      const s = document.createElement('summary');
+      s.append(el);
+      d.append(s);
+      d.open = saved[title] ?? openByDefault.includes(title);
+      d.addEventListener('toggle', () => {
+        try {
+          const m = JSON.parse(localStorage.getItem(FOLD_KEY) || '{}');
+          m[title] = d.open;
+          localStorage.setItem(FOLD_KEY, JSON.stringify(m));
+        } catch { /* storage blocked */ }
+      });
+      all.push(d);
+      current = d;
+    } else if (current) current.append(el);
+  }
+  // Open all / close all, right after the KPIs.
+  const bar = h('div', { class: 'ins-fold-bar' },
+    h('button', { class: 'small', type: 'button', onclick: () => all.forEach((d) => { d.open = true; }) }, 'Open all'),
+    h('button', { class: 'small', type: 'button', onclick: () => all.forEach((d) => { d.open = false; }) }, 'Close all'));
+  root.insertBefore(bar, all[0] ?? null);
+}
+foldSections($('#ins-body'), { keep: [$('#ins-title'), $('#ins-kpis')], openByDefault: ['Bugs per component and month', 'Top hotspots'] });
+foldSections($('#ins-suite'), { keep: [$('#ins-suite').firstElementChild, $('#ins-suite').querySelector(':scope > .hint'), $('#suite-kpis')], openByDefault: ['Apps'] });
 
 let insightsFor = null; // the project whose insights are shown (a late answer for another project is dropped)
 async function loadInsights(refresh = false) {

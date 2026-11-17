@@ -131,7 +131,7 @@ Added 2026-11-16. The same message, with two changes: the owner's message arrive
 - Teams: the channel is live with @mentions, the webhook answers from this network (a GET, which the workflow refuses without running), and the owner has an account to mention;
 - the pilot: the reserved case is pushed, and nothing else is in flight.
 
-It only warns about System 1 and a running training. Then the private laptop goes on the channel at 125 % zoom with *Do not disturb* on, and the dashboard's Teams panel says **live channel (webhook) · @mentions the owner**.
+It only warns about System 1 and a running training. Then the private laptop goes on the channel at 125 % zoom with *Do not disturb* on, and the dashboard's Teams panel says **live channel, @mentions the owner**.
 
 ### Script
 

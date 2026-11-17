@@ -115,7 +115,9 @@
   const ticketEl = (key) => [...document.querySelectorAll('#tickets .ticket')].find((el) => el.querySelector('.t-key')?.textContent === key) ?? null;
   const rowOf = (key, label) => [...(ticketEl(key)?.querySelectorAll('.result .row') ?? [])].find((r) => r.querySelector('.k')?.textContent === label) ?? null;
   const boxOf = (key, icon) => [...(ticketEl(key)?.querySelectorAll('.fix') ?? [])].find((f) => f.querySelector('.fix-title')?.textContent.startsWith(icon)) ?? null;
-  const sectionOf = (id) => { const el = document.getElementById(id); return shown(el) && !el.hidden ? el : null; };
+  // Insights folds its sections (<details>): a step that shows one opens it first.
+  const unfold = (el) => { for (let d = el?.closest('details'); d; d = d.parentElement?.closest('details')) d.open = true; return el; };
+  const sectionOf = (id) => { const el = unfold(document.getElementById(id)); return shown(el) && !el.hidden ? el : null; };
   const hasContent = (id) => { const el = sectionOf(id); return el && el.children.length && !(el.children.length === 1 && el.firstElementChild.classList.contains('empty')); };
   const tabBtn = (name) => document.querySelector(`#tabs button[data-tab="${name}"]`);
 
@@ -584,11 +586,11 @@
         go: async (my) => {
           const cells = [...document.querySelectorAll('#ins-heat .hc.clickable')];
           const top = cells.reduce((a, b) => ((parseInt(b.textContent, 10) || 0) > (parseInt(a.textContent, 10) || 0) ? b : a), cells[0]);
-          bringIntoView(top.closest('.panel'));
+          bringIntoView(unfold(top).closest('.panel'));
           await sleep(500);
           await clickOn(top, my);
         },
-        target: () => sectionOf('ins-tickets') ?? $('#ins-heat')?.closest('.panel'),
+        target: () => sectionOf('ins-tickets') ?? unfold($('#ins-heat'))?.closest('.panel'),
         say: "The map shows bugs per component and month, taken from the commits that fixed them. One click on a cell lists the tickets behind the number." },
       { ch: 'Insights', when: () => d()?.hotspots?.length, target: () => sectionOf('ins-hotspots'),
         say: () => { const c = d().components.find((x) => x.name === d().hotspots[0]); return `The hotspots rank components by bugs, weighted by priority and churn. The top one is ${d().hotspots[0]}${c ? `, with ${plural(c.bugs, 'bug')}` : ''}, and the AI can write a recommendation that must cite tickets and commits.`; } },
