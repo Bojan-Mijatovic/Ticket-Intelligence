@@ -47,6 +47,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const all = loadProjects(HERE);
 const cfg = all.global; // settings shared by all projects (labels, poll, dashboard, claude, mail)
 const policy = JSON.parse(readFileSync(join(HERE, 'policy.json'), 'utf8'));
+/** The System 1 switches that act for real (auto), in words, for the dashboard: 'shadow' alone would say it changes nothing. */
+const system1Live = () => [['queueOrder', 'queue order'], ['knownTest', 'known-issue test'], ['askRouter', 'Ask router'], ['lightPath', 'light path'], ['privacy', 'privacy hold'], ['askReporter', 'question to the reporter']].filter(([k]) => (policy.system1 ?? {})[k] === 'auto').map(([, w]) => w);
 const rootState = join(HERE, 'state'); // the watcher's own files: pid, event log
 const PID_FILE = join(rootState, 'watcher.pid');
 const KEYS = all.projects.map((p) => p.key);
@@ -206,7 +208,7 @@ const projectStatus = (p) => ({
   key: p.key, name: p.name, description: p.cfg.description, repo: p.repoDir, ready: existsSync(p.repoDir), app: p.app, linked: p.linked,
   appBranch: existsSync(p.repoDir) ? currentBranch(p.repoDir) : null, github: githubInfo(p.repoDir), askExamples: p.askExamples,
 });
-const status = { projects: all.projects.map(projectStatus), jiraUrl: jira.baseUrl, teams: teamsInfo(), jira: { ok: null, error: null, warnings: [] }, policy: policy.actions, lastPoll: null, nextPoll: null, queue: [], processing: null, startedAt: new Date().toISOString(), pid: process.pid, system1: { mode: system1.mode, model: system1.model, ready: null, reason: null } };
+const status = { projects: all.projects.map(projectStatus), jiraUrl: jira.baseUrl, teams: teamsInfo(), jira: { ok: null, error: null, warnings: [] }, policy: policy.actions, lastPoll: null, nextPoll: null, queue: [], processing: null, startedAt: new Date().toISOString(), pid: process.pid, system1: { mode: system1.mode, model: system1.model, ready: null, reason: null, live: system1Live() } };
 const clients = new Set();
 const broadcast = (event) => {
   const line = `data: ${JSON.stringify(event)}\n\n`;
@@ -444,15 +446,17 @@ async function drain() {
   // again calls drain(). A watcher about to be replaced (POST /api/drain) starts nothing new.
   if (draining || status.processing || !status.queue.length || status.jira.ok === false) return;
   // A4: a merge check waits for every other job, so a ticket is never held up by one that has not started.
-  const other = status.queue.findIndex((q) => q.kind !== 'merge-check');
-  if (other > 0) status.queue.unshift(...status.queue.splice(other, 1));
+  const notMergeCheck = status.queue.findIndex((q) => q.kind !== 'merge-check');
+  if (notMergeCheck > 0) status.queue.unshift(...status.queue.splice(notMergeCheck, 1));
   // J3: tickets to analyze by System 1's urgency ('auto'), or only say which it would take first ('shadow').
   const order = S1.queueOrder ?? 'shadow';
   const best = order === 'off' ? 0 : nextIndex(status.queue, (k) => system1Resolved.get(k)?.answers);
-  if (best > 0 && order === 'shadow') {
+  // Said on the ticket's card in both modes: in 'auto' it is what happened, so a person sees why a ticket came first.
+  if (best > 0) {
     const [first, other] = [status.queue[0], status.queue[best]];
     const urg = (k) => system1Resolved.get(k)?.answers?.urgency?.choice;
-    events.emit('system1-queue', { key: other.key, text: `queue order (shadow): would take ${other.key} (${urg(other.key)}) before ${first.key} (${urg(first.key) ?? 'no answer'})`, before: first.key });
+    const why = `${other.key} (${urg(other.key)}) before ${first.key} (${urg(first.key) ?? 'no answer'})`;
+    events.emit('system1-queue', { key: other.key, text: order === 'auto' ? `queue order: taken first by urgency, ${why}` : `queue order (shadow): would take ${why}`, before: first.key });
   }
   const issue = order === 'auto' && best > 0 ? status.queue.splice(best, 1)[0] : status.queue.shift();
   status.processing = { key: issue.key ?? `${issue.project} ${String(issue.sha).slice(0, 7)}`, kind: issue.kind, since: new Date().toISOString() };
@@ -906,7 +910,7 @@ const server = createServer(async (req, res) => {
   if (req.method === 'POST' && path === '/api/system1/reload') {
     if (system1.mode === 'off') return json(res, 409, { ok: false, error: 'System 1 is off in policy.json' });
     const ok = await system1.reload();
-    status.system1 = { mode: system1.mode, model: system1.model, ready: ok, reason: ok ? null : system1.reason };
+    status.system1 = { mode: system1.mode, model: system1.model, ready: ok, reason: ok ? null : system1.reason, live: system1Live() };
     pushStatus();
     return json(res, ok ? 200 : 503, { ok, model: system1.model, reason: ok ? null : system1.reason });
   }
@@ -1203,7 +1207,7 @@ setInterval(() => broadcast({ type: 'ping', at: new Date().toISOString() }), 15_
 events.emit('started', { text: `watching ${WATCHED.join(', ')} every ${cfg.pollSeconds}s` });
 if (system1.mode !== 'off') {
   system1.start().then((ok) => {
-    status.system1 = { mode: system1.mode, model: system1.model, ready: ok, reason: ok ? null : system1.reason };
+    status.system1 = { mode: system1.mode, model: system1.model, ready: ok, reason: ok ? null : system1.reason, live: system1Live() };
     if (!ok) {
       console.log(`System 1 off: ${system1.reason}`);
       events.emit('error', { text: `System 1 off: ${system1.reason}` });

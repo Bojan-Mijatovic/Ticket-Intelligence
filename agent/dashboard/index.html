@@ -450,7 +450,7 @@ function h(tag, attrs = {}, ...kids) {
 const initials = (name = '?') => name.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
 const ago = (iso) => { if (!iso) return '–'; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`; };
 const KNOWN_TEXT = { documented: 'documented', duplicate: 'duplicate of', 'in-progress': 'fix in progress', 'fixed-on-main': 'fixed on main by', regression: 'regression of', 'solved-before': 'solved before as' };
-const ICON = { system1: '⚡', 'system1-compared': '⚖', 'system1-held': '⏸', 'system1-queue': '⇅', triaged: '➜', 'known-test': '🧪', 'prior-art': '⟲', mailed: '✉', 'mail-failed': '✖', resolved: '☑', documenting: '📝', documented: '📚', 'docs-merged': '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', bisecting: '⑂', bisected: '🎯', guard: '🛡', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺', reviewing: '👀', reviewed: '🧐', 'review-skipped': '–' };
+const ICON = { system1: '⚡', 'system1-compared': '⚖', 'system1-held': '⏸', 'system1-queue': '⇅', triaged: '➜', 'known-test': '🧪', 'prior-art': '⟲', mailed: '✉', 'mail-failed': '✖', resolved: '☑', documenting: '📝', documented: '📚', 'docs-merged': '📚', 'doc-failed': '✖', warmed: '🔥', workspace: '⎇', reproducing: '🧪', reproduced: '🐞', bisecting: '⑂', bisected: '🎯', guard: '🛡', fixing: '🛠', verifying: '🔍', verified: '✓', pushed: '⇡', pr: '⇄', 'fix-proposed': '✔', 'fix-failed': '✖', 'fix-retry': '↻', 'merge-check': '🔀', 'fix-notified': '📣', 'fix-skipped': '–', duplicate: '⧉', skipped: '–', queued: '•', picked: '▸', analyzing: '⚙', progress: '›', analyzed: '✓', commented: '💬', notified: '📣', draft: '✎', done: '✔', failed: '✖', recovered: '↺', reviewing: '👀', reviewed: '🧐', 'review-skipped': '–' };
 
 const tickets = new Map();
 const teams = [];
@@ -547,7 +547,7 @@ function apply(ev) {
 
 function stepRow(t, s) {
   const secs = Math.max(0, Math.round((Date.parse(s.at) - Date.parse(t.startedAt)) / 1000));
-  const cls = s.type === 'done' || s.type === 'commented' || s.type === 'notified' ? 'ok' : s.type === 'failed' ? 'bad' : '';
+  const cls = ['done', 'commented', 'notified', 'fix-notified'].includes(s.type) || (s.type === 'merge-check' && /still green/.test(s.text)) ? 'ok' : s.type === 'failed' || (s.type === 'merge-check' && !/still green/.test(s.text)) ? 'bad' : '';
   return h('div', { class: `step ${cls}` }, h('span', { class: 't' }, `${secs}s`), h('span', { class: 'i' }, ICON[s.type] ?? '·'), h('span', { class: 'm' }, s.text));
 }
 
@@ -641,7 +641,7 @@ function system1View(t) {
     { queued: 'test queued', running: 'test running…', pass: '✓ its test passes on main', fail: '✗ its test FAILS on main: may be back', 'not-run': 'test did not run', none: 'no verdict' }[kt.status] ?? kt.status) : null;
   const light = s.lightPathMode === 'auto' ? 'light path (auto)' : s.lightPathMode === 'draft' ? 'light path offered' : 'would take the light path';
   return h('div', { class: 's1' },
-    h('div', { class: 's1-head' }, '⚡ System 1', h('span', { class: 'chip' }, s.mode === 'shadow' ? 'shadow · changes nothing' : s.mode),
+    h('div', { class: 's1-head' }, '⚡ System 1', h('span', { class: 'chip', title: 'shadow: its answers are shown and compared; the switches set to auto in policy.json act for real' }, s.mode === 'shadow' ? (status?.system1?.live?.length ? `shadow · live: ${status.system1.live.filter((x) => x !== 'Ask router').join(', ')}` : 'shadow · changes nothing') : s.mode),
       s.lightPath ? h('span', { class: 'chip done', title: `every not-code answer says "no change in the code" (each at least ${pc(s.threshold ?? 0.5)}): ${s.lightPathMode === 'shadow' || !s.lightPathMode ? 'with the light path on (J2), this ticket would get no code analysis' : 'policy.json system1.lightPath'}` }, light) : null,
       s.privacy?.hold ? h('span', { class: 'chip failed', title: 'the text, with every known name masked, may still name a person (J6)' }, s.privacy.mode === 'auto' ? `held: may name a person ${pc(s.privacy.p)}` : `would hold: may name a person ${pc(s.privacy.p)}`) : null,
       h('span', { class: 't-sub', title: s.elapsedMs != null ? `answered ${(s.elapsedMs / 1000).toFixed(1)} s after the ticket was queued (reading it from Jira included)` : '' }, `${((s.ms ?? 0) / 1000).toFixed(1)} s on this machine · ${s.model}`)),
