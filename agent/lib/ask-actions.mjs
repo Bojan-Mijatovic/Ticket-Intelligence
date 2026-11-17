@@ -55,8 +55,96 @@ export function askRecord(answer, extra = {}) {
     answer: String(answer.answer ?? '').slice(0, MAX_ANSWER),
     cited: sources.map(({ type, ref, url = null, why = '' }) => ({ type, ref, url: url ?? null, why: String(why ?? '').slice(0, 300) })),
     ...(answer.followUp?.at ? { followUp: answer.followUp.at } : {}), // Ask 4/7: the answer this question followed
+    ...(answer.main ? { main: answer.main } : {}), // Ask 6/7: the commit of main the answer was read on
+    ...(answer.cachedFrom?.at ? { cachedFrom: answer.cachedFrom.at } : {}), // Ask 6/7: given again from that answer
     ...extra,
   };
+}
+
+/** The recorded answers of a project that kept their text (Ask 3/7 on), in the order they were given. */
+function readRecords(stateDir) {
+  const file = join(stateDir, 'asks.jsonl');
+  if (!existsSync(file)) return [];
+  return readFileSync(file, 'utf8').split('\n').flatMap((l) => {
+    if (!l.includes('"answer":')) return [];
+    try {
+      const r = JSON.parse(l);
+      return typeof r.answer === 'string' && r.at ? [r] : [];
+    } catch {
+      return [];
+    }
+  });
+}
+/** answer time → the last vote on it (K12). */
+function votesOf(stateDir) {
+  const file = join(stateDir, 'ask-feedback.jsonl');
+  const out = new Map();
+  if (!existsSync(file)) return out;
+  for (const l of readFileSync(file, 'utf8').split('\n')) {
+    try {
+      const f = JSON.parse(l);
+      if (f.answerAt) out.set(f.answerAt, f.vote);
+    } catch {
+      /* skip */
+    }
+  }
+  return out;
+}
+
+/**
+ * Ask 6/7: the earlier answers of a project, newest first, in the shape the page shows an answer: with its vote, what
+ * was done with it, the question it followed and the answer it was given again from.
+ */
+export function askHistory(stateDir, { limit = 50 } = {}) {
+  const records = readRecords(stateDir);
+  const byAt = new Map(records.map((r) => [r.at, r]));
+  const votes = votesOf(stateDir);
+  const done = new Map();
+  for (const a of actionsOn(stateDir)) done.set(a.answerAt, [...(done.get(a.answerAt) ?? []), a]);
+  return records.slice(-limit).reverse().map((r) => ({
+    at: r.at,
+    question: r.question,
+    found: r.found === true,
+    ...(r.fast ? { fast: true } : {}),
+    via: r.via ?? 'claude',
+    intent: r.intent ?? null,
+    component: r.component ?? null,
+    answer: r.answer,
+    sources: r.cited ?? [],
+    warnings: (r.warnings ?? []).map((text) => ({ text })),
+    followUp: r.followUp ? { at: r.followUp, question: byAt.get(r.followUp)?.question ?? '(an earlier question)' } : null,
+    cachedFrom: r.cachedFrom ? { at: r.cachedFrom } : null,
+    vote: votes.get(r.at) ?? null,
+    done: done.get(r.at) ?? [],
+    meta: { costUsd: r.costUsd ?? 0, durationMs: r.durationMs ?? null },
+    ...(r.fast && r.via !== 'records' ? { routed: { via: r.via === 'rule' ? 'rule' : 'System 1', intent: r.intent } } : {}),
+  }));
+}
+
+/** Two questions are the same when only case, accents, punctuation and spaces differ. */
+export const sameWords = (a, b) => {
+  const n = (s) => fold(s).replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim();
+  return n(a) === n(b);
+};
+
+/**
+ * Ask 6/7: an earlier Claude answer to give again instead of a new run, or null. The same words, in this project,
+ * within `maxHours`, read on the same commit of main; found, with sources and no source warnings; not a follow-up
+ * (its meaning came from the conversation); and nobody marked it, or a copy of it, wrong.
+ */
+export function reusableAnswer(stateDir, question, { head, maxHours = 24, now = Date.now() } = {}) {
+  if (!head || !(maxHours > 0)) return null;
+  const records = readRecords(stateDir);
+  const votes = votesOf(stateDir);
+  for (let i = records.length - 1; i >= 0; i--) {
+    const r = records[i];
+    if (r.via !== 'claude' || r.cachedFrom || r.followUp || !r.found || !(r.cited ?? []).length || (r.warnings ?? []).length) continue;
+    if (now - Date.parse(r.at) > maxHours * 3_600_000 || r.main !== head || !sameWords(r.question, question)) continue;
+    const family = [r.at, ...records.filter((x) => x.cachedFrom === r.at).map((x) => x.at)];
+    if (family.some((at) => votes.get(at) === 'down')) continue;
+    return r;
+  }
+  return null;
 }
 
 export const logAsk = (dir, answer, extra) => appendFileSync(join(dir, 'asks.jsonl'), `${JSON.stringify(askRecord(answer, extra))}\n`);

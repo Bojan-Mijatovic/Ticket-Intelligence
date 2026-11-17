@@ -403,6 +403,7 @@
       <div class="steps" id="ask-progress" hidden></div>
     </form>
     <div id="ask-answers"></div>
+    <div id="ask-history"></div>
   </section>
   <div id="tab-tickets">
   <section class="kpis kpis6">
@@ -1940,6 +1941,7 @@ let askId = null;
 /** Title, examples and placeholder of the Ask tab for the selected project; a picker when "All projects" is selected. */
 function renderAskHead() {
   const p = focus();
+  loadAskHistory();
   if (followUpOf && followUpOf.focusedOn !== (p?.key ?? null)) { followUpOf = null; renderFollowUp(); }
   $('#ask-form').hidden = !p;
   $('#ask-title').textContent = p ? `Ask the knowledge base · ${projLabel(p)}` : 'Ask the knowledge base';
@@ -1966,11 +1968,14 @@ function renderAnswers() {
     a.followUp ? h('div', { class: 't-sub' }, `↳ follow-up to: ${a.followUp.question}`) : null,
     a.error ? h('pre', { class: 'err' }, a.error) : [
       h('div', {}, h('span', { class: `chip ${a.found ? 'done' : a.searchFailed ? 'failed' : 'analyzing'}` }, a.found ? 'answered from sources' : a.searchFailed ? 'Jira could not be searched' : 'not in the knowledge base'),
-        a.via === 'records' ? h('span', { class: 'chip', style: 'margin-left:6px', title: "From the agent's records: its events for this ticket, the ticket in Jira and the state of its pull requests on GitHub. No model." }, "⚡ from the agent's records · no AI")
+        a.cachedFrom ? h('span', { class: 'chip', style: 'margin-left:6px', title: `The same question was answered by Claude ${ago(a.cachedFrom.at)}, on the same commit of main: given again, no new AI run. Tickets created since then are not in it.` }, `♻ asked before, ${ago(a.cachedFrom.at)} · no new AI run`)
+          : a.via === 'records' ? h('span', { class: 'chip', style: 'margin-left:6px', title: "From the agent's records: its events for this ticket, the ticket in Jira and the state of its pull requests on GitHub. No model." }, "⚡ from the agent's records · no AI")
           : a.fast && a.intent === 'page' ? h('span', { class: 'chip', style: 'margin-left:6px', title: 'An address in the question: plain code traced it through the routes, components, services and controllers on main' }, '⚡ plain code · no AI')
           : a.fast ? h('span', { class: 'chip', style: 'margin-left:6px', title: `${a.routed?.via === 'rule' ? 'A clear wording' : 'System 1'} read the question as "${a.routed?.intent}"${a.routed?.via === 'rule' ? '' : ` (${Math.round(100 * (a.routed?.intentP ?? 0))} %)`}${a.component ? ` about ${a.component}` : ''}, and plain code answered from the Insights data${a.intent === 'where' ? ' and the files on main' : ''}` }, a.routed?.via === 'rule' ? '⚡ plain code · no AI' : '⚡ System 1 · no Claude call') : null,
         h('span', { class: 'meta', style: 'margin-left:8px' }, `${a.fast ? ((a.meta?.durationMs ?? 0) / 1000).toFixed(1) : Math.round((a.meta?.durationMs ?? 0) / 1000)} s · ~$${(a.meta?.costUsd ?? 0).toFixed(2)}`),
-        a.fast ? h('button', { class: 'small', style: 'margin-left:8px', onclick: (e) => askClaude(a.question, a.project, e.target, a.followUp?.at) }, 'Ask Claude instead') : null),
+        a.fast ? h('button', { class: 'small', style: 'margin-left:8px', onclick: (e) => askClaude(a.question, a.project, e.target, a.followUp?.at) }, 'Ask Claude instead') : null,
+        a.cachedFrom && !a.tourReplay ? h('button', { class: 'small', style: 'margin-left:8px', title: 'A new Claude run, on the data of now', onclick: (e) => askClaude(a.question, a.project, e.target, null, true) }, 'Ask again') : null),
+      a.earlier ? h('div', { class: 't-sub' }, `Asked ${ago(a.at)} (from the earlier questions)`) : null,
       !a.fast && a.routed?.intent ? h('div', { class: 't-sub' }, `System 1 read it as "${a.routed.intent}" (${Math.round(100 * a.routed.intentP)} %)${a.routed.componentP >= 0.7 ? `, about ${a.routed.component}` : ''}; Claude answered.`) : null,
       // K10: a source that could not be read is said, never hidden behind "not found".
       a.warnings?.length ? h('div', { class: 'err', style: 'margin:6px 0;padding:6px 10px;border-radius:6px' }, a.warnings.map((w) => h('div', {}, `⚠ ${w.text}`))) : null,
@@ -2090,6 +2095,46 @@ function feedbackRow(a) {
 }
 
 /**
+ * Ask 6/7: the earlier questions of the project, from the agent's records: a list to filter, and any one opens as an
+ * answer again, with its vote and what was done with it, ready to follow up, share or save.
+ */
+let askHistory = { project: null, answers: [], filter: '', open: false, error: null };
+async function loadAskHistory() {
+  const p = focus();
+  if (!p) { $('#ask-history').replaceChildren(); return; }
+  try {
+    const d = await getJson(`/api/ask/history?project=${encodeURIComponent(p.key)}&limit=100`);
+    askHistory = { ...askHistory, project: p.key, answers: d.answers, error: null, ...(askHistory.project !== p.key ? { filter: '', open: false } : {}) };
+  } catch (e) { askHistory = { ...askHistory, project: p.key, answers: [], error: e.message }; }
+  renderAskHistory();
+}
+const VIA_CHIP = { records: 'records', rule: 'plain code', 'System 1': 'System 1', claude: 'Claude' };
+function renderAskHistory() {
+  const box = $('#ask-history');
+  const list = askHistory.answers.filter((a) => !askHistory.filter || `${a.question} ${a.answer}`.toLowerCase().includes(askHistory.filter.toLowerCase()));
+  if (!askHistory.answers.length && !askHistory.error) { box.replaceChildren(); return; }
+  const open = (a) => {
+    if (!answers.some((x) => x.at === a.at && x.project === a.project)) answers.unshift({ ...a, earlier: true });
+    renderAnswers();
+    $('#ask-answers').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  };
+  const filter = h('input', { type: 'search', value: askHistory.filter, placeholder: 'Filter by a word of the question or the answer', style: 'width:100%;margin:6px 0' });
+  filter.addEventListener('input', () => { askHistory.filter = filter.value; renderAskHistory(); const f = $('#ask-history input[type=search]'); f.focus(); f.setSelectionRange(f.value.length, f.value.length); });
+  const details = h('details', { class: 'panel', style: 'padding:8px 12px', ...(askHistory.open ? { open: '' } : {}) },
+    h('summary', { style: 'cursor:pointer;font-weight:600' }, `Earlier questions in ${projectInfo(askHistory.project)?.name ?? askHistory.project} (${askHistory.answers.length})`),
+    askHistory.error ? h('div', { class: 'err' }, askHistory.error) : [
+      filter,
+      list.length ? h('table', {}, h('tbody', {}, list.slice(0, 60).map((a) => h('tr', { style: 'cursor:pointer', title: 'Open this answer again', onclick: () => open(a) },
+        h('td', { class: 't-sub', style: 'white-space:nowrap' }, ago(a.at)),
+        h('td', {}, a.followUp ? h('span', { class: 't-sub' }, '↳ ') : null, a.question),
+        h('td', { style: 'white-space:nowrap' }, h('span', { class: `chip ${a.found ? 'done' : 'analyzing'}` }, a.cachedFrom ? 'given again' : VIA_CHIP[a.via] ?? a.via),
+          a.vote ? ` ${a.vote === 'up' ? '👍' : '👎'}` : '', a.done?.length ? h('span', { class: 't-sub' }, ` · ${a.done.map((d) => (d.action === 'teams' ? 'Teams' : d.action === 'ticket' ? d.key : 'FAQ')).join(', ')}`) : null))))) : h('div', { class: 't-sub' }, 'No earlier question has these words.'),
+    ]);
+  details.addEventListener('toggle', () => { askHistory.open = details.open; });
+  box.replaceChildren(details);
+}
+
+/**
  * Ask 4/7: the answer the next question follows, shown above the box until it is asked or dropped. One follow-up at a
  * time: after it is answered, "Follow up" on the new answer continues the conversation (the server reads up to three
  * answers back), so a question meant to stand alone never carries an old one by mistake.
@@ -2128,16 +2173,16 @@ async function ask() {
     $('#ask-q').value = '';
     if (followUpOf === prev) { followUpOf = null; renderFollowUp(); }
   } catch (e) { answers.unshift({ question: q, project, error: e.message }); }
-  finally { askId = null; btn.disabled = false; btn.textContent = 'Ask'; progress.hidden = true; renderAnswers(); }
+  finally { askId = null; btn.disabled = false; btn.textContent = 'Ask'; progress.hidden = true; renderAnswers(); loadAskHistory(); }
 }
 /** J5: the same question to Claude, after a fast System 1 answer (a follow-up stays one). */
-async function askClaude(question, project, button, followUpAt = null) {
+async function askClaude(question, project, button, followUpAt = null, fresh = false) {
   if (askId) return;
   askId = String(Date.now());
   if (button) { button.disabled = true; button.textContent = 'Claude is answering…'; }
-  try { answers.unshift(await post('/api/ask', { question, id: askId, project, full: true, ...(followUpAt ? { followUp: followUpAt } : {}) })); }
+  try { answers.unshift(await post('/api/ask', { question, id: askId, project, full: true, ...(followUpAt ? { followUp: followUpAt } : {}), ...(fresh ? { fresh: true } : {}) })); }
   catch (e) { answers.unshift({ question, project, error: e.message }); }
-  finally { askId = null; renderAnswers(); }
+  finally { askId = null; renderAnswers(); loadAskHistory(); }
 }
 $('#ask-form').addEventListener('submit', (e) => { e.preventDefault(); ask(); });
 $('#ask-q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } });

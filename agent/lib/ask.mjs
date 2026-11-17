@@ -205,6 +205,12 @@ export async function askQuestion({ question, repoDir, stateDir, logDir = stateD
   onProgress('collecting tickets, analyses and history');
   // Its own checkout: an analysis running at the same time refreshes state/analysis-repo.
   const cwd = analysisCheckout({ repoDir, stateDir, name: 'ask-repo' });
+  let main = null; // Ask 6/7: the commit of main the answer is read on (an answer is given again only on the same one)
+  try {
+    if (cwd !== repoDir) main = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    /* not git */
+  }
   const last = previous.at(-1) ?? null;
   const context = last ? { words: keywords(last.question, 3), keys: previous.flatMap((r) => (r.cited ?? []).filter((s) => s.type === 'ticket').map((s) => s.ref)).slice(-10) } : null;
   const data = await collect({ question: q, dir, repoDir: cwd, stateDir, cfg, jira, peers, context });
@@ -251,6 +257,7 @@ export async function askQuestion({ question, repoDir, stateDir, logDir = stateD
     meta: out.meta,
     at: new Date().toISOString(),
     ...(last ? { followUp: { at: last.at, question: last.question } } : {}),
+    ...(main ? { main } : {}),
   }, data.warnings);
   writeFileSync(join(dir, 'answer.json'), JSON.stringify(answer, null, 2));
   // Audit trail, local only (agent/state is not committed); since Ask 3/7 with the answer, which its actions start from.

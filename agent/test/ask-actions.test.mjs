@@ -210,3 +210,50 @@ test('Ask 4/7: a follow-up is recorded with the answer it follows; the conversat
   logAsk(dir, { ...CLAUDE, at: at(5), question: 'loop', followUp: { at: at(5), question: 'loop' } });
   assert.deepEqual(followUpChain(dir, at(5)).map((r) => r.question), ['loop'], 'a record that follows itself does not loop');
 });
+
+test('Ask 6/7, the history: newest first, with the vote, what was done, the question it followed; old records without text left out', async () => {
+  const { askHistory } = await import('../lib/ask-actions.mjs');
+  const dir = join(tmp, 'history');
+  mkdirSync(dir, { recursive: true });
+  appendFileSync(join(dir, 'asks.jsonl'), `${JSON.stringify({ at: '2026-11-10T08:00:00.000Z', question: 'before Ask 3/7', found: true, sources: [] })}\n`);
+  logAsk(dir, { ...CLAUDE, at: '2026-11-17T09:00:00.000Z' });
+  logAsk(dir, { ...FAST, at: '2026-11-17T09:01:00.000Z', question: 'Who knows it best?', intent: 'who', followUp: { at: '2026-11-17T09:00:00.000Z' } });
+  appendFileSync(join(dir, 'ask-feedback.jsonl'), `${JSON.stringify({ answerAt: '2026-11-17T09:00:00.000Z', vote: 'up' })}\n`);
+  recordAction(dir, { answerAt: '2026-11-17T09:00:00.000Z', action: 'faq', number: 14, url: 'https://github.example/pull/14' });
+  const h = askHistory(dir);
+  assert.deepEqual(h.map((a) => a.question), ['Who knows it best?', CLAUDE.question]);
+  assert.deepEqual(h[0].followUp, { at: '2026-11-17T09:00:00.000Z', question: CLAUDE.question });
+  assert.deepEqual(h[0].routed, { via: 'rule', intent: 'who' }, 'a fast answer keeps how it was made, for its chip');
+  assert.deepEqual([h[1].vote, h[1].done.map((d) => d.number), h[1].sources[0].ref, h[1].via], ['up', [14], 'VAX-21', 'claude']);
+  assert.equal(askHistory(dir, { limit: 1 }).length, 1);
+});
+
+test('Ask 6/7, an answer given again: same words, same main, within the hours, found and sourced, not a follow-up, not marked wrong', async () => {
+  const { reusableAnswer, sameWords } = await import('../lib/ask-actions.mjs');
+  const dir = join(tmp, 'reuse');
+  mkdirSync(dir, { recursive: true });
+  const now = Date.parse('2026-11-17T12:00:00.000Z');
+  logAsk(dir, { ...CLAUDE, at: '2026-11-17T09:00:00.000Z', main: 'aaa111', warnings: [] });
+  const opts = { head: 'aaa111', maxHours: 24, now };
+  assert.ok(sameWords('Why was the third ESA dose due too early?', '  why was the THIRD esa dose due too early '));
+  assert.equal(reusableAnswer(dir, 'why was the third ESA dose due too early', opts).at, '2026-11-17T09:00:00.000Z');
+  assert.equal(reusableAnswer(dir, 'Why was the second dose due too early?', opts), null, 'other words');
+  assert.equal(reusableAnswer(dir, CLAUDE.question, { ...opts, head: 'bbb222' }), null, 'main moved since');
+  assert.equal(reusableAnswer(dir, CLAUDE.question, { ...opts, now: now + 22 * 3_600_000 }), null, 'older than the hours');
+  assert.equal(reusableAnswer(dir, CLAUDE.question, { ...opts, maxHours: 0 }), null, '0 turns it off');
+  assert.equal(reusableAnswer(dir, CLAUDE.question, { ...opts, head: null }), null, 'no main known: never');
+
+  // A copy given again, then marked wrong: the original is not given again either.
+  logAsk(dir, { ...CLAUDE, at: '2026-11-17T10:00:00.000Z', main: 'aaa111', cachedFrom: { at: '2026-11-17T09:00:00.000Z' } });
+  assert.equal(reusableAnswer(dir, CLAUDE.question, opts).at, '2026-11-17T09:00:00.000Z', 'the original, not the copy');
+  appendFileSync(join(dir, 'ask-feedback.jsonl'), `${JSON.stringify({ answerAt: '2026-11-17T10:00:00.000Z', vote: 'down' })}\n`);
+  assert.equal(reusableAnswer(dir, CLAUDE.question, opts), null);
+
+  const other = join(tmp, 'reuse-2');
+  mkdirSync(other, { recursive: true });
+  logAsk(other, { ...CLAUDE, at: '2026-11-17T09:00:00.000Z', main: 'aaa111', followUp: { at: 'x' } });
+  logAsk(other, { ...CLAUDE, at: '2026-11-17T09:01:00.000Z', main: 'aaa111', found: false });
+  logAsk(other, { ...CLAUDE, at: '2026-11-17T09:02:00.000Z', main: 'aaa111', warnings: [{ text: 'Jira search failed' }] });
+  logAsk(other, { ...FAST, question: CLAUDE.question, at: '2026-11-17T09:03:00.000Z', main: 'aaa111' });
+  assert.equal(reusableAnswer(other, CLAUDE.question, opts), null, 'a follow-up, a not-found, one with warnings, a fast one: none is given again');
+});

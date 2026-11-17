@@ -32,7 +32,7 @@ import { describeMergeCheck, mergeCheck, mergeCheckComment } from './lib/merge-c
 import { ticketKeyQuestion, ticketStatus } from './lib/ticket-status.mjs';
 import { componentInQuestion, fastMore, ruleIntent } from './lib/ask-fast.mjs';
 import { pageAnswer, pageInQuestion, pageOnly, traceAddress } from './lib/page-code.mjs';
-import { actionsOn, faqRefusal, findAnswer, followUpChain, logAsk, maskAnswer, peopleFor, priorArtItem, recordAction, saveFaq, ticketDraft, viaText, voteOn } from './lib/ask-actions.mjs';
+import { actionsOn, askHistory, faqRefusal, findAnswer, followUpChain, logAsk, reusableAnswer, maskAnswer, peopleFor, priorArtItem, recordAction, saveFaq, ticketDraft, viaText, voteOn } from './lib/ask-actions.mjs';
 import { readEvents } from './lib/git-graph.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
 import { createSuggested, readCreated, suggestTickets } from './lib/suggestions.mjs';
@@ -1272,6 +1272,17 @@ const server = createServer(async (req, res) => {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     }
   }
+  // Ask 6/7: the earlier answers of a project, newest first, with their votes and what was done with them.
+  if (req.method === 'GET' && path === '/api/ask/history') {
+    try {
+      const q = queryOf(req);
+      const p = readyProject({ project: q.get('project') });
+      const limit = Math.min(200, Math.max(1, Number(q.get('limit')) || 50));
+      return json(res, 200, { project: p.key, answers: askHistory(p.stateDir, { limit }).map((a) => ({ ...a, project: p.key })) });
+    } catch (e) {
+      return json(res, e.status ?? 500, { ok: false, error: e.message });
+    }
+  }
   // Ask 3/7: what was done with an answer, and whom it can go to in Teams.
   if (req.method === 'GET' && path === '/api/ask/actions') {
     try {
@@ -1418,6 +1429,19 @@ const server = createServer(async (req, res) => {
       if (routedAnswer?.fast) return json(res, 200, { ok: true, project: p.key, ...routedAnswer });
       // The tour asks with fastOnly: never a paid Claude run.
       if (body.fastOnly === true) return json(res, 200, { ok: false, notRouted: true, routed: routedAnswer?.routed ?? null });
+      // Ask 6/7: the same question, answered by Claude on the same main within a day, is given again with no new run
+      // ("Ask again" on the page asks for a fresh one). Not for a follow-up or a question with a page: their meaning
+      // depends on more than the words.
+      const reuseHours = Number(p.cfg.askReuseHours ?? 24);
+      if (body.fresh !== true && !previous.length && !hint && reuseHours > 0) {
+        const head = await execFileAsync('git', ['rev-parse', 'origin/main'], { cwd: p.repoDir, encoding: 'utf8', windowsHide: true }).then((r) => r.stdout.trim()).catch(() => null);
+        const r = reusableAnswer(p.stateDir, String(body.question ?? ''), { head, maxHours: reuseHours });
+        if (r) {
+          const answer = { question: String(body.question).trim(), found: true, answer: r.answer, sources: r.cited, warnings: [], dropped: 0, closest: [], meta: { durationMs: 0, costUsd: 0, model: `the answer of ${askTime(r.at)}` }, at: new Date().toISOString(), cachedFrom: { at: r.at, question: r.question }, main: head };
+          logAsk(p.stateDir, answer);
+          return json(res, 200, { ok: true, project: p.key, ...answer, routed: routedAnswer?.routed ?? null });
+        }
+      }
       // The linked apps too (K11): read-only checkouts of their main, apart from the analysis' (ask-peer-repo).
       const peers = peerCheckouts(p, all, (text) => broadcast({ type: 'ask-progress', id: body.id, step: `warning: ${text}` }), { name: 'ask-peer-repo' });
       const answer = await askQuestion({ question: body.question, repoDir: p.repoDir, stateDir: p.stateDir, cfg: p.cfg, jira, project: { key: p.key, name: p.name }, peers, previous, hint, onProgress: (step) => broadcast({ type: 'ask-progress', id: body.id, step }) });
