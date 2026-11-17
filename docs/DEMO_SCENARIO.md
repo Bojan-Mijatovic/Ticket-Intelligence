@@ -95,7 +95,7 @@ Then `node agent/watcher.mjs --replace` and `node demo/preflight.mjs`.
 | What if it's wrong? | It only writes an internal comment labelled as AI analysis; confidence is shown; humans decide. Low-confidence results don't notify anyone. |
 | Does it work with our SVN projects / Copilot? | Yes: SVN is supported and tested on a local repository; Copilot uses the same skill format and is the next thing to validate at work. |
 | What does it cost? | ~1 minute and ~10 agent turns per ticket (about $0.70 API-equivalent; included in seat-based subscriptions). Measured on the pilot: $1 to $2.50 per bug including the reproduction, the fix and the AI review ($11.82 for five). |
-| Does it work with our Teams? | Yes, through a Workflows webhook in a standard channel: about 10 minutes for the channel's owner, no IT. Shown here on a test tenant. Approving a fix from Teams needs a Teams app (IT), so for now the buttons open the PR and Jira. |
+| Does it work with our Teams? | Yes, through a Workflows webhook in a standard channel: about 10 minutes for the channel's owner, no IT. Shown here on a test tenant. Asking and approving in the channel ("ti: VAX-21", "approve VAX-23") go through Microsoft Graph as one signed-in account, the admin's consent once (ROADMAP #9); real buttons on the card would need a Teams app (IT), so the buttons open the PR and Jira. |
 | How does it know who should get it? | From the history: who wrote and changed that code, and for a regression who made the change that broke it. The card says why ("Why you: authored VAX-20, the regression"). On the pilot the owner was right 5 times out of 5. |
 | Does patient data end up in Teams? | The Teams message carries the same text as the internal Jira comment, written from the masked ticket. The masking catches most identifiers but not every uncommon name (11 of 15 on the pilot), which is why company tickets wait for R-02. |
 | What if the agent is restarted in the middle? | A restart waits for the running job (an analysis, a fix, a review) and then takes over; queued tickets are found again in Jira. |
@@ -208,7 +208,8 @@ Merge only after a merge check, as for the pilot's fixes ([PILOT.md](PILOT.md), 
 | `node demo/preflight.mjs --teams` | GO but for the reserved case | it is pushed on the morning of the demo, on purpose |
 | Fallback DEM-46 | ready | its Teams message came 61 and 74 s after the pick, twice |
 | Ask: an answer sent to Teams (Send to Teams) | ready | a MediVax answer posted from the dashboard arrived in `support-triage`, sources as links (2026-11-17) |
-| Ask in Teams ("ti: …" in the channel) and approval by a reply ("approve" / "reject: why") | built, not yet live (ROADMAP #9) | needs the app registration and the Ticket Intelligence user on the test tenant, then `node agent/teams-login.mjs` |
+| Ask in Teams ("ti: …" in the channel) | ready (ROADMAP #9) | live 2026-11-17: "ti: VAX-21" answered in the thread in 1.7 s, a follow-up by Claude in 25 s; the agent signed in as Ticket Intelligence (`node agent/teams-login.mjs --check` says so) |
+| Approval from Teams ("approve VAX-23" / "odbij VAX-25: why") | built, round not yet live | the presenter is in `teams.approvers`; a misplaced decision was answered live; the reject → refix → approve round is the next check. VAX-23's draft PR #15 is kept for the demo |
 | The private laptop, the room's network, the recording | not done | only possible on the day before |
 | The test tenant | a 30-day trial from 2026-11-16 | a demo after mid-December needs one paid month |
 

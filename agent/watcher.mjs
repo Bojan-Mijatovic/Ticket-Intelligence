@@ -35,7 +35,7 @@ import { componentInQuestion, fastMore, ruleIntent } from './lib/ask-fast.mjs';
 import { pageAnswer, pageInQuestion, pageOnly, traceAddress } from './lib/page-code.mjs';
 import { channelApi, createGraph, graphSettings } from './lib/teams-graph.mjs';
 import { answerHtml, mentionOf, newQuestions, noteHtml, projectOf, readInboxState, writeInboxState } from './lib/teams-inbox.mjs';
-import { closePullRequest, mayDecide, newDecisions, prOfTicket, readyPullRequest, recordRejection, rejectionsOf } from './lib/fix-approval.mjs';
+import { closePullRequest, keyedDecisions, mayDecide, misplacedDecisions, newDecisions, prOfTicket, readyPullRequest, recordRejection, rejectionsOf } from './lib/fix-approval.mjs';
 import { actionsOn, askHistory, faqRefusal, findAnswer, followUpChain, logAsk, reusableAnswer, maskAnswer, peopleFor, priorArtItem, recordAction, saveFaq, ticketDraft, viaOf, viaText, voteOn } from './lib/ask-actions.mjs';
 import { readEvents } from './lib/git-graph.mjs';
 import { readReview, writeReview } from './lib/app-review.mjs';
@@ -985,13 +985,26 @@ async function readTeams() {
     const me = teamsGraph.account();
     const roots = await api.recent(30);
     Object.assign(teamsInbox, { live: true, error: null, account: me?.name ?? null, channel: st.channelName, lastRead: new Date().toISOString() });
-    // B (T9): "approve" / "reject: why" under a "fix ready" card first; then the questions ("ti: …").
-    const decisions = newDecisions(roots, { me, since: st.since, handled: st.handled });
+    // B (T9): "approve" / "reject: why" under a "fix ready" card, or naming its ticket ("ti: odbij VAX-25: why")
+    // anywhere the agent is addressed, first; then the questions ("ti: …").
+    const decisions = [...newDecisions(roots, { me, since: st.since, handled: st.handled }), ...keyedDecisions(roots, { me, since: st.since, handled: st.handled })].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
     for (const d of decisions) {
       if (draining) break;
       await decideInTeams(d, st, api);
     }
     const taken = new Set(decisions.map((d) => d.id));
+    // A decision under an Ask answer instead of its card: said where it goes, not carried out, not taken as a question.
+    const { misplaced, newest } = misplacedDecisions(roots, { me, since: st.since, handled: st.handled });
+    for (const m of misplaced) {
+      if (draining) break;
+      taken.add(m.id);
+      st.handled = [...(st.handled ?? []), m.id];
+      writeInboxState(TEAMS_INBOX_FILE, st);
+      const what = m.verdict === 'approve' ? 'approve' : 'reject';
+      await api
+        .reply(m.rootId, `<at id="0">${escHtml(m.from.name)}</at> ${escHtml(`Which fix? Name its ticket ("${what} ${newest ?? '<ticket>'}${what === 'reject' ? ': why' : ''}"), or reply under its "fix ready for review" card${newest ? ` (the newest is ${newest}'s)` : ''}. Nothing changed.`)}`, mentionOf(m.from))
+        .catch(() => {});
+    }
     for (const q of newQuestions(roots, { me, since: st.since, handled: st.handled }).filter((x) => !taken.has(x.id))) {
       if (draining) break;
       await answerInTeams(q, st, api);

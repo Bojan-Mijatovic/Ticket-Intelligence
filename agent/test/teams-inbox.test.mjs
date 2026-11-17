@@ -24,6 +24,11 @@ test('a question for the agent: "ti:" or an @mention of it, from a person; never
   assert.equal(questionOf(msg('1', '<p>ti: status</p>', { deletedDateTime: '2026-11-17T12:01:00Z' }), { me: ME }), null);
   assert.equal(questionOf(msg('1', '<p>ti: status</p>', { messageType: 'systemEventMessage' }), { me: ME }), null);
   assert.equal(questionOf(msg('1', `<p>ti: ${'x'.repeat(900)}</p>`), { me: ME }).length, 500);
+  // A channel post's subject, as people write in it (seen on the test tenant: "TEST NOVI SAD" over "021 test").
+  assert.equal(questionOf(msg('1', '', { subject: 'ti: VAX-21' }), { me: ME }), 'VAX-21');
+  assert.equal(questionOf(msg('1', '<p>who touched it last?</p>', { subject: 'TI: status VAX-21' }), { me: ME }), 'status VAX-21 who touched it last?');
+  assert.equal(questionOf(msg('1', '<p>ti: VAX-21</p>', { subject: 'Scadenze' }), { me: ME }), 'VAX-21', 'the text asks; the subject is only a title');
+  assert.equal(questionOf(msg('1', '<p>021 test</p>', { subject: 'TEST NOVI SAD' }), { me: ME }), null);
 });
 
 test('the project: named before a colon (key or name), else the thread\'s or the channel\'s', () => {

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { after, test } from 'node:test';
-import { cardOf, closePullRequest, decisionOf, mayDecide, newDecisions, prOfTicket, readyPullRequest, recordRejection, rejectionsOf, setAsideRejected } from '../lib/fix-approval.mjs';
+import { cardOf, closePullRequest, decisionOf, keyedDecisionOf, keyedDecisions, mayDecide, misplacedDecisions, newDecisions, prOfTicket, readyPullRequest, recordRejection, rejectionsOf, setAsideRejected } from '../lib/fix-approval.mjs';
 import { notifyFixReady, notifyOwner } from '../lib/notify.mjs';
 
 const tmp = mkdtempSync(join(tmpdir(), 'fix-approval-'));
@@ -38,6 +38,11 @@ test('the agent\'s cards in the channel: "fix ready" with its ticket, PR and own
   assert.deepEqual(cardOf(fix), { kind: 'fix', key: 'VAX-21', prUrl: 'https://github.com/o/MediVax/pull/7', to: 'Irene Fabbri', toUpn: 'irene.fabbri@contoso.onmicrosoft.com' });
   const handoff = await postedCard(() => notifyOwner({ key: 'VAX-21', url: FIX.url, title: 'x', handoff: { to: 'Irene Fabbri', message: 'please' }, confidence: 'high', escalate: { yes: false } }));
   assert.deepEqual(cardOf(handoff), { kind: 'handoff', key: 'VAX-21', to: 'Irene Fabbri', toUpn: 'irene.fabbri@contoso.onmicrosoft.com' });
+  // As Graph returned it on the test tenant (2026-11-17): no msteams entities, the mention only as markup with an id.
+  const asRead = JSON.parse(fix.attachments[0].content);
+  delete asRead.msteams;
+  asRead.body = asRead.body.map((b) => (b.type === 'TextBlock' && /^For /.test(b.text) ? { ...b, text: 'For <at id="0">Irene Fabbri</at>' } : b));
+  assert.deepEqual(cardOf({ ...fix, attachments: [{ contentType: fix.attachments[0].contentType, content: JSON.stringify(asRead) }] }), { kind: 'fix', key: 'VAX-21', prUrl: 'https://github.com/o/MediVax/pull/7', to: 'Irene Fabbri', toUpn: null });
   assert.equal(cardOf({ body: { content: '<p>hi</p>' } }), null);
   assert.equal(cardOf({ attachments: [{ contentType: 'application/vnd.microsoft.card.adaptive', content: '{not json' }] }), null);
 });
@@ -72,6 +77,48 @@ test('the decisions of a read: replies under "fix ready" cards only, from people
   assert.deepEqual(ds.map((d) => [d.id, d.verdict, d.card.key]), [['b', 'approve', 'VAX-21'], ['a', 'reject', 'VAX-21']]);
   assert.equal(ds[1].reason, 'wrong week');
   assert.deepEqual(newDecisions([fix], { me: { id: 'agent-1' }, since: at(1), handled: ['b', 'a'] }), []);
+});
+
+test('a decision in the wrong place: under an answer of the agent it is pointed to the card; people talking elsewhere are left alone', async () => {
+  const fix = await postedCard(() => notifyFixReady(FIX));
+  fix.createdDateTime = '2026-11-17T15:40:00Z';
+  const at = (m) => `2026-11-17T16:${String(m).padStart(2, '0')}:00Z`;
+  const person = { id: 'u-1', displayName: 'Bojan Mijatovic' };
+  const reply = (id, text, m, who = person) => ({ id, createdDateTime: at(m), from: { user: who }, body: { contentType: 'html', content: `<p>${text}</p>` } });
+  const agent = { id: 'agent-1', displayName: 'Ticket Intelligence' };
+  // As on the test tenant: the reject went into the thread of "ti: VAX-21", under the agent's answer.
+  const askThread = { id: 'ask-1', createdDateTime: at(0), from: { user: person }, body: { content: '<p>ti: VAX-21</p>' }, replies: [reply('ans', 'VAX-21 · …', 1, agent), reply('wrong', 'odbij: dodaj test i za tacno 2 slova', 6), reply('q', 'ti: who knows it?', 7)] };
+  const talk = { id: 'talk-1', createdDateTime: at(2), from: { user: person }, body: { content: '<p>lunch?</p>' }, replies: [reply('chat', 'approve, see you there', 3)] };
+  const r = misplacedDecisions([askThread, talk, fix], { me: { id: 'agent-1' }, since: '2026-11-17T15:43:00Z', handled: [] });
+  assert.deepEqual(r.misplaced.map((d) => [d.id, d.verdict, d.rootId]), [['wrong', 'reject', 'ask-1']]);
+  assert.equal(r.newest, 'VAX-21', 'the newest "fix ready" card, to point to');
+  assert.deepEqual(misplacedDecisions([askThread], { me: { id: 'agent-1' }, since: '2026-11-17T15:43:00Z', handled: ['wrong'] }).misplaced, [], 'once');
+  assert.deepEqual(newDecisions([askThread, talk, fix], { me: { id: 'agent-1' }, since: '2026-11-17T15:43:00Z', handled: [] }), [], 'and never carried out');
+});
+
+test('a decision that names its ticket: anywhere the agent is addressed, with that ticket\'s card; people talking are left alone', async () => {
+  assert.deepEqual(keyedDecisionOf('odbij VAX-25: dodaj test za 1 slovo'), { verdict: 'reject', key: 'VAX-25', reason: 'dodaj test za 1 slovo' });
+  assert.deepEqual(keyedDecisionOf('ti: reject: vax-25 the test checks the wrong week'), { verdict: 'reject', key: 'VAX-25', reason: 'the test checks the wrong week' });
+  assert.deepEqual(keyedDecisionOf('approve VAX-23'), { verdict: 'approve', key: 'VAX-23', note: null });
+  assert.deepEqual(keyedDecisionOf('odbij VAX-25'), { verdict: 'reject', key: 'VAX-25', reason: null }, 'the agent asks for the reason');
+  for (const t of ['approve', 'reject: the wrong week', 'VAX-25 looks good']) assert.equal(keyedDecisionOf(t), null, t);
+
+  const fix = await postedCard(() => notifyFixReady({ ...FIX, key: 'VAX-25', prUrl: 'https://github.com/o/MediVax/pull/16' }));
+  fix.createdDateTime = '2026-11-17T15:40:00Z';
+  const at = (m) => `2026-11-17T16:${String(m).padStart(2, '0')}:00Z`;
+  const person = { id: 'u-1', displayName: 'Bojan Mijatovic' };
+  const agent = { id: 'agent-1', displayName: 'Ticket Intelligence' };
+  const post = (id, text, m, extra = {}) => ({ id, messageType: 'message', createdDateTime: at(m), from: { user: person }, body: { contentType: 'html', content: `<p>${text}</p>` }, replies: [], ...extra });
+  const askThread = post('ask-1', 'ti: VAX-21', 0, { replies: [post('ans', 'VAX-21 · …', 1, { from: { user: agent } }), post('in-thread', 'odbij VAX-25: dodaj test', 6), post('vague', 'odbij: dodaj test', 7)] });
+  const roots = [post('new', 'ti: approve VAX-25 looks right', 8), post('talk', 'approve VAX-25 tomorrow?', 9), post('none', 'ti: odbij VAX-99: x', 10), askThread, fix];
+  const ds = keyedDecisions(roots, { me: { id: 'agent-1' }, since: '2026-11-17T15:43:00Z', handled: [] });
+  assert.deepEqual(ds.map((d) => [d.id, d.verdict, d.card.key, d.card.to, d.rootId]), [
+    ['in-thread', 'reject', 'VAX-25', 'Irene Fabbri', 'ask-1'],
+    ['new', 'approve', 'VAX-25', 'Irene Fabbri', 'new'],
+    ['none', 'reject', 'VAX-99', null, 'none'],
+  ], 'a ticket without a card in the channel: an approver may still decide');
+  assert.equal(ds[1].note, 'looks right');
+  assert.deepEqual(misplacedDecisions(roots, { me: { id: 'agent-1' }, since: '2026-11-17T15:43:00Z', handled: [] }).misplaced.map((d) => d.id), ['vague'], 'only the one that does not say which fix');
 });
 
 test('the PR: made ready only when it is an open draft; closed with a comment only when open', async () => {

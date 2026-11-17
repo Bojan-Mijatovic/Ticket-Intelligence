@@ -8,8 +8,11 @@ import { execFile } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { questionOf } from './teams-inbox.mjs';
 
 const fold = (s) => String(s ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
+/** A name out of Teams mention markup: "<at>Irene Fabbri</at>" as posted, "<at id="0">Irene Fabbri</at>" as Graph returns it. */
+const plainName = (s) => String(s ?? '').replace(/<\/?at\b[^>]*>/gi, '').trim() || null;
 
 /**
  * The agent's card in a channel message, from its Adaptive Card attachment: { kind: 'fix', key, prUrl, to, toUpn } for
@@ -26,7 +29,8 @@ export function cardOf(msg) {
     }
     const texts = (card?.body ?? []).filter((b) => b.type === 'TextBlock').map((b) => String(b.text ?? ''));
     const mention = card?.msteams?.entities?.find((e) => e.type === 'mention')?.mentioned ?? null;
-    const to = mention?.name ?? texts.find((t) => /^For /.test(t))?.replace(/^For\s+/, '').replace(/<\/?at>/g, '').trim() ?? null;
+    // Graph returns the card without its msteams entities (the mention stays only as markup in the text).
+    const to = plainName(mention?.name ?? texts.find((t) => /^For /.test(t))?.replace(/^For\s+/, ''));
     const fix = texts.map((t) => t.match(/^([A-Z][A-Z0-9_]+-\d+): fix ready for review$/)).find(Boolean);
     if (fix) {
       const actions = card.actions ?? [];
@@ -53,6 +57,23 @@ export function decisionOf(text) {
 }
 
 /**
+ * A decision that names its ticket: "odbij VAX-25: why", "reject: VAX-25 why", "approve VAX-23". It says which fix it
+ * is for, so it needs no card above it: { verdict, key, note | reason }, or null.
+ */
+export function keyedDecisionOf(text) {
+  const d = decisionOf(text);
+  const m = String((d?.verdict === 'approve' ? d.note : d?.reason) ?? '').match(/^([A-Z][A-Z0-9_]+-\d+)\b[\s.!:,–-]*([\s\S]*)$/i);
+  if (!m) return null;
+  const rest = m[2].trim() || null;
+  return d.verdict === 'approve' ? { verdict: 'approve', key: m[1].toUpperCase(), note: rest } : { verdict: 'reject', key: m[1].toUpperCase(), reason: rest };
+}
+
+/** A reply's text: the mentions and the HTML out. */
+const replyText = (r) => String(r?.body?.content ?? '').replace(/<at id="\d+">[\s\S]*?<\/at>/g, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+const fromPerson = (m, me) => Boolean(m?.from?.user?.id) && !(me?.id && m.from.user.id === me.id);
+const agentThread = (root, me) => Boolean(me?.id) && (root.replies ?? []).some((r) => r?.from?.user?.id === me.id);
+
+/**
  * Whether the sender may decide: the person the card was for (by sign-in name when the card @mentioned them, else by
  * name), or one of `approvers` (agent.config.json teams.approvers: a team lead, say).
  */
@@ -76,13 +97,73 @@ export function newDecisions(roots, { me = null, since, handled = [] } = {}) {
     if (card?.kind !== 'fix') continue;
     for (const r of root.replies ?? []) {
       if (!r?.id || done.has(r.id) || r.deletedDateTime || !(Date.parse(r.createdDateTime) > from)) continue;
-      if (!r.from?.user?.id || (me?.id && r.from.user.id === me.id)) continue;
-      const text = String(r.body?.content ?? '').replace(/<at id="\d+">[\s\S]*?<\/at>/g, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
-      const d = decisionOf(text);
+      if (!fromPerson(r, me)) continue;
+      const d = decisionOf(replyText(r));
       if (d) out.push({ id: r.id, rootId: root.id, card, ...d, from: { id: r.from.user.id, name: r.from.user.displayName ?? 'someone' }, at: r.createdDateTime });
     }
   }
   return out.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}
+
+/**
+ * Decisions that name their ticket (keyedDecisionOf), away from its card: a new post to the agent ("ti: odbij VAX-25:
+ * why", or one that @mentions it), or a reply in a thread the agent has answered in. The card is the ticket's newest
+ * "fix ready" card in the channel; when it is not among the posts read, only an approver may decide (the card's person
+ * is not known) and the PR comes from the agent's records. Replies under a card are newDecisions'. Oldest first.
+ */
+export function keyedDecisions(roots, { me = null, since, handled = [] } = {}) {
+  const done = new Set(handled);
+  const from = Date.parse(since);
+  const cards = new Map();
+  for (const root of roots ?? []) {
+    const c = cardOf(root);
+    if (c?.kind === 'fix' && !(Date.parse(cards.get(c.key)?.at) >= Date.parse(root.createdDateTime))) cards.set(c.key, { card: c, at: root.createdDateTime });
+  }
+  const out = [];
+  const consider = (msg, rootId, text) => {
+    if (!msg?.id || done.has(msg.id) || msg.deletedDateTime || !(Date.parse(msg.createdDateTime) > from) || !fromPerson(msg, me)) return;
+    const d = keyedDecisionOf(text);
+    if (!d) return;
+    const { key, ...decision } = d;
+    const card = cards.get(key)?.card ?? { kind: 'fix', key, prUrl: null, to: null, toUpn: null };
+    out.push({ id: msg.id, rootId, card, ...decision, from: { id: msg.from.user.id, name: msg.from.user.displayName ?? 'someone' }, at: msg.createdDateTime });
+  };
+  for (const root of roots ?? []) {
+    if (cardOf(root)?.kind === 'fix') continue;
+    const asked = questionOf(root, { me }); // a new post counts only when it is to the agent: people may talk about a fix
+    if (asked) consider(root, root.id, asked);
+    if (agentThread(root, me)) for (const r of root.replies ?? []) consider(r, root.id, replyText(r));
+  }
+  return out.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}
+
+/**
+ * Decisions in the wrong place: "approve" or "reject: …" as a reply in a thread the agent has answered in (an Ask
+ * thread), not under a "fix ready" card. Not carried out, since the fix it is meant for is not known; the agent says
+ * where to reply instead of saying nothing (seen on the test tenant, 2026-11-17: a reject under an Ask answer). Other
+ * threads are people talking and are left alone. Oldest first; `newest` is the newest "fix ready" card in the channel.
+ */
+export function misplacedDecisions(roots, { me = null, since, handled = [] } = {}) {
+  const done = new Set(handled);
+  const from = Date.parse(since);
+  const out = [];
+  let newest = null;
+  for (const root of roots ?? []) {
+    const card = cardOf(root);
+    if (card?.kind === 'fix') {
+      if (!newest || Date.parse(root.createdDateTime) > Date.parse(newest.at)) newest = { key: card.key, at: root.createdDateTime };
+      continue;
+    }
+    if (!agentThread(root, me)) continue; // people talking
+    for (const r of root.replies ?? []) {
+      if (!r?.id || done.has(r.id) || r.deletedDateTime || !(Date.parse(r.createdDateTime) > from)) continue;
+      if (!fromPerson(r, me)) continue;
+      const text = replyText(r);
+      const d = keyedDecisionOf(text) ? null : decisionOf(text); // one that names its ticket is keyedDecisions'
+      if (d) out.push({ id: r.id, rootId: root.id, verdict: d.verdict, from: { id: r.from.user.id, name: r.from.user.displayName ?? 'someone' }, at: r.createdDateTime });
+    }
+  }
+  return { misplaced: out.sort((a, b) => Date.parse(a.at) - Date.parse(b.at)), newest: newest?.key ?? null };
 }
 
 // The rejections of a ticket's fixes: state/<project>/work/<KEY>/rejections.json.

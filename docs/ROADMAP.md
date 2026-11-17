@@ -241,7 +241,9 @@ Phase A gives the biggest demo effect for the least work. Phase B closes the loo
 
 ## 9. Teams → agent: Ask and approval from the channel
 
-**Status: built 2026-11-17, live check pending.** Foundation (T7), A (T8) and B (T9) are built and tested (agent/README.md, Teams section); they go live once the app registration and the Ticket Intelligence user exist on the test tenant. C (T10) later.
+**Status: live on the test tenant 2026-11-17.** Foundation (T7), A (T8) and B (T9) are built and tested (agent/README.md, Teams section). Live: the agent signed in as Ticket Intelligence and reads `support-triage`; "ti: VAX-21" was answered in the thread in 1.7 s ($0, no AI) and a follow-up in that thread by Claude in 25 s ($0.21). B: the presenter is an approver (`teams.approvers`); a reject written under an Ask answer was answered with where to reply, and nothing changed. The reject and approve round on a pilot ticket is the next check. C (T10) later.
+
+What the first live hour changed: the sign-in (a browser on the agent's computer, since Security defaults block the device code; the permissions the admin granted, with a missing one named); a post's subject counts as its text (people write "ti: …" there); the card's owner as Graph returns it (`<at id="0">…</at>`, no mention entities); a decision that names its ticket ("odbij VAX-25: why") counts anywhere the agent is addressed, since finding the card in a long channel is the hard part; one that does not say which fix gets a pointer instead of silence.
 
 **Goal.** The team asks and acts where it already works. "ti: status VAX-21" in the support channel gets the answer in the thread; the owner approves a fix by replying "approve" to its card. The dashboard stays on the agent's machine (it answers only there), and nothing is opened to the internet.
 
@@ -257,8 +259,10 @@ Phase A gives the biggest demo effect for the least work. Phase B closes the loo
 
 **Setup (once, about 10 minutes, by the tenant's admin).**
 1. A user **Ticket Intelligence** in the tenant, a member of the team, so that the replies show under that name (a trial tenant has free licences).
-2. An app registration in Microsoft Entra: a public client (device code sign-in), delegated permissions `ChannelMessage.Read.All`, `ChannelMessage.Send`, `User.ReadBasic.All`, `offline_access`; **Grant admin consent**. Its client id and tenant id go into `.env` (`TEAMS_CLIENT_ID`, `TEAMS_TENANT_ID`).
-3. `node agent/teams-login.mjs`: sign in once as Ticket Intelligence with the code it shows. The refresh token is kept in `agent/state/` (not committed), a secret like the webhook: never shown, logged or sent anywhere but Microsoft.
+2. An app registration in Microsoft Entra: a native client (redirect URI `http://localhost`, platform "Mobile and desktop applications"), delegated permissions `ChannelMessage.Read.All`, `ChannelMessage.Send`, `Channel.ReadBasic.All`, `User.ReadBasic.All`, `User.Read`, `offline_access`; **Grant admin consent**. Its client id and tenant id go into `.env` (`TEAMS_CLIENT_ID`, `TEAMS_TENANT_ID`).
+3. `node agent/teams-login.mjs`: sign in once as Ticket Intelligence in a browser on the agent's computer (authorization code with PKCE; the browser comes back to a one-time loopback server). The refresh token is kept in `agent/state/` (not committed), a secret like the webhook: never shown, logged or sent anywhere but Microsoft.
+
+The first plan signed in with a device code. The test tenant refused it: Security defaults, on by default in a new tenant, block the device code flow (AADSTS530035), and a company's Conditional Access often does too. So the browser sign-in is the default and `--device-code` the exception. The sign-in also asks for what the admin granted (`.default`) and names a missing permission, instead of stopping at "Need admin approval".
 
 **Parts.**
 
@@ -275,7 +279,7 @@ Phase A gives the biggest demo effect for the least work. Phase B closes the loo
 - What is posted is masked first (names outside the team, identifiers), as Send to Teams does.
 - The agent never answers its own messages, nor a message twice.
 
-**Acceptance A.** "ti: VAX-21" → the status in the thread within the poll interval and two seconds; "ti: http://localhost:4204/scadenze" → the page's code; a reply in that thread continues it; a Claude question answered in about a minute; a message without `ti:` ignored; after a restart, nothing answered twice.
+**Acceptance A** (status and follow-up met live 2026-11-17). "ti: VAX-21" → the status in the thread within the poll interval and two seconds; "ti: http://localhost:4204/scadenze" → the page's code; a reply in that thread continues it; a Claude question answered in about a minute; a message without `ti:` ignored; after a restart, nothing answered twice.
 
 **Demo moment.** On the phone, in the support channel: "ti: status VAX-23". The answer appears under it: what happened, and that the fix waits for Tommaso Bruno's review. Then, under the "fix ready" card: "approve" (B), and the PR turns from Draft to Open.
 

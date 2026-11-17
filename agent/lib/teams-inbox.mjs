@@ -40,13 +40,20 @@ export function messageText(msg, { me = null } = {}) {
   return { text: decode(html).replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim(), mentionsMe: mine.size > 0 };
 }
 
-/** The question in a message for the agent, or null: a person's message that starts with "ti:" or @mentions it. */
+/**
+ * The question in a message for the agent, or null: a person's message that starts with "ti:" or @mentions it. A post's
+ * subject counts too (a channel post may have one, and people write in it): "ti: VAX-21" as the subject, with or
+ * without a text under it.
+ */
 export function questionOf(msg, { me = null, prefix = PREFIX } = {}) {
   if (!msg || msg.deletedDateTime || (msg.messageType && msg.messageType !== 'message')) return null;
   if (!msg.from?.user?.id) return null; // an app or the webhook (the agent's own cards), not a person
   if (me?.id && msg.from.user.id === me.id) return null; // never its own replies
   const { text, mentionsMe } = messageText(msg, { me });
-  const asked = text.match(new RegExp(`^${prefix}\\s*:\\s*([\\s\\S]+)$`, 'i'))?.[1] ?? (mentionsMe ? text : null);
+  const ask = (t) => t.match(new RegExp(`^${prefix}\\s*:\\s*([\\s\\S]+)$`, 'i'))?.[1] ?? null;
+  const subject = decode(String(msg.subject ?? '')).trim();
+  const fromSubject = subject && ask(subject);
+  const asked = ask(text) ?? (fromSubject ? `${fromSubject} ${text}` : null) ?? (mentionsMe ? text : null);
   const q = asked?.replace(/\s+/g, ' ').trim();
   return q && q.length >= 2 ? q.slice(0, 500) : null;
 }

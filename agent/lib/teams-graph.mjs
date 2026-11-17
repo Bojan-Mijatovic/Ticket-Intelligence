@@ -1,15 +1,32 @@
 // ROADMAP #9, T7: Microsoft Graph for the team's channel, as one signed-in account (delegated permissions). The agent
-// signs in once with a device code (agent/teams-login.mjs); the refresh token is kept in agent/state/ (not committed)
-// and renewed on use, a secret like the webhook: never shown, logged or sent anywhere but Microsoft. Outbound only: the
-// agent asks Graph; nothing calls the agent. An application permission would need Microsoft's approval (reading
-// channel messages is a protected API), so the delegated one is used.
+// signs in once (agent/teams-login.mjs): in a browser on this computer, or with a device code where the tenant allows
+// it; the refresh token is kept in agent/state/ (not committed) and renewed on use, a secret like the webhook: never
+// shown, logged or sent anywhere but Microsoft. Outbound only: the agent asks Graph; nothing calls the agent (the
+// browser sign-in's one-time server listens on this computer's loopback only, for one answer). An application
+// permission would need Microsoft's approval (reading channel messages is a protected API), so the delegated one is used.
 
+import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { dirname } from 'node:path';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
-/** What the account may do: read the channel and its people, post replies. `offline_access` gives the refresh token. */
-export const SCOPES = ['offline_access', ...['User.Read', 'User.ReadBasic.All', 'Channel.ReadBasic.All', 'ChannelMessage.Read.All', 'ChannelMessage.Send'].map((s) => `https://graph.microsoft.com/${s}`)];
+/** What the account must be allowed (Microsoft Graph, delegated, the admin's consent): read the channel and its people, post replies. */
+export const PERMISSIONS = ['User.Read', 'User.ReadBasic.All', 'Channel.ReadBasic.All', 'ChannelMessage.Read.All', 'ChannelMessage.Send'];
+/**
+ * What a sign-in asks for: the Graph permissions the admin gave the app registration (".default"), and
+ * `offline_access` for the refresh token. Not the list itself: a permission the admin has not granted would stop the
+ * sign-in at "Need admin approval", which does not say which one; asked this way the sign-in goes through and the
+ * missing one is named (missingPermissions).
+ */
+export const SCOPES = ['offline_access', 'https://graph.microsoft.com/.default'];
+
+/** The permissions of PERMISSIONS a sign-in did not get, from the token's `scope`; null when it is not known. */
+export function missingPermissions(scope) {
+  if (typeof scope !== 'string') return null;
+  const got = new Set(scope.split(/\s+/).map((s) => s.replace(/^https:\/\/graph\.microsoft\.com\//i, '').toLowerCase()));
+  return PERMISSIONS.filter((p) => !got.has(p.toLowerCase()));
+}
 
 /** The app registration from the environment (TEAMS_CLIENT_ID, TEAMS_TENANT_ID), or null when it is not set up. */
 export function graphSettings(env = process.env) {
@@ -40,6 +57,42 @@ export function parseTeamsLink(url) {
   }
 }
 
+/** The first line of a Microsoft sign-in error, with its AADSTS code: the code is what the docs and an admin look up. */
+function signInError(j) {
+  return String(j.error_description ?? j.error ?? 'no answer').split(/\r?\n/)[0].replace(/\s*Trace ID:.*$/, '').trim();
+}
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const page = (title, text) =>
+  `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Ticket Intelligence</title>` +
+  `<body style="font:16px/1.5 system-ui,sans-serif;margin:3rem auto;max-width:34rem;padding:0 1rem"><h1 style="font-size:1.3rem">${esc(title)}</h1><p>${esc(text)}</p>`;
+
+/**
+ * A one-time web server on this computer's loopback, IPv4 and (where there is one) IPv6, on one free port: the browser
+ * resolves "localhost" to either. Nothing outside this computer can reach it.
+ */
+async function loopback(handler) {
+  const listen = (port, host) =>
+    new Promise((resolve, reject) => {
+      const s = createServer(handler);
+      s.once('error', reject);
+      s.listen(port, host, () => resolve(s));
+    });
+  const v4 = await listen(0, '127.0.0.1');
+  const port = v4.address().port;
+  const v6 = await listen(port, '::1').catch(() => null);
+  const servers = [v4, v6].filter(Boolean);
+  return {
+    port,
+    close() {
+      for (const s of servers) {
+        s.close();
+        s.closeIdleConnections?.(); // a browser keeps spare connections open: they would keep the process alive
+      }
+    },
+  };
+}
+
 /**
  * @param {string} p.tokenFile  where the tokens are kept (agent/state/teams-token.json)
  */
@@ -61,7 +114,7 @@ export function createGraph({ clientId, tenantId, tokenFile, fetch = globalThis.
   let held = null;
   const current = () => (held ??= readToken());
   const keep = (j, account) => {
-    held = { access_token: j.access_token, refresh_token: j.refresh_token ?? held?.refresh_token, expires_at: now() + (Number(j.expires_in) || 3600) * 1000, account, savedAt: new Date(now()).toISOString() };
+    held = { access_token: j.access_token, refresh_token: j.refresh_token ?? held?.refresh_token, expires_at: now() + (Number(j.expires_in) || 3600) * 1000, scope: j.scope ?? held?.scope ?? null, account, savedAt: new Date(now()).toISOString() };
     saveToken(held);
     return held;
   };
@@ -111,8 +164,86 @@ export function createGraph({ clientId, tenantId, tokenFile, fetch = globalThis.
   const get = (path) => call('GET', path);
   const post = (path, body) => call('POST', path, body);
 
+  /** The tokens of a finished sign-in kept, with the account they belong to. */
+  async function accountOf(j) {
+    if (!j.refresh_token) throw new Error('signed in, but without a refresh token: add offline_access to the app\'s API permissions (Microsoft Graph, Delegated), grant admin consent, and run this again');
+    keep(j, null);
+    const me = await get('/me?$select=id,displayName,userPrincipalName');
+    keep(j, { id: me.id, name: me.displayName, upn: me.userPrincipalName });
+    return held.account;
+  }
+
+  /**
+   * The browser sign-in: the authorization code with PKCE (RFC 7636), for a native app (RFC 8252). The way to sign in
+   * where the device code is blocked: Security defaults block it (AADSTS530035), and so do many Conditional Access
+   * policies. The browser comes back to a one-time server on this computer (the app's redirect URI http://localhost,
+   * platform "Mobile and desktop applications"; Microsoft ignores the port of a loopback address). Only an answer with
+   * this sign-in's `state` counts, and only this process holds the verifier the code is redeemed with.
+   * `onUrl` gets the page to open; resolves to the signed-in account.
+   */
+  async function browserLogin({ onUrl, loginHint = null, timeoutMs = 10 * 60_000 }) {
+    const verifier = randomBytes(32).toString('base64url');
+    const state = randomBytes(16).toString('base64url');
+    let settle;
+    let answered = false;
+    const answer = new Promise((resolve, reject) => {
+      settle = { resolve, reject };
+    });
+    answer.catch(() => {}); // a late answer after the time is up is nobody's error
+    const server = await loopback((req, res) => {
+      // Connection: close, so that the server can be closed as soon as the sign-in is done
+      const reply = (status, title, text) => {
+        res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'close' }).end(page(title, text));
+      };
+      const q = new URL(req.url, 'http://localhost').searchParams;
+      if (!q.has('code') && !q.has('error')) return reply(404, 'Nothing here', 'This page only takes the Teams sign-in back to the agent.');
+      if (q.get('state') !== state) return reply(400, 'Not this sign-in', 'This answer belongs to an earlier sign-in. Use the newest link of node agent/teams-login.mjs.');
+      if (answered) return reply(409, 'Already answered', 'This sign-in has its answer. You can close this window.');
+      answered = true;
+      if (q.has('error')) {
+        const why = signInError({ error: q.get('error'), error_description: q.get('error_description') });
+        reply(400, 'The sign-in did not finish', why);
+        return settle.reject(new Error(`the sign-in did not finish: ${why}`));
+      }
+      settle.resolve({ code: q.get('code'), reply });
+    });
+    const redirectUri = `http://localhost:${server.port}`;
+    const url = `${authority}/authorize?${form({
+      client_id: clientId,
+      response_type: 'code',
+      response_mode: 'query',
+      redirect_uri: redirectUri,
+      scope: SCOPES.join(' '),
+      state,
+      code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+      code_challenge_method: 'S256',
+      prompt: 'select_account', // the browser may already know someone else: the person running this, most often
+      ...(loginHint ? { login_hint: loginHint } : {}),
+    })}`;
+    let timer;
+    try {
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('the sign-in did not finish in time: run it again')), timeoutMs);
+      });
+      onUrl({ url, redirectUri });
+      const { code, reply } = await Promise.race([answer, timeout]);
+      const { ok, j } = await tokenRequest({ grant_type: 'authorization_code', code, redirect_uri: redirectUri, code_verifier: verifier, scope: SCOPES.join(' ') });
+      if (!ok) {
+        reply(400, 'The sign-in did not finish', signInError(j));
+        throw new Error(`the sign-in did not finish: ${signInError(j)}`);
+      }
+      const account = await accountOf(j);
+      reply(200, 'Signed in', `The agent is signed in to Teams as ${account.name}. You can close this window.`);
+      return account;
+    } finally {
+      clearTimeout(timer);
+      server.close();
+    }
+  }
+
   /**
    * The device code sign-in: `onCode` gets the code and the page to enter it on; resolves to the signed-in account.
+   * For a computer without a browser; tenants with Security defaults block it (AADSTS530035): browserLogin there.
    */
   async function deviceLogin({ onCode }) {
     const res = await fetch(`${authority}/devicecode`, { method: 'POST', headers: FORM, body: form({ client_id: clientId, scope: SCOPES.join(' ') }), signal: AbortSignal.timeout(30_000) });
@@ -124,23 +255,32 @@ export function createGraph({ clientId, tenantId, tokenFile, fetch = globalThis.
     while (now() < until) {
       await sleep(wait);
       const { ok, j } = await tokenRequest({ grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code: d.device_code });
-      if (ok) {
-        keep(j, null);
-        const me = await get('/me?$select=id,displayName,userPrincipalName');
-        keep(j, { id: me.id, name: me.displayName, upn: me.userPrincipalName });
-        return held.account;
-      }
+      if (ok) return accountOf(j);
       if (j.error === 'authorization_pending') continue;
       if (j.error === 'slow_down') {
         wait += 5000;
         continue;
       }
-      throw new Error(`the sign-in did not finish: ${why(j)}`);
+      throw new Error(`the sign-in did not finish: ${signInError(j)}`);
     }
     throw new Error('the sign-in code expired: run it again');
   }
 
-  return { deviceLogin, get, post, signedIn: () => Boolean(current()?.refresh_token), account: () => current()?.account ?? null };
+  return {
+    browserLogin,
+    deviceLogin,
+    get,
+    post,
+    signedIn: () => Boolean(current()?.refresh_token),
+    account: () => current()?.account ?? null,
+    /** What the app registration still lacks, as of the last token (a renewal picks up a consent given since). */
+    missingPermissions: () => missingPermissions(current()?.scope),
+    /** A new access token now, whatever the old one's time: with the permissions as they are granted now. */
+    async renew() {
+      if (current()) held.expires_at = 0;
+      await accessToken();
+    },
+  };
 }
 
 /** One channel's messages through Graph: the newest roots with their replies, and a reply in a thread. */

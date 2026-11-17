@@ -10,6 +10,8 @@
   "tourReplay": ["DEM-36", "FAR-19"],
   "_presentation": "Shown on the first and the last slide of the presentation (?present, ?deck): who presents, the team, a contact. An empty value is left out.",
   "presentation": { "presenter": "Bojan Mijatović", "team": "", "contact": "github.com/Bojan-Mijatovic" },
+  "_teams": "Teams -> agent (ROADMAP #9, agent/README.md): approvers may approve or reject any fix by a reply under its 'fix ready' card, besides the person the card is for (a team lead; matched by the Teams display name, accents aside). project: the project of a question that names none (default: the pilot's). pollSeconds: how often the channel is read (15; 5 for a demo).",
+  "teams": { "approvers": ["Bojan Mijatović"] },
   "labels": {
     "inProgress": "ai-analyzing",
     "done": "ai-analyzed",
