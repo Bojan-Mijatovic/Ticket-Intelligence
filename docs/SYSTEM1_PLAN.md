@@ -158,6 +158,7 @@ A title that states the side decides, as before, and an answer never prepares mo
 
 ### Later
 
+- **Agreement as a condition for the automatic fix.** When System 1's side (at 0.7) and the side of the files the analysis names disagree, hold the automatic fix as a sign of doubt (only less, never more: an agreement would not let a fix run that the title rules stop). Measured on the recorded runs on 2026-11-17, before building it: of 24 runs with a System 1 answer and an analysis, the fix ran in 5, and System 1 disagreed with the analysis in **none** of them, at any threshold from 0.5 to 0.9; 3 of the 5 answers were "both", which cannot disagree. A rule that would never have fired cannot be judged, so it is not built. `system1-compared` already records the side agreement of every ticket: look again when the pilot has given a few dozen fix runs.
 - **A7, commits without a ticket.** *Which of these open tickets does this commit belong to?* The options are up to 40 candidates chosen by time and files. Training data is free: every commit that does name its ticket.
 - **AI3, model per task.** Predict a fix's difficulty to choose the model and the budget, and predict *will the automatic fix succeed?* (today 72 % of attempts end in a verified PR). This needs more fix outcomes than we have.
 - **WF2, Teams and email.** The intent of an incoming message (status question, new problem, thanks, other) and the ticket it is about.
