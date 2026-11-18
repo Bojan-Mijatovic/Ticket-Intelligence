@@ -15,7 +15,7 @@ Two rules from the POC still apply:
 |---|---|---|---|---|---|
 | 1 | Approval from Teams | Team lead | Card with before/after, test result, risk; **Approve** / **Reject** | 1 d · deferred (2026-11-13), **replanned 2026-11-17 as part B of #9**: a reply in the thread of the "fix ready" card | A |
 | 2 | Mission Control dashboard | Team lead, management | Live phase timeline + Impact tab (time, hours saved, cost) + "Run on ticket" | 1 d · **mostly done** (2026-11-13): Impact tab (FR-72), the timeline as the Graph tab's ticket lanes (FR-70), Run ticket in the header; not built: Pause | A |
-| 3 | Night shift + morning digest | Management | 08:00 Teams digest: what the agent did overnight | 1 d · **deferred** (2026-11-13) | C |
+| 3 | Night shift + morning digest | Management | 08:00 Teams digest: what the agent did overnight | 1 d · deferred (2026-11-13), **built 2026-11-18** | C |
 | 4 | AI reviewer | Team lead, developers | Second agent reviews the PR, posts comments, sets a risk level | 0.5–1 d · **done** | B |
 | 5 | Hotspot map | Management, architects | Which components produce the most bugs, and the trend | 1 d + 1 d data · **done** | D |
 | 6 | Ask the knowledge base | PM, support, developers | Question in plain language → answer with ticket/PR links | 1 d · **done** | D |
@@ -101,6 +101,8 @@ Phase A gives the biggest demo effect for the least work. Phase B closes the loo
 **Acceptance.** Metrics match a manual count from `events.jsonl` for the demo run. Run on ticket queues and processes a ticket. Pause stops new pickups and lets the current ticket finish.
 
 ## 3. Night shift and morning digest
+
+**Status: built 2026-11-18** (FR-101; `lib/digest.mjs`, `agent/digest.mjs`, the scheduler in the watcher; [agent/README.md](../agent/README.md#night-shift-and-morning-digest-roadmap-3)). As designed below, with two changes: the night also runs every known issue's regression test and the knowledge lint (the checks WF3 lists), and the digest covers the period since the last one (a Monday's covers the weekend). First digest posted to the test channel on 2026-11-18: five tickets, two draft fix PRs, $5.53, what waits for a person. `demo/night-shift.mjs --now` was not built: `node agent/digest.mjs` shows the digest at any time.
 
 **Goal.** "The team arrives in the morning and the first pass of the work is done."
 

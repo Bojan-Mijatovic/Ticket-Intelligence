@@ -10,7 +10,7 @@
 
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
@@ -23,6 +23,7 @@ import { createDocsPrs } from './lib/docs-prs.mjs';
 import { repoKnowledge } from './lib/doc-candidates.mjs';
 import { loadPriorArtSources } from './lib/prior-art.mjs';
 import { knowledgeGaps, readAsks } from './lib/gaps.mjs';
+import { digestDue, inWindow, nightOf } from './lib/digest.mjs';
 import { gapsToResearch, readResearch, recordResearch, researchedToday, researchOf } from './lib/research.mjs';
 import { askStats } from './lib/ask-stats.mjs';
 import { processTicket, triageTicket, refixTicket } from './lib/pipeline.mjs';
@@ -535,14 +536,14 @@ async function runResearch(job) {
     const took = `${Math.round((Date.now() - started) / 1000)} s, $${cost.toFixed(2)}`;
     if (!a.found) {
       recordResearch(p.stateDir, job.group, { outcome: 'not-found', costUsd: cost });
-      events.emit('research', { project: p.key, text: `${p.key}: no answer in the code, its history or the tickets either (${took}): a real gap, kept on the Insights tab: ${job.question.slice(0, 140)}` });
+      events.emit('research', { project: p.key, outcome: 'not-found', costUsd: cost, text: `${p.key}: no answer in the code, its history or the tickets either (${took}): a real gap, kept on the Insights tab: ${job.question.slice(0, 140)}` });
       return;
     }
     const record = { ...askRecord(a), via: 'claude' };
     const saved = await saveFaq({ repoDir: p.repoDir, workDir: join(p.stateDir, 'research-work'), record, date: new Date().toISOString().slice(0, 10), team: teamNames(), research: { why: job.why } });
     recordResearch(p.stateDir, job.group, { outcome: 'faq', url: saved.url, costUsd: cost });
     knowledgeCache.delete(p.key);
-    events.emit('research', { project: p.key, text: `${p.key}: answered and saved as a FAQ entry for a person to check (${took}): ${saved.created ? 'new' : 'added to'} documentation PR #${saved.number}`, url: saved.url });
+    events.emit('research', { project: p.key, outcome: 'faq', costUsd: cost, text: `${p.key}: answered and saved as a FAQ entry for a person to check (${took}): ${saved.created ? 'new' : 'added to'} documentation PR #${saved.number}`, url: saved.url });
   } catch (e) {
     const why = String(e.message).split('\n')[0].slice(0, 200);
     // An answer already in the FAQ is not a failure: the gap is closed.
@@ -563,6 +564,132 @@ function autoResearch() {
   if (next) queueResearch(next.p, next.g);
 }
 setInterval(autoResearch, 60_000).unref();
+
+// ---------------------------------------------------------------- night shift and morning digest (ROADMAP #3, WF3)
+// In agent.config.json nightShift's window (from–to, local time), once a night when the agent is idle: the checks that
+// were commands a person ran (every known issue's regression test on main, KB1; the knowledge lint, K5), and the
+// backlog (open tickets older than lookbackHours the agent never saw), at most maxTickets and maxCostUsd a night. At
+// digestAt on working days, the morning digest (agent/digest.mjs) to Teams. policy nightShift / morningDigest.
+const NIGHT_DIR = join(rootState, 'night');
+const NS = cfg.nightShift ?? {};
+const nightFile = (night) => join(NIGHT_DIR, `${night}.json`);
+const readNight = (night) => {
+  try {
+    return JSON.parse(readFileSync(nightFile(night), 'utf8'));
+  } catch {
+    return null;
+  }
+};
+function writeNight(night, patch) {
+  mkdirSync(NIGHT_DIR, { recursive: true });
+  const n = { night, ...(readNight(night) ?? {}), ...patch, at: new Date().toISOString() };
+  writeFileSync(nightFile(night), JSON.stringify(n, null, 2));
+  writeFileSync(join(NIGHT_DIR, 'last.json'), JSON.stringify({ night }));
+  return n;
+}
+/** What the night's work cost so far: the cost-bearing events since the window opened. */
+const nightCost = (since) => readEvents(rootState).filter((e) => e.at >= since && ['analyzed', 'fix-proposed', 'fix-failed', 'reviewed', 'documented', 'research'].includes(e.type)).reduce((s, e) => s + (e.meta?.costUsd ?? e.costUsd ?? 0), 0);
+const runNode = (script, args, minutes) => new Promise((done) => {
+  let out = '';
+  const child = spawn(process.execPath, [join(HERE, script), ...args], { cwd: join(HERE, '..'), windowsHide: true });
+  const stop = setTimeout(() => child.kill(), minutes * 60_000);
+  child.stdout.on('data', (d) => (out += d));
+  child.stderr.on('data', (d) => (out += d));
+  child.on('close', (code) => (clearTimeout(stop), done({ code, out })));
+  child.on('error', (e) => (clearTimeout(stop), done({ code: -1, out: `${out}\n${e.message}` })));
+});
+
+async function runNightChecks(job) {
+  events.emit('night', { text: 'night shift: the regression tests of the known issues (KB1) and the knowledge lint, on every main' });
+  const kb = await runNode('knowledge-tests.mjs', [], 60);
+  const failed = [];
+  let passed = 0;
+  for (const p of all.projects.filter((x) => existsSync(x.repoDir))) {
+    try {
+      const r = JSON.parse(readFileSync(join(p.stateDir, 'knowledge-tests.json'), 'utf8'));
+      if (Date.parse(r.at) < Date.parse(job.since)) continue; // not run tonight
+      for (const e of r.entries ?? []) {
+        if (e.status === 'pass') passed++;
+        if (e.status === 'fail') failed.push({ project: p.key, key: e.key });
+      }
+    } catch {
+      /* no results */
+    }
+  }
+  let findings = 0;
+  for (const p of all.projects.filter((x) => existsSync(x.repoDir))) {
+    const l = await runNode('knowledge-lint.mjs', ['--project', p.key], 5);
+    if (l.code === 1) findings += Math.max(1, (l.out.match(/^\s+(?:[A-Z][A-Z0-9_]+-\d+|-)\s/gm) ?? []).length);
+  }
+  writeNight(job.night, { kbTests: { passed, failed, code: kb.code }, lint: { findings } });
+  events.emit('night', { text: `night shift: ${passed} regression tests of known issues pass${failed.length ? `, ${failed.length} FAIL (${failed.map((f) => f.key).join(', ')}): the known issue may be back` : ''}; knowledge lint ${findings ? `${findings} finding(s)` : 'clean'}` });
+}
+
+let nightTicking = false;
+async function nightTick() {
+  if (nightTicking || draining) return;
+  nightTicking = true;
+  try {
+    const now = new Date();
+    if (NS.enabled && (policy.actions.nightShift ?? 'off') === 'auto' && inWindow(now, NS.from ?? '20:00', NS.to ?? '07:00')) {
+      const night = nightOf(now, NS.from ?? '20:00');
+      const n = readNight(night) ?? writeNight(night, { since: now.toISOString() });
+      const idle = !status.processing && !status.queue.length && status.jira.ok !== false;
+      if (idle && !n.checksQueued) {
+        writeNight(night, { checksQueued: true });
+        status.queue.push({ kind: 'night-checks', key: 'night checks', night, since: n.since });
+        pushStatus();
+        drain();
+      } else if (idle && n.checksQueued && !n.backlogQueued) {
+        const max = Number(NS.maxTickets ?? 10);
+        const found = await jira.search(`${IN_PROJECTS} AND created < -${cfg.lookbackHours}h AND statusCategory != Done AND (labels is EMPTY OR labels not in (${agentLabels.join(', ')})) ORDER BY priority DESC, created ASC`, max).catch(() => []);
+        writeNight(night, { backlogQueued: true, backlog: { queued: found.length, stopped: null } });
+        for (const issue of found) {
+          status.queue.push({ ...issue, kind: 'analyze', night });
+          events.emit('queued', { key: issue.key, text: `${issue.summary} · night shift: from the backlog`, url: jira.browseUrl(issue.key), priority: issue.priority, reporter: issue.reporter });
+          askSystem1(issue);
+        }
+        if (found.length) events.emit('night', { text: `night shift: ${found.length} backlog ticket(s) queued (at most ${max}, $${NS.maxCostUsd ?? 5} a night)` });
+        pushStatus();
+        drain();
+      }
+    }
+    // The digest: on working days at digestAt, for the period since the last one.
+    const last = (() => {
+      try {
+        return JSON.parse(readFileSync(join(rootState, 'digests', 'last.json'), 'utf8'));
+      } catch {
+        return null;
+      }
+    })();
+    if (NS.enabled && (policy.actions.morningDigest ?? 'off') === 'auto' && digestDue(now, NS.digestAt ?? '08:00', last?.date, { weekends: NS.weekends === true }) && !status.digesting) {
+      status.digesting = true;
+      const r = await runNode('digest.mjs', ['--post'], 5);
+      status.digesting = false;
+      const line = r.out.split('\n').find((l) => l.startsWith('DIGEST '));
+      const d = line ? JSON.parse(line.slice(7)) : null;
+      events.emit(d ? 'digest' : 'error', d ? { text: `morning digest ${d.channel === 'teams' ? 'posted to Teams' : d.channel === 'failed' ? `NOT posted (${d.error})` : 'written (no Teams webhook)'}: ${d.summary}`, file: d.file } : { text: `morning digest failed: ${r.out.trim().split('\n').pop()?.slice(0, 200)}` });
+    }
+  } catch (e) {
+    events.emit('error', { text: `night shift: ${String(e.message).split('\n')[0]}` });
+  } finally {
+    nightTicking = false;
+  }
+}
+setInterval(() => nightTick(), 60_000).unref();
+
+/** A night-shift ticket waits while the night's cost is under maxCostUsd; past it, the rest of the backlog is dropped. */
+function nightBudgetLeft(issue) {
+  if (!issue.night) return true;
+  const n = readNight(issue.night);
+  const spent = nightCost(n?.since ?? new Date(Date.now() - 12 * 3_600_000).toISOString());
+  if (spent < Number(NS.maxCostUsd ?? 5)) return true;
+  const dropped = status.queue.filter((q) => q.night === issue.night).length + 1;
+  status.queue = status.queue.filter((q) => q.night !== issue.night);
+  writeNight(issue.night, { backlog: { ...(n?.backlog ?? {}), stopped: `the night's cost limit ($${NS.maxCostUsd ?? 5}) was reached at $${spent.toFixed(2)}; ${dropped} ticket(s) left for the next night` } });
+  events.emit('night', { text: `night shift stopped: $${spent.toFixed(2)} spent, the limit is $${NS.maxCostUsd ?? 5}; ${dropped} backlog ticket(s) left for the next night` });
+  return false;
+}
 
 // ---------------------------------------------------------------- waiting for the reporter (J7 and J2 in auto)
 // lib/reporter-wait.mjs: a ticket asked about waits for the reporter's answer (or askReporterWaitHours); a ticket on
@@ -688,7 +815,10 @@ async function drain() {
   const issue = order === 'auto' && best > 0 ? status.queue.splice(best, 1)[0] : status.queue.shift();
   status.processing = { key: issue.key ?? `${issue.project} ${String(issue.sha).slice(0, 7)}`, kind: issue.kind, since: new Date().toISOString() };
   pushStatus();
-  if (issue.kind === 'research') await runResearch(issue);
+  if (issue.kind === 'night-checks') await runNightChecks(issue);
+  else if (issue.kind === 'analyze' && issue.night && !nightBudgetLeft(issue)) {
+    /* the night's cost limit: dropped, said in an event and the digest */
+  } else if (issue.kind === 'research') await runResearch(issue);
   else if (issue.kind === 'guard') await runGuard(issue);
   else if (issue.kind === 'known-test') await runKnownTest(issue);
   else if (issue.kind === 'merge-check') await runMergeCheck(issue);

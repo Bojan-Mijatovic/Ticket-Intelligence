@@ -4,6 +4,8 @@
   "staff": ["Elena Conti", "Anna Lombardi"],
   "settleMinutes": 1,
   "lookbackHours": 72,
+  "_nightShift": "ROADMAP #3 / WF3: in the window (local time), once a night when idle: every known issue's regression test on main (KB1) and the knowledge lint; then the backlog (open tickets older than lookbackHours the agent never saw), at most maxTickets and maxCostUsd a night. The morning digest at digestAt on working days (weekends: true for every day). policy.json nightShift / morningDigest.",
+  "nightShift": { "enabled": true, "from": "20:00", "to": "07:00", "maxTickets": 10, "maxCostUsd": 5, "digestAt": "08:00", "weekends": false },
   "maxParallel": 1,
   "analysisTimeoutMinutes": 10,
   "dashboardPort": 7070,

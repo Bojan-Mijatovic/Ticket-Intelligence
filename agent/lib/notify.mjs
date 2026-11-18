@@ -154,6 +154,26 @@ export async function shareAnswer({ project, projectName = project, question, an
 }
 
 /**
+ * The morning digest (ROADMAP #3, lib/digest.mjs): its summary and sections in one card for the channel, no person
+ * mentioned. Without a webhook it is on the dashboard only.
+ */
+export async function notifyDigest({ title, summary, sections = [] }) {
+  const webhook = String(process.env.TEAMS_WEBHOOK_URL ?? '').trim();
+  const card = { kind: 'digest', title, message: summary, sections };
+  if (!webhook) return { channel: 'dashboard', card };
+  const body = [
+    { type: 'TextBlock', text: title, weight: 'Bolder', size: 'Medium', wrap: true },
+    { type: 'TextBlock', text: summary, wrap: true },
+    ...sections.flatMap((s) => [
+      { type: 'TextBlock', text: s.title, weight: 'Bolder', spacing: 'Medium', wrap: true },
+      { type: 'TextBlock', text: s.lines.slice(0, 12).map((l) => `- ${l}`).join('\n'), wrap: true },
+    ]),
+    { type: 'TextBlock', text: 'Written by the agent from its own records. Reply "ti: …" here to ask about any of it.', wrap: true, isSubtle: true, size: 'Small' },
+  ];
+  return { ...(await post(webhook, adaptiveCard({ to: null, upn: null, body, actions: [], heading: 'Ticket Intelligence' }))), card };
+}
+
+/**
  * An Adaptive Card for a person, @mentioned when they have a Teams account: the <at> text and its entity must match.
  * Without a person, `heading` is the first line.
  */
