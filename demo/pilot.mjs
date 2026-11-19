@@ -219,10 +219,25 @@ async function ensureWatcher() {
   } catch {
     /* not running */
   }
-  const out = openSync(join(DIR, 'watcher.log'), 'a');
-  spawn(process.execPath, [join(AGENT, 'watcher.mjs')], { cwd: ROOT, detached: true, stdio: ['ignore', out, out], windowsHide: true }).unref();
+  startHidden(join(DIR, 'watcher.log'));
   log('watcher was not running: started it (log in pilot/watcher.log)');
   return false;
+}
+
+/**
+ * Starts the watcher so that it outlives this tick and opens no window. On Windows `detached: true` leaves it with no
+ * console at all, and then every git, gh, mvn or node it starts opens a console window of its own, again and again
+ * (2026-11-18). Start-Process -WindowStyle Hidden gives it a hidden console instead, which those programs share.
+ */
+function startHidden(logFile) {
+  if (process.platform !== 'win32') {
+    const out = openSync(logFile, 'a');
+    spawn(process.execPath, [join(AGENT, 'watcher.mjs')], { cwd: ROOT, detached: true, stdio: ['ignore', out, out] }).unref();
+    return;
+  }
+  const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
+  const cmd = `Start-Process -FilePath ${q(process.execPath)} -ArgumentList ${q(`"${join(AGENT, 'watcher.mjs')}"`)} -WorkingDirectory ${q(ROOT)} -WindowStyle Hidden -RedirectStandardOutput ${q(logFile)} -RedirectStandardError ${q(`${logFile}.err`)}`;
+  spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], { windowsHide: true, stdio: 'ignore' }).unref();
 }
 
 const pct = (x) => (x?.of ? `${Math.round((100 * x.n) / x.of)}% (${x.n}/${x.of})` : '–');

@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | Recorded and approved by Bojan Mijatović (2026-11-04); review weekly during the POC |
 | **Owner** | Bojan Mijatović |
-| **Date** | 2026-11-04 |
+| **Date** | 2026-11-04, last reviewed 2026-11-18 |
 
 ## 1. Dependencies
 
@@ -23,18 +23,19 @@
 | Angular CLI | 18.2 | demo frontend | Angular 19+ needs Node ≥ 20.19 |
 | Playwright + Chromium | 1.64.1 | bug reproduction (MediAgenda `e2e/`) | browsers in `%LOCALAPPDATA%ms-playwright` |
 | GitHub CLI (`gh`) | 2.101 | draft pull requests | logged in as the repository owner |
+| Python with Laya and PyTorch (CPU) | portable, `tools/laya-env` (`node demo/get-tools.mjs --only uv,laya`) | System 1, the local decision model | optional: without it the agent runs as before, with no System 1 answers; a fine-tuned checkpoint in `agent/state/system1/models/` (`ft-5`) |
 
 ### 1.2 Services and accounts
 
 | Dependency | Status | Needed for |
 |---|---|---|
-| Jira Cloud sandbox `bojanmijatovic.atlassian.net`, project DEM | available | POC |
+| Jira Cloud sandbox `bojanmijatovic.atlassian.net`, projects DEM, LAB, FAR, BIL and VAX (the pilot) | available | POC |
 | Jira API token (the sandbox owner's account, stored in the per-user `.env`) | available | POC |
 | Company Jira project + service account | **missing** | MVP on real tickets |
 | Teams channel + Workflows webhook | checked on a test Microsoft 365 tenant (2026-11-16): owner messages, @mentions and "fix ready" arrive in a real channel. The team's own channel still needs its webhook, created by a person there; without it, notifications are simulated on the dashboard | real notifications |
-| Teams → agent (ROADMAP #9): an app registration in Microsoft Entra (native client, redirect URI `http://localhost`) with delegated Graph permissions (`ChannelMessage.Read.All`, `ChannelMessage.Send`, `Channel.ReadBasic.All`, `User.ReadBasic.All`, `User.Read`, `offline_access`), the admin's consent, and one account that signs in, in a browser on the agent's computer (a "Ticket Intelligence" user) | **signed in 2026-11-17** on the test tenant (its owner is its admin); at the company it needs IT's consent and a service account. A device code sign-in is blocked by Security defaults (AADSTS530035) and often by Conditional Access, hence the browser sign-in | Ask in Teams, the approval of a fix from Teams |
+| Teams → agent (ROADMAP #9): an app registration in Microsoft Entra (native client, redirect URI `http://localhost`) with delegated Graph permissions (`ChannelMessage.Read.All`, `ChannelMessage.Send`, `Channel.ReadBasic.All`, `User.ReadBasic.All`, `User.Read`, `offline_access`), the admin's consent, and one account that signs in, in a browser on the agent's computer (a "Ticket Intelligence" user) | **signed in 2026-11-17** on the test tenant (its owner is its admin), Ask in the channel live; at the company it needs IT's consent and a service account. A device code sign-in is blocked by Security defaults (AADSTS530035) and often by Conditional Access, hence the browser sign-in | Ask in Teams, the approval of a fix and the owner's answer from Teams |
 | GitHub Copilot licence (VS Code, agent mode) | **not on this machine**; the skills are not yet run inside Copilot ([COPILOT_TEST.md](COPILOT_TEST.md)) | the skills in Copilot at work |
-| GitHub repository for the demo app | available: private repo Bojan-Mijatovic/MediAgenda | real draft PRs *(planned)* |
+| GitHub repositories for the demo apps | available: private repos Bojan-Mijatovic/MediAgenda, MediLab, MediFarma, MediBill and MediVax | real draft PRs, AI reviews and documentation PRs (in use) |
 | Approved AI service for company ticket data | **open** | any use on company tickets |
 
 ### 1.3 People and decisions
@@ -70,11 +71,12 @@ Likelihood and impact: L = low, M = medium, H = high.
 | R-08 | **Commits without ticket keys** weaken code links | M | M | code search and message matching as fallback; recommend the convention to the team | Team lead | open |
 | R-09 | **SVN server access** (credentials, non-interactive mode, slow `svn log`) | M | M | cached credentials; log window cached per run; test on a company SVN repo | Bojan | open |
 | R-10 | **Jira differences** (team- vs company-managed, missing Priority/Environment fields, Data Center vs Cloud) | M | L | `environmentField` configurable (labels in DEM); Data Center supported via PAT and `/search`; `inspect`/`fields` commands to discover fields | Bojan | mitigated |
-| R-11 | **Cost / usage limits** at scale | L | M | ~10 turns per ticket; `maxTurns` and timeout; `no-ai` label; poll only new tickets | Bojan | open |
+| R-11 | **Cost / usage limits** at scale | L | M | ~10 turns per ticket ($0.32 per analysis on average, 84 analyses); `maxTurns` and timeout; `no-ai` label; poll only new tickets; System 1 answers some decisions and questions locally at no cost (light path, Ask router); the night shift stops at `maxCostUsd` ($5) and the researcher at 3 runs a day; the morning digest shows the cost. A daily budget per action (AI3) is still open | Bojan | open |
 | R-12 | **Duplicate tickets** produce repeated noise | M | L | `duplicateOf` flagged on the dashboard and in the comment; no automatic linking yet | Bojan | mitigated |
 | R-13 | **Single workstation** is a single point of failure | H | L (POC) | acceptable for the POC; restart-safe watcher; move to a team VM for the MVP | Tech lead | accepted |
 | R-14 | **Automatic fixes** are wrong or unsafe | M | H | isolated worktree on a new branch; the watcher re-runs every check (test must fail before and pass after; no test edits in the fix); draft PR only; `mergeFix: off`; human review | Bojan | mitigated |
 | R-15 | **A restart or a slow read stops the agent's work** (a restart killed two paid app reviews in one afternoon; a heavy read froze the watcher for up to a minute) | M | M | `--replace` waits for the running job (`/api/drain`, `/api/busy`; `--force` only on purpose); heavy reads in worker threads, the guard's fetches asynchronous; verified live 2026-11-16 | Bojan | mitigated |
+| R-17 | **Steps the agent takes without a person first** (since 2026-11-17/18: a question to the reporter in Jira, the light path without an analysis, a documentation PR merged after 24 h, the researcher's FAQ entries, the night's backlog) go wrong where nobody looks | M | M | each has a way back instead of a gate: the question waits at most 24 h and only asks what is wrong or where, never for a patient's name; the light path is undone by the reporter's reply and puts itself back in shadow after a miss (`state/autonomy.json`); a documentation PR is stopped by a review or the label `hold`, and every merge is linted; the night stops at its cost limit; everything is in the events and in the morning digest. AG2 (a trust ladder from the data) is the planned way to raise and lower these levels | Bojan | open |
 | R-16 | **Teams → agent rests on one signed-in account and a trial tenant** (ROADMAP #9): the refresh token expires or is revoked, the trial ends (about 2026-12-16), Microsoft throttles the reads, or a question in the channel carries an instruction or a patient's name | M | M | the token kept locally like the webhook (never shown or logged), its expiry said on the dashboard and in `demo/preflight.mjs --teams`; reads every 5–15 s for one channel, waits on a throttling answer; a message is data, the question goes through the same read-only Ask, what is posted is masked; only the owner's reply approves a fix; the bot with the company's service account is the production path | Bojan | open |
 
 ## 4. Issues already resolved during the POC
@@ -93,3 +95,6 @@ Likelihood and impact: L = low, M = medium, H = high.
 | A fix stopped on EBUSY: killing the shell left the real process holding the worktree (VAX-17) | `killTree` ends the whole process tree; the worktree removal retries |
 | Several documentation PRs from the same main conflict | merged entry by entry and linted automatically since 2026-11-17 (KNOWLEDGE_PLAN K22); what cannot be placed is left for a person |
 | The agent stopped a right fix because an existing test asserted the bug (LAB-24) | fixed by hand with the test updated (MediLab #8); the analysis should list such tests in `supersedes` (AGENT_TRAINING) |
+| Teams refused the agent's first sign-in: Security defaults block the device code flow (AADSTS530035), and a missing permission stopped it at "Need admin approval" without naming it | a browser sign-in with PKCE on the agent's computer; it asks for what the admin granted and names what is missing (2026-11-17) |
+| People wrote "ti: …" in a post's subject, and a decision under the wrong card changed nothing silently | a subject counts as the text; a decision that names its ticket counts anywhere the agent is addressed, and one that does not say which fix gets a pointer (2026-11-17) |
+| Two tickets queued together: the second got System 1's answer after 25 s and went to the analysis without its question to the reporter (BIL-26) | when an answer decides the path, the watcher waits up to `gateWaitSeconds` (60) for System 1 (2026-11-17) |

@@ -1,6 +1,6 @@
 # Redaction of personal data (R-02)
 
-Status: **Implemented (v1), approval pending** · Date: 2026-11-13 · Owner: Bojan Mijatović · Risk: [R-02](DEPENDENCIES_AND_RISKS.md)
+Status: **Implemented (v1), approval pending** · Date: 2026-11-13, updated 2026-11-18 · Owner: Bojan Mijatović · Risk: [R-02](DEPENDENCIES_AND_RISKS.md)
 
 Tickets in a healthcare project can name patients. Before any ticket text reaches an AI model, the tool masks personal data in it. This page says what is masked, where, what is not, and how to check it. It is the technical part of R-02; the organisational part (an approved AI service under a data agreement, DPO approval) is still open.
 
@@ -29,7 +29,7 @@ One module, `.claude/skills/analyze-ticket/scripts/lib/redact.mjs`, used at ever
 | Analysis and documentation (`ticket.mjs analyze`, `fetch`) | the ticket and its related tickets (summary, description, comments, worklog comments, links, text field changes), the commit messages and knowledge entries put in the bundle; the bundle says what was masked (`redaction`) |
 | Fix, AI review, Ask (`agent/lib/jira-actions.mjs`: `getIssue`, `getIssueFull`) | summary, description, comments |
 | AI review of the app (`app-review.mjs`) | the ticket summaries in its facts |
-| An Ask answer that leaves the machine (Ask 3/7, `agent/lib/ask-actions.mjs` → `maskAnswer`): **Send to Teams**, **Create a ticket**, **Save as FAQ** | the answer, the question and the person's note are masked again with the same rules and the team as allowed names before they are posted; the FAQ also passes the knowledge lint below. Ask in Teams (ROADMAP #9, in progress) posts its answers the same way |
+| An Ask answer that leaves the machine (Ask 3/7, `agent/lib/ask-actions.mjs` → `maskAnswer`): **Send to Teams**, **Create a ticket**, **Save as FAQ** | the answer, the question and the person's note are masked again with the same rules and the team as allowed names before they are posted; the FAQ also passes the knowledge lint below. Ask in Teams (ROADMAP #9, live since 2026-11-17) posts its answers the same way |
 | Knowledge base (lint before a push, `knowledge-lint.mjs`) | not masked but **refused**: the same rules report an identifier or a name outside the team, so personal data does not enter the repository |
 
 Plain-code pages (Insights, the dashboard's lists) show Jira as it is: they run on this machine and send nothing to a model.
@@ -64,9 +64,13 @@ node --test agent/test/redact.test.mjs                # the rules, including no 
 - **Knowledge lint with the name rule:** one real finding, LAB-19's entry named two patients (written before the redaction existed); fixed (MediLab PR #6). All four knowledge bases: no findings.
 - **Quality with masking on:** LAB-19 analysed with its patient names masked: right cause, owner (Francesca Lombardi), high confidence, "already documented" found; no name in the result. Ask eval LAB 8/8; BIL 2/3 (the cross-app answer was right and cited DEM-17, but not BIL-4: a variation in the sources chosen, not caused by the masking).
 
-## Measured on the pilot (2026-11-16)
+## Measured on the pilot (2026-11-18)
 
-The pilot ([PILOT.md](PILOT.md)) quotes synthetic patients in every bug report, a quarter of them with uncommon first names on purpose, and scores the masking on each one: **11 of 15** quoted identifiers masked over five tickets. Fiscal codes and phone numbers were always masked; the misses are names the list does not know ("Ferrara Iolanda").
+The pilot ([PILOT.md](PILOT.md)) quotes synthetic patients in every bug report, a quarter of them with uncommon first names on purpose, and scores the masking on each one: **16 of 20** quoted identifiers masked over seven tickets (11 of 15 over the first five, 2026-11-16). Fiscal codes and phone numbers were always masked; the misses are names the list does not know ("Ferrara Iolanda").
+
+A second check on this machine, System 1's privacy question ([SYSTEM1_PLAN.md](SYSTEM1_PLAN.md), J6), reads the masked text and says whether it still names a person. It stays in shadow: on the pilot's VAX-17 the masking left a patient's name and it answered "no person" at 97 %, so holding tickets on its word would promise a protection it does not give yet.
+
+Since 2026-11-17 the agent also answers Ask questions in the Teams thread on its own. Those answers are masked the same way as the Jira comment, so they share the same limit: an uncommon name can pass. The morning digest (since 2026-11-18) carries ticket keys, counts and links, not ticket text.
 
 ## Decisions still needed
 

@@ -2,10 +2,12 @@
 
 | | |
 |---|---|
-| **Status** | Defined and approved by Bojan Mijatović (2026-11-04); fully implemented and rehearsed (DEM-10, 2026-11-04). Live Teams variant on MediVax added 2026-11-16 (section 9): built and measured on a real pilot ticket, not rehearsed yet (see its Readiness table) |
+| **Status** | Defined and approved by Bojan Mijatović (2026-11-04); fully implemented and rehearsed (DEM-10, 2026-11-04). Live Teams variant on MediVax added 2026-11-16 (section 9): built and measured on a real pilot ticket, not rehearsed yet. Updated 2026-11-18: the team's side of Teams (a question in the channel, the approval of a fix by a reply) and the morning digest added as optional moments; readiness checked again (section 9, Readiness) |
 | **Owner** | Bojan Mijatović |
 | **Length** | 15 minutes (9 min live flow + questions) |
 | **Audience** | team leads, developers, support, management |
+
+**The presentation around it** (since 2026-11-18): `http://localhost:7070/?present`, seventeen minutes on how the app works, with the pilot's VAX-21 replayed whole from its records and one `ti:` question live in Teams at the end; the presenter speaks (→ moves on, **N** opens the notes in another window), or `?present&voice` lets the browser's voice speak. Its run of show is [PRESENTATION_PLAN.md](PRESENTATION_PLAN.md); the live variant below (section 9) can replace the replay.
 
 ## 1. The message
 
@@ -72,6 +74,7 @@ The demo project is **MediAgenda**, a fictional healthcare scheduling app (Angul
 | `A watcher is already running` | `node agent/watcher.mjs --replace` |
 | Ticket flagged as a duplicate | turn it into a talking point ("it also recognized the duplicate"), then continue |
 | Claude CLI session expired | run `claude` once in a terminal before the demo; fallback to the recording |
+| The card says *asked the reporter* or *light path*, and no analysis runs (label `ai-held` or `ai-triaged`) | System 1 read the report as half-written or as not about code (both act on their own since 2026-11-17). A talking point first ("it asks the customer before it spends a minute"), then **Analyze now** or **↻ Run again** on the card: a run a person starts always gets the full analysis. **Run ticket** with the key skips both from the start |
 
 ## 7. Reset after the demo
 
@@ -94,7 +97,10 @@ Then `node agent/watcher.mjs --replace` and `node demo/preflight.mjs`.
 | What about patient data? | Must be redacted before analysis and only approved AI services used; this is a precondition for company tickets (see risks R-02). |
 | What if it's wrong? | It only writes an internal comment labelled as AI analysis; confidence is shown; humans decide. Low-confidence results don't notify anyone. |
 | Does it work with our SVN projects / Copilot? | Yes: SVN is supported and tested on a local repository; Copilot uses the same skill format and is the next thing to validate at work. |
-| What does it cost? | ~1 minute and ~10 agent turns per ticket (about $0.70 API-equivalent; included in seat-based subscriptions). Measured on the pilot: $1 to $2.50 per bug including the reproduction, the fix and the AI review ($11.82 for five). |
+| What does it cost? | An analysis: about a minute, $0.32 on average (84 analyses; API-equivalent, included in seat-based subscriptions). Measured on the pilot: $1 to $2.50 per bug including the reproduction, the fix and the AI review ($14.79 for seven). The night shift stops at $5 a night. |
+| Can the team just ask it? | Yes, in the Teams channel: `ti: VAX-21` gives the ticket's status in about two seconds, from the agent's records and with no AI; `ti: who knows Scadenze?` or a page's address is answered by plain code; anything else by Claude in about a minute, with its sources. The answer comes in the thread, masked. |
+| Does it do anything without a ticket? | Every commit on main is checked against the fixes it touches (regression guard). At night it runs the regression tests of every known issue and the backlog, and at 08:00 it posts a digest: what it did, what came back, what waits for whom, what it cost. |
+| Does it bother the customer? | Only to ask what a half-written report leaves out (what is wrong, where), from a template, never for a patient's name, and only for a report about code. The analysis starts on the answer or after 24 h. Everything else customer-facing is a draft a person sends. |
 | Does it work with our Teams? | Yes, through a Workflows webhook in a standard channel: about 10 minutes for the channel's owner, no IT. Shown here on a test tenant. Asking and approving in the channel ("ti: VAX-21", "approve VAX-23") go through Microsoft Graph as one signed-in account, the admin's consent once (ROADMAP #9); real buttons on the card would need a Teams app (IT), so the buttons open the PR and Jira. |
 | How does it know who should get it? | From the history: who wrote and changed that code, and for a regression who made the change that broke it. The card says why ("Why you: authored VAX-20, the regression"). On the pilot the owner was right 5 times out of 5. |
 | Does patient data end up in Teams? | The Teams message carries the same text as the internal Jira comment, written from the masked ticket. The masking catches most identifiers but not every uncommon name (11 of 15 on the pilot), which is why company tickets wait for R-02. |
@@ -120,6 +126,7 @@ Added 2026-11-16. The same message, with two changes: the owner's message arrive
 - [ ] `node demo/pilot.mjs check --case late-today` shows ✓: the change still applies to `main` and the existing tests miss it. If ✗, use `lot-expiry-iso`.
 - [ ] A full run recorded as a fallback.
 - [ ] No System 1 training running on the work laptop: it slows the machine, and the System 1 server then takes minutes to start.
+- [ ] For the replies in the channel to come within seconds: `agent.config.json` → `teams.pollSeconds: 5` (15 by default), then `node agent/watcher.mjs --replace`; `node agent/teams-login.mjs --check` says the agent is signed in as Ticket Intelligence.
 
 **The morning of the demo** (at least an hour before)
 - [ ] `node demo/pilot.mjs plant --case late-today`. Tommaso's change goes to MediVax `main` (a Jira story, Done, and one commit), and within 2 minutes the regression guard checks it. The schedule now pushes nothing else and does not report this case: no unplanned ticket comes during the demo.
@@ -137,6 +144,7 @@ It only warns about System 1 and a running training. Then the private laptop goe
 
 | Time | Presenter does | Audience sees | Talking point |
 |---|---|---|---|
+| *(optional, before 0:00)* | The private laptop, `support-triage` | this morning's **digest** card from 08:00: what the agent did since yesterday, what came back, what waits for whom, the cost | "The team starts the day with this. Nobody wrote it." (working days, when the watcher ran at 08:00) |
 | 0:00 | Dashboard, Graph tab, MediVax | this morning's commit on `main` by Tommaso Bruno, its story Done, the regression guard clear | "A small change this morning. The tests are green, CI is green. The bug is inside." |
 | 0:30 | Runs `node demo/pilot.mjs report --case late-today`, then opens the new ticket in Jira | a nurse's report, priority High: a patient's name, fiscal code, birth date and phone | "This is what support gets. Nobody assigns it, nobody starts anything." |
 | 0:45 | Dashboard: types the key in **Run ticket** (skips the one-minute wait for edits) | the ticket queued, then analyzing; the patient's identifiers masked | "The patient's data never reaches the model." |
@@ -146,6 +154,7 @@ It only warns about System 1 and a running training. Then the private laptop goe
 | ~4:00–6:00 | Dashboard | the reproduction test red on the current code, then the fix green, before and after screenshots, a draft PR | "And a tested fix, waiting for a person." |
 | right after | The private laptop or the phone | a second card: **fix ready for review**, what was checked, **Broken by** the commit, **Review the pull request**; the phone rings again | "The same person, the same channel: now with the fix to review." |
 | ~6:30 | Opens the PR from the card's button | two commits (failing test, then fix), the diff, the verification table | "Merging is always a human decision." |
+| *(optional, ~6:45)* | On the phone or the private laptop, under the "fix ready" card: `approve` (as Tommaso, or as the presenter, who is in `teams.approvers`) | within seconds the thread answers that the PR is ready for review; on GitHub the PR is no longer a draft; Jira gets "Fix approved in Teams by …" | "Approving is a reply where the team already is. Merging stays a person's, in GitHub." **Only if it worked in the rehearsal**: its first live round is still pending |
 | 7:00 | Questions | | |
 
 The pilot's tickets so far: analysis in about a minute, the Teams message right after it (61–74 s from pick to message, measured 2026-11-16), and the draft PR about 4 minutes after the ticket (VAX-13: 259 s).
@@ -170,6 +179,7 @@ On stage, with **Run ticket**, both cards come about a minute sooner.
 | Presenter types or clicks | Audience sees | Talking point |
 |---|---|---|
 | the new ticket's key alone | in about a second: what happened so far and **Now**: what waits, for whom (a chip "from the agent's records · no AI") | "The first question support asks: where is my ticket. No model, no cost." |
+| the same from the phone: `ti: <the key>` in `support-triage` | the same answer in the thread, the asker @mentioned, within the poll interval (5 s for the demo) | "Support asks where it already works. Nobody opens the dashboard." (live since 2026-11-17: "ti: VAX-21" in 1.7 s) |
 | "Which bugs did Scadenze have?" | the component's bugs newest first, what was fixed twice, what came back, who knows it, in under a second ("plain code · no AI") | "Most questions are answered by plain code; Claude only gets the rest." |
 | **↳ Follow up** on it, then "Who knows it best?" | the people who know Scadenze, again in under a second: the question needs no subject | "It is a conversation, not a search box." |
 | the address of the page the nurse was on, pasted from the app (`http://localhost:4204/scadenze`) | the route, the component, the API call and the controller method with its line, who knows it, its latest bugs ("plain code · no AI") | "Support pastes what they see; the developer gets where to look." |
@@ -195,30 +205,36 @@ Merge or close the draft PR. After a merge, the next pilot tick moves the ticket
 
 Merge only after a merge check, as for the pilot's fixes ([PILOT.md](PILOT.md), *Merging*): the fix branch on the current `main` with every test run on the result. If the PR is closed by mistake, its branch stays: reopen it.
 
-### Readiness (2026-11-16)
+### Readiness (2026-11-18)
+
+`node demo/preflight.mjs --teams` on 2026-11-18 at 10:19: every line green but the two pilot lines, as expected on a day without a demo (no reserved case pushed; the pilot's own `booster-anytime`, VAX-26, waits to be reported). Open agent PRs from earlier cases (VAX-23, VAX-25) are only a warning: a new ticket gets its own branch.
 
 | What | State | Evidence |
 |---|---|---|
-| Teams channel, webhook from this machine | ready | `teams-test.mjs` posts; a GET to the webhook answers `TriggerRequestMethodNotValid` (preflight) |
-| @mention of the owner | ready, not yet confirmed on the phone | the card for Marta Ricci and the cards for Irene Fabbri arrived; nobody has yet checked that the phone of the mentioned person rings |
-| The card: Why you, Where, Confidence (T5) and "fix ready" (T6) | ready | VAX-21 and VAX-17, real pilot tickets, both cards with no one starting anything |
-| The whole scene, timed | measured once, not rehearsed | VAX-21: handoff at 1:58 from the report, PR and "fix ready" at 5:19 (above) |
-| The reserved cases | ready | `late-today` and `lot-expiry-iso` pass `pilot.mjs check`; the schedule never takes them |
-| Watcher | ready | current code, a status within 30 ms while it works; a restart waits for the running job. A merge check (when main moves and a fix PR is open) runs for up to four minutes: the preflight warns while one is running, and the reserved case pushed an hour before gives it time to finish |
-| `node demo/preflight.mjs --teams` | GO but for the reserved case | it is pushed on the morning of the demo, on purpose |
+| Teams channel, webhook from this machine | ready | `teams-test.mjs` posts; a GET to the webhook answers `TriggerRequestMethodNotValid` (preflight, 2026-11-18) |
+| @mention of the owner | ready, not yet confirmed on the phone | the cards for Marta Ricci, Irene Fabbri and Tommaso Bruno arrived; nobody has yet checked that the phone of the mentioned person rings |
+| The card: Why you, Where, Confidence (T5) and "fix ready" (T6) | ready | VAX-21, VAX-17, VAX-23 and VAX-25, real pilot tickets, both cards with no one starting anything |
+| The whole scene, timed | measured, not rehearsed | VAX-21: handoff at 1:58 from the report, PR and "fix ready" at 5:19 (above). VAX-23 (Tommaso Bruno, frontend, the closest to `late-today`): handoff 54 s after the pick, "fix ready" with PR #15 6 min 2 s after it |
+| The reserved cases | ready | `late-today` and `lot-expiry-iso` are not used; the schedule never takes them. Run `pilot.mjs check --case late-today` the day before: `main` moved since 2026-11-16 |
+| The pilot on the day | set on the morning of the demo | the schedule pushes two cases a working day. On the morning of the demo, a case it pushed must be reported first (`pilot.mjs report --case <id>`), then the reserved one planted. After `card-sex-raw` (by catalog order, about 2026-11-19 at 15:00) only the reserved cases are left: the schedule then pushes nothing, which is fine for the demo, but the pilot needs new cases |
+| Watcher | ready | current code, a status within 4 ms (preflight); a restart waits for the running job. A merge check (when main moves and a fix PR is open) runs for up to four minutes: the preflight warns while one is running, and the reserved case pushed an hour before gives it time to finish |
+| System 1 | ready | `ft-5`, answers in about a second. The question to the reporter and the light path act on their own since 2026-11-17; the demo ticket is a clear `[FE]` bug report, and **Run ticket** skips both anyway |
 | Fallback DEM-46 | ready | its Teams message came 61 and 74 s after the pick, twice |
 | Ask: an answer sent to Teams (Send to Teams) | ready | a MediVax answer posted from the dashboard arrived in `support-triage`, sources as links (2026-11-17) |
 | Ask in Teams ("ti: …" in the channel) | ready (ROADMAP #9) | live 2026-11-17: "ti: VAX-21" answered in the thread in 1.7 s, a follow-up by Claude in 25 s; the agent signed in as Ticket Intelligence (`node agent/teams-login.mjs --check` says so) |
-| Approval from Teams ("approve VAX-23" / "odbij VAX-25: why") | built, round not yet live | the presenter is in `teams.approvers`; a misplaced decision was answered live; the reject → refix → approve round is the next check. VAX-23's draft PR #15 is kept for the demo |
+| Approval from Teams ("approve" under the card, or "approve VAX-23" / "odbij VAX-25: why") | built, round not yet live | the presenter is in `teams.approvers`; a misplaced decision was answered live; the reject → refix → approve round is checked in the rehearsal. VAX-23's draft PR #15 (Tommaso Bruno) is kept for it: still green on the main of 2026-11-18 (merge check) |
+| The owner's reply ("preuzimam" / "nije moje: <who>") | built, round not yet live | checked in the rehearsal, under the handoff card |
+| Morning digest | ready | the first one posted to `support-triage` on 2026-11-18 at 09:57 (five tickets, two draft fix PRs, $5.53, what waits); then every working day at 08:00 |
 | The private laptop, the room's network, the recording | not done | only possible on the day before |
 | The test tenant | a 30-day trial from 2026-11-16 | a demo after mid-December needs one paid month |
 
 ### The rehearsal
 
-One full run of this section before the demo, with a case that is **not** reserved, so that both reserved cases stay for the day:
+One full run of this section before the demo, with a case that is **not** reserved, so that both reserved cases stay for the day. `card-booster-label`, named here before, became VAX-23 on 2026-11-17.
 
-1. The morning of the rehearsal: `node demo/pilot.mjs plant --case card-booster-label` (Tommaso Bruno, frontend: the influenza booster shows as "Dose 2"). It is in flight, so the schedule reports it by itself 1 to 3 hours later: rehearse before that, or the schedule reports it first.
+1. The morning of the rehearsal: `node demo/pilot.mjs plant --case card-sex-raw` (Tommaso Bruno, frontend: the card's header shows "F" instead of "Femmina"; the last case of the catalog by him that is not reserved). The schedule takes it by itself, after `due-phone` and `vaccines-order`, so plant it by hand before that, or rehearse with the case in flight and the presenter as the owner. Planted, it is in flight and the schedule reports it 1 to 3 hours later: rehearse before that, or the schedule reports it first.
 2. `node demo/preflight.mjs --teams`. For the rehearsal its two pilot lines say NO-GO, since this case is not reserved ("a reserved case is pushed") and is in flight ("no other case in flight"); every other line must be green.
 3. The phone signed in as Tommaso Bruno, the private laptop on `support-triage`.
-4. The script from 0:00: `node demo/pilot.mjs report --case card-booster-label`, **Run ticket**, the two cards, the PR. Note the real times against the script's.
-5. Afterwards: merge the PR after a merge check, as after a real demo; the pilot then documents it.
+4. The script from 0:00: `node demo/pilot.mjs report --case card-sex-raw`, **Run ticket**, the two cards, the PR. Note the real times against the script's.
+5. The team's side of Teams, which has not run live yet: under the handoff card, Tommaso replies `preuzimam` (the ticket is assigned to him in Jira); under the "fix ready" card, `reject: <a reason>` once (the PR is closed, the fix runs again with the reason, a new "fix ready" card comes), then `approve` (the new PR is ready for review, Jira gets the comment). From the phone, `ti: <the key>`: the status says what happened. Keep in the demo only what worked here.
+6. Afterwards: merge the PR after a merge check, as after a real demo; the pilot then documents it.

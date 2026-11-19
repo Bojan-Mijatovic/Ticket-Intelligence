@@ -45,7 +45,7 @@ import { readReview, writeReview } from './lib/app-review.mjs';
 import { createSuggested, readCreated, suggestTickets } from './lib/suggestions.mjs';
 import { suiteInsights } from './lib/suite.mjs';
 import { askQuestion } from './lib/ask.mjs';
-import { recordedAsks, recordedRuns, system1Privacy, system1Runs } from './lib/tour.mjs';
+import { presentationFacts, recordedAsks, recordedRuns, system1Privacy, system1Runs } from './lib/tour.mjs';
 import { attachMailUpdates } from './lib/mail-updates.mjs';
 import { loadProjects, peerCheckouts, teamOf } from './lib/projects.mjs';
 import { laneLayout } from './lib/graph-lanes.mjs';
@@ -1607,11 +1607,26 @@ const server = createServer(async (req, res) => {
     const t = cfg.system1?.tour ?? {};
     return json(res, 200, { runs: system1Runs(rootState, t.runs ?? []), privacy: t.privacy ? system1Privacy(rootState, t.privacy) : null, ask: t.ask ?? null, model: system1.model });
   }
+  // What the presentation shows as numbers and quotes (docs/PRESENTATION_PLAN.md), from the agent's own records:
+  // agent.config.json presentation.case, .system1, .catches (read-only, plain code).
+  if (path === '/api/tour/facts') {
+    return json(res, 200, presentationFacts({
+      stateDir: rootState,
+      pres: cfg.presentation ?? {},
+      stateDirOf: (k) => all.ofTicket(k)?.stateDir ?? null,
+      repoDirOf: (k) => all.ofTicket(k)?.repoDir ?? null,
+      nightShift: cfg.nightShift ?? null,
+      // System 1's switches as they act now: a miss may have put one back in shadow (state/autonomy.json).
+      policy: { actions: policy.actions, system1: S1 },
+    }));
+  }
   // Recorded Ask answers of a project, for the tour to replay instead of asking (and paying) again (read-only).
   if (path === '/api/tour/asks') {
     try {
       const p = readyProject({ project: queryOf(req).get('project') });
-      return json(res, 200, { project: p.key, answers: recordedAsks(p.stateDir, p.askExamples ?? []) });
+      // The presentation names its question (agent.config.json presentation.ask); the tour takes the project's examples.
+      const question = queryOf(req).get('question');
+      return json(res, 200, { project: p.key, answers: recordedAsks(p.stateDir, [question, ...(p.askExamples ?? [])].filter(Boolean)) });
     } catch (e) {
       return json(res, e.status ?? 500, { ok: false, error: e.message });
     }

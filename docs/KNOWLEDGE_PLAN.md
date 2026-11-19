@@ -1,6 +1,6 @@
 # Plan: shared knowledge and prior-art checks
 
-Status: **Approved, in progress** · Date: 2026-11-12 · Owner: Bojan Mijatović · Decisions: [section 8](#8-decisions)
+Status: **Approved, in progress** · Date: 2026-11-12, updated 2026-11-18 (K15 and K22 done, `mergeDocs: auto`) · Owner: Bojan Mijatović · Decisions: [section 8](#8-decisions)
 
 This plan is about what the team learns from its tickets and how that knowledge reaches the next person: how it is **written** (Done → documentation), how it is **found** (the analysis, Ask), how it is **used** (the fix, the review, Insights), and how we **measure** it. The second part (section 1.1, findings F16–F22, phase 5) covers the moment a **new ticket** appears, whether the agent suggests it or a person reports it: is the problem already reported, being fixed, fixed, or documented? Every finding below was checked against the code and the demo data on 2026-11-12.
 
@@ -137,7 +137,7 @@ Phase 0 sets the baseline. Phases 1–4 then change **one lever at a time**, re-
 - **Built 2026-11-12** (FR-48): `agent/lib/docs-prs.mjs` (tested in `agent/test/docs-prs.test.mjs`), `GET /api/knowledge`, `POST /api/knowledge/merge`, **Insights → Knowledge base**, `mergeDocs: draft` in `policy.json`. Checked live: MediLab lists LAB-23 (#3) as "closed, not merged" with **Reopen and merge…**; MediAgenda shows 2 documented tickets on main. The merge itself waits for a person's click (the decision of section 8).
 - **Found while building it (F23):** LAB-23's PR was not waiting for review: it was **closed without merging** (its branch is still there). On MediAgenda 7 of 9 documentation PRs are closed unmerged and only 2 merged: `demo/reset-demo.mjs` closes every agent PR, documentation included, and deletes the branches, so the knowledge of every rehearsal is thrown away. Proposal (with K4): the reset keeps `docs/*` PRs and branches by default (`--drop-docs` to discard them), because knowledge is meant to outlive a rehearsal.
 
-**K22. Documentation PRs merge in any order** · 0.5 d · F24
+**K22. Documentation PRs merge in any order** · 0.5 d · F24 · **Done 2026-11-17**
 - Several documentation PRs written from the same `main` conflict when merged one after another: each adds a row at the top of the index in `docs/knowledge/README.md`, and in the component file each rewrites the owners line (**People who know it**) and adds its entry at the top of **Known issues**. GitHub refuses the second one, and the dashboard's **Merge** says so (409).
 - The fix: before merging, `docs-prs.mjs merge()` brings the branch up to date with `main` and merges the knowledge files entry by entry, as it was done by hand on 2026-11-16: index rows kept from both sides and sorted by ticket key (newest first); one owners line with the people and tickets of both; one **Known issues** heading with each entry once, newest ticket first. The result must pass the lint (K5) before it is pushed; anything it cannot place stays a conflict for a person.
 - **Acceptance:** four documentation PRs of one component, opened from the same `main`, merge from the dashboard one after another with no conflict and no lost or doubled entry.
@@ -239,6 +239,7 @@ Phase 0 sets the baseline. Phases 1–4 then change **one lever at a time**, re-
 **K15. A good answer becomes an FAQ entry** · 0.5 d · **done 2026-11-17** (Ask 3/7)
 - An answer with 👍 can be promoted (button, `policy.json` → `promoteFaq: draft`) to `docs/knowledge/faq.md` (question, answer, sources) through a documentation PR. Only after K12 shows which questions repeat.
 - **As built** (`agent/lib/ask-actions.mjs`, FR-91): **Save as FAQ** appears after 👍, only on an answer Claude gave from sources; a fast answer (status, history, who, where) is computed again from fresh data, so a saved copy would only go stale. Built before K12 showed repeats, because the button is a person's choice per answer, not a batch. The entry is a `## question` with **Asked**, **Answer** and **Sources** fields; it has no ticket key, so the entry rules of the lint do not apply to it, and the file rules (personal data, names outside the team) do. The answer is masked as for the analysis, the lint runs before the push, and a statement about a PR's state is refused. The first FAQ PR opens on `docs/faq-<date>`; while it is open, the next saved answers are added to it, so FAQ PRs never conflict with each other. Merged by a person like any documentation PR (`mergeDocs`). First one: MediVax PR #14.
+- **Since 2026-11-17:** the researcher (KG2 of [AUTONOMY_AND_NEXT.md](AUTONOMY_AND_NEXT.md), FR-100) adds FAQ entries to the same PR for questions Ask could not answer, marked "researched by the agent" instead of "rated right by a person"; and `mergeDocs: auto` merges the PR 24 h after it opens unless a person holds it.
 
 ### Phase 5: prior art before a new ticket
 
@@ -326,7 +327,7 @@ Phase 0  K16 Jira health ─ K1 eval baseline (+ K21 cases)
 Phase 1  K2 review loop ─ K22 merge in any order ─ K3 pending readable ─ K4 coverage + backfill
 Phase 2  K5 format + lint ──┬─ K6 one component name ─ K7 freshness
 Phase 3  K8 search plan ────┴─ K9 knowledge first ─ K10 honest failures ─ K11 suite
-Phase 4  K12 feedback + gaps ─ K13 fix/review use it ─ K14 conventions ─ (K15 FAQ)
+Phase 4  K12 feedback + gaps ─ K13 fix/review use it ─ K14 conventions ─ K15 FAQ (done)
 Phase 5  K17 prior art (code) ─ K18 AI verdict ─┬─ K19 suggestions
                                                 └─ K20 reported tickets
 ```
@@ -341,7 +342,7 @@ K5 comes before K4's backfill runs in bulk, so the backfilled entries already ha
 | 1 | K2, K22, K3, K4 | 2.5 d |
 | 2 | K5, K6, K7 | 2.5 d |
 | 3 | K8, K9, K10, K11 | 3.5 d |
-| 4 | K12, K13, K14 (K15 later) | 2 d |
+| 4 | K12, K13, K14, K15 (done 2026-11-17) | 2 d |
 | 5 | K17, K18, K19, K20 | 4 d |
 | | **Total** | **about 16 days** |
 
@@ -351,7 +352,7 @@ Biggest effect for the least work: **K16 → K1 → K2 → K4 → K5 → K10 →
 
 - **No vector database or embeddings now.** The corpus is tens of entries per project. Search terms in the entries (K5), a search plan in several languages (K8) and knowledge-first collection (K9) cover the misses seen so far, keep the answer explainable, and keep the agent free of npm dependencies (NFR-02). Revisit when a project passes about 500 entries or the eval (K1) shows misses caused by wording that K8 does not fix.
 - **Plain code decides, the model writes.** Ranking, linting, merging rules and source checks stay deterministic; the model only writes entries, search plans and answers.
-- **A human still decides.** New write actions (`mergeDocs`, `promoteFaq`) are `policy.json` keys starting as `draft`. `mergeFix` stays `off`.
+- **A human still decides.** New write actions (`mergeDocs`, `promoteFaq`) are `policy.json` keys starting as `draft`. `mergeFix` stays `off`. *(2026-11-17: `mergeDocs` moved to `auto` with K22, see decision 1; a person still stops any merge with a review or the label `hold`.)*
 - **Patient data first.** The patient-data check of K5 blocks a push; it does not replace R-02 (redaction before the analysis), which is still required before company tickets.
 - **Prior art: code finds, the AI judges, a person decides.** Code collects the candidates and their evidence (K17); a small model without tools only compares texts and must name a candidate (K18); the person sees both and creates, creates anyway with a reason, or drops. Tickets are never closed or linked on their own (`linkTickets: draft`), and `createTicket` stays at most `draft`.
 - **A failed source is never "nothing found".** Jira, git or GitHub failing stops the check with a visible reason (K16, K10, K17).
@@ -361,7 +362,7 @@ Biggest effect for the least work: **K16 → K1 → K2 → K4 → K5 → K10 →
 | Risk | Mitigation |
 |---|---|
 | The backfill opens a flood of PRs or costs too much | one PR per batch, `--limit`, `--dry-run` with a cost estimate |
-| Auto-merged documentation contains a wrong cause | `mergeDocs` defaults to `draft`; `auto` only after the lint; confirmed/assumed labels stay mandatory |
+| Auto-merged documentation contains a wrong cause | `auto` (since 2026-11-17) merges only 24 h after the PR opens, after the lint, and never one with a review asking for changes or the label `hold`; confirmed/assumed labels stay mandatory; the entry's regression test runs every night (KB1, WF3) |
 | One component name breaks the skill outside the agent (Copilot, SVN) | fallback to today's path rule when no agent config exists; the bundle format keeps `knowledgeDoc.path` |
 | The search-plan call adds latency | Haiku, no tools, a short timeout, fallback to `keywords()` |
 | Feedback is gamed or misread | local only, shown as counts; it creates suggestions, never knowledge, without a person |
@@ -375,7 +376,7 @@ Decided on 2026-11-12 (Bojan Mijatović), as recommended:
 
 | # | Question | Decision | Items |
 |---|---|---|---|
-| 1 | May documentation PRs be merged automatically? | `mergeDocs: draft`: a person confirms each merge (one click on the dashboard). `auto` is considered after the lint (K5) has run for a few weeks without a miss. | K2 |
+| 1 | May documentation PRs be merged automatically? | `mergeDocs: draft`: a person confirms each merge (one click on the dashboard). `auto` is considered after the lint (K5) has run for a few weeks without a miss. **Changed 2026-11-17, at the owner's request, with K22:** `auto`, 24 h after a PR opens, unless a review asks for changes or the label `hold` is set; the first one merged on its own the same evening (MediLab, LAB-24) | K2, K22 |
 | 2 | Backfill period and cost | bugs with a fix commit, since 2026-01-01; at most 10 tickets per PR; about $5 per project for the first round (estimated with `--dry-run` from the first 3 runs) | K4 |
 | 3 | Knowledge files named after the Insights components? | yes (`pazienti.md`, `prenotazioni.md`); the path rule stays as the fallback without an agent config; a one-time migration PR | K6 |
 | 4 | Languages of the search terms | the ticket's language (Italian) and English in every entry; Serbian questions are covered by the search plan (K8) | K5, K8 |

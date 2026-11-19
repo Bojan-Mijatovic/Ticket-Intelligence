@@ -1,13 +1,17 @@
 # Ticket Intelligence agent
 
-Runs the `/analyze-ticket` skill on its own: it watches one or more Jira projects, analyzes every new ticket headless, posts the analysis to Jira, notifies the most suitable person, and shows everything live on a dashboard.
+Runs the `/analyze-ticket` skill on its own: it watches one or more Jira projects, analyzes every new ticket headless, posts the analysis to Jira, notifies the most suitable person, and shows everything live on a dashboard. Around that: System 1, a local model that reads each ticket first; the reproduction, bisect and fix as a draft PR, with an AI review; documentation when a ticket is Done; Ask; a regression guard on main; the team's Teams channel in both directions; and a night shift with a morning digest. The whole flow on one page: [docs/HOW_IT_WORKS.md](../docs/HOW_IT_WORKS.md).
 
 ```
-Jira project ──poll──▶ watcher ──▶ headless agent (claude -p + analyze-ticket skill, read-only)
+Jira project ──poll──▶ watcher ──▶ System 1 (local, 127.0.0.1:7071): asks the reporter · light path · known issue
+                         │                    │
+                         │                    ▼
+                         │          headless agent (claude -p + analyze-ticket skill, read-only)
                          │                    │ structured JSON result
                          ▼                    ▼
-                    policy.json ──▶ actions: Jira comment · labels · owner notification · drafts
+                    policy.json ──▶ actions: Jira comment · labels · Teams card to the owner · drafts · fix PR · docs PR
                          │
+                         ├──▶ Teams channel ◀── ti: questions · approve / reject · preuzimam (Microsoft Graph, polled)
                          └──▶ events.jsonl ──▶ dashboard (http://localhost:7070, live)
 ```
 
@@ -94,7 +98,7 @@ Every picked ticket is also read by a small model that runs on this machine. It 
 | privacy | names a person, no person; asked on the text with every name masked, the team's too |
 | what the report tells (J7) | four two-option questions: what was done, what is wrong, where (screen or function), where/when/which record |
 
-Only the questions the checkpoint was trained on are asked (its `questions.json`): `ft-1` knew four, `ft-2` the first seven, J7's four come with the next fine-tune.
+Only the questions the checkpoint was trained on are asked (its `questions.json`): `ft-1` knew four, `ft-2` the first seven, `ft-5` (the current one, since 2026-11-16) all twelve, J7's four included.
 
 The model is asked when a ticket is queued. The watcher waits for its answer, at most `waitSeconds` (12), before the analysis starts, so the answers are on the ticket card (**⚡ System 1**) first, as the event `system1`. When the analysis is done, `system1-compared` puts ✓ or ⚠ next to each answer:
 
@@ -108,7 +112,7 @@ The KPI **System 1 agreed** counts the side and component matches.
 | Step | Setting | What happens |
 |---|---|---|
 | Light path (J2) | `lightPath`: `auto` (since 2026-11-17) · `draft` · `shadow`, `lightPathWatchDays` (14) | a ticket whose type, side and code answers all say "no change in the code" (each ≥ `lightPathThreshold`), and that System 1 would not ask the reporter about (J7: a text that does not tell what is wrong cannot tell that no code is wrong). `shadow`: the card says *would take the light path*. `draft`: the ticket waits (label `ai-held`) and the card offers **➜ Light path** or **Analyze anyway**. `auto`: no Claude analysis, an internal comment saying what it was recognised as, the label `ai-triaged`, no owner notice; the comment tells the reporter that a reply gets the full analysis, and for `lightPathWatchDays` a reply in Jira (a comment that is not the agent's) or an edited report does start it. A light path that turns out to be about code (the agent proposes a fix for it, or a commit on main names it) is a miss: the light path goes back to `shadow` on its own (event `system1-demoted`), kept in `agent/state/autonomy.json` across restarts until a person removes that entry. **Run again** always gives the full analysis. Checked live on 2026-11-17: BIL-27, a user question, took it in 1 s; the reporter's reply got the full analysis 90 s later |
-| Queue order (J3) | `queueOrder`: `shadow` (default) · `auto` · `off` | tickets to analyze by System 1's urgency, then age; never ahead of a review, a guard, a documentation or a test job. `shadow` only emits `system1-queue` |
+| Queue order (J3) | `queueOrder`: `auto` (since 2026-11-17) · `shadow` · `off` | tickets to analyze by System 1's urgency, then age; never ahead of a review, a guard, a documentation or a test job. `shadow` only emits `system1-queue` |
 | Known issue (J4) | `knownThreshold` (0.5), `knownTest`: `auto` (default) · `off` | the card names the known issue. When its entry has a regression test (KB1), that test runs on main as the next job (`knowledge-tests.mjs --only`), and the card says **its test passes** or **FAILS on main: may be back** |
 | Ask (J5) | `askRouter`: `auto` (default) · `shadow` · `off`, `askIntentThreshold` (0.6), `askComponentThreshold` (0.7) | an Ask question read as "who knows / worked on X" or "the latest tickets" is answered from the Insights data in about a second, with no Claude call, and an **Ask Claude instead** button. A "who" question needs the component at 0.7 or more, otherwise Claude answers: at 0.4, `ft-2` named the wrong component for 8 of 48 test questions |
 | Ask the reporter (J7) | `askReporter`: `auto` (since 2026-11-17) · `draft` · `shadow` · `off`, `askReporterThreshold` (0.6), `askReporterWaitHours` (24), `askReporterHold` (false, for `draft`) | a report about code (by its type or by the code question), or an unclear one (the type says so, or no type reaches 40 %), that does not tell what is wrong or where. Such a report never takes the light path. A run a person starts (**Analyze now**, **Run again**) does not draft the question again. `shadow`: the card says *would ask the reporter*; `draft`: a question for what is missing, from a template in the report's language, waits in **Drafts** for a person to send as a Jira comment (it asks for a request number, never a patient's name). With `askReporterHold`, the analysis waits (label `ai-held`) until **Analyze now**. `auto`: the agent posts the question in Jira itself ("(robot) *Ticket Intelligence*", the question, and that the analysis starts on the answer) and holds the ticket (`ai-held`); the reporter's reply (any comment that is not the agent's, so it works when the agent writes as the same Jira account) or an edited summary or description starts the analysis with the answer in it, and after `askReporterWaitHours` it starts anyway (`lib/reporter-wait.mjs`, `state/<project>/waiting.json`, checked once a minute; **Analyze now** starts it at once). Checked live on 2026-11-17: BIL-28 "Oggi non va, controllate" was asked 4 s after it was queued; the reply started the analysis, which used the new details and found BIL-23 as its duplicate. Missing steps or environment alone never ask: most good bug reports leave them out |
@@ -199,17 +203,27 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 
 - **The agent cannot write.** The headless run has file-editing tools disabled and its prompt forbids any Jira or VCS write. It only returns a JSON result.
 - **No run can publish or message.** Every headless run starts without MCP servers (`--strict-mcp-config`) and without the Claude Code tools that publish, schedule or message (Artifact, Cron, RemoteTrigger, SendMessage, …). Runs that read free text from people other than the reporter (the AI reviewer, Ask, the app review) and the recommendation run get an allow-list instead (`--tools Read,Grep,Glob`, or no tools at all).
-- **The watcher acts, per `policy.json`.** Every action is `auto`, `draft` (prepared and shown on the dashboard for a human) or `off`:
+- **The watcher acts, per `policy.json`.** Every action is `auto`, `draft` (prepared and shown on the dashboard for a human, or for a Teams action: carried out only on a person's reply) or `off`. As set on 2026-11-18:
 
-  | Action | Default |
+  | Action (`policy.json` → `actions`) | Setting |
   |---|---|
-  | internal Jira comment | auto |
-  | labels | auto |
-  | notify the owner | auto, only for a real person and at least `notifyMinConfidence` |
-  | assign the owner | draft |
-  | reply to the reporter | draft |
-  | update emails to `MAIL_TO` | auto (off until SMTP is configured) |
-  | change priority / status | off |
+  | internal Jira comment (`postInternalComment`), labels (`addLabels`) | auto |
+  | notify the owner in Teams (`notifyOwner`), and again when the fix is ready (`notifyFixReady`) | auto, only for a real person and at least `notifyMinConfidence` |
+  | assign the owner (`assignOwner`), reply to the reporter (`replyToReporter`) | draft |
+  | reproduce, bisect and fix as a draft PR (`proposeFix`, `bisect`), one more try after an accident (`retryFix`) | auto |
+  | AI review of the PR (`reviewFix`), merge check when main moves (`mergeCheck`), regression guard (`regressionGuard`) | auto |
+  | approve or reject a fix by a reply in Teams (`approveFix`), take a ticket or hand it on (`ownerReply`) | draft: the person's reply decides |
+  | merge a fix (`mergeFix`) | **off** |
+  | document a ticket on Done (`documentOnDone`) | auto |
+  | merge a documentation PR (`mergeDocs`) | auto, 24 h after it opens (`mergeDocsAfterHours`), unless a review asks for changes or it has the label `hold` |
+  | Ask in the Teams channel (`askFromTeams`) | auto (it only answers) |
+  | Ask's actions: Send to Teams (`shareAnswer`), Create a ticket (`createTicket`), Save as FAQ (`promoteFaq`) | draft |
+  | research knowledge gaps (`researchGaps`) | auto, at most `researchPerDay` (3) |
+  | night shift (`nightShift`), morning digest (`morningDigest`) | auto |
+  | update emails to `MAIL_TO` (`emailUpdates`) | auto (off until SMTP is configured) |
+  | change priority / status (`changePriority`, `transitionStatus`) | off |
+
+  System 1's decisions have their own switches under `policy.json` → `system1` ([System 1](#system-1-the-local-decision-model)): the question to the reporter, the light path, the queue order, the known-issue test and the Ask router act; the privacy hold and the fix warm-up are in shadow.
 
 - **Validated output.** A result that is not valid JSON or misses required fields is rejected: the ticket gets `ai-failed`, and nothing is posted.
 - **Personal data is masked before any model reads a ticket** (R-02): fiscal codes, IBANs, health cards, e-mails, phones, birth dates, and names of people outside the team (git authors, Jira users and `staff` in `agent.config.json` stay readable). Screenshots can be skipped (`redaction.attachments: skip`). `node agent/redaction-audit.mjs --project LAB` shows what is masked per ticket. Details and limits: [docs/REDACTION.md](../docs/REDACTION.md).
@@ -238,6 +252,13 @@ In `project`, not Done, created within `lookbackHours`, and without any of the a
 | `mail.on` | which events send an update email (see [Update emails](#update-emails)) |
 | `claude.command`, `claude.maxTurns`, `claude.model` | how the headless agent is started |
 | `claude.analysisModel` | model for the analysis only (the analyze-ticket skill), e.g. `sonnet`; the fix, the review and Ask keep `claude.model` (null = the CLI default) |
+| `projects` | one entry per Jira project and repository, overriding the settings above (see [Several projects](#several-projects)) |
+| `staff` | people of the team who write no code; their names stay readable after the masking ([Safety](#safety)) |
+| `maxParallel`, `fixTimeoutMinutes`, `bisectMinutes`, `guardSeconds` | jobs at a time (1), the fix's time limit (15), the bisect's (12), how often each main is checked by the regression guard (120 s) |
+| `baseline` | the team's minutes per step without the agent, for hours saved on the Impact tab |
+| `teams` | `approvers`, `project`, `pollSeconds` (see [From Teams back to the agent](#from-teams-back-to-the-agent-roadmap-9)) |
+| `nightShift` | `from`, `to`, `maxTickets`, `maxCostUsd`, `digestAt`, `weekends` (see [Night shift and morning digest](#night-shift-and-morning-digest-roadmap-3)) |
+| `system1` | the local model's server, checkpoint and waits (see [System 1](#system-1-the-local-decision-model)) |
 
 ## Notifications
 
@@ -482,7 +503,7 @@ One question at a time (`409` otherwise); `askTimeoutSeconds` (default 120) and 
 
 ## Guided tour
 
-**▶ Tour** in the dashboard header presents the whole tool by itself, in English, in about fifteen minutes. A cursor moves and clicks, the page scrolls and puts a spotlight on each part, explainer slides open over the page, and a voice explains it all while captions show the text. The caption bar names the chapter:
+**▶ Dashboard tour** in the dashboard header presents the whole tool by itself, in English, in about fifteen minutes. A cursor moves and clicks, the page scrolls and puts a spotlight on each part, explainer slides open over the page, and a voice explains it all while captions show the text. The caption bar names the chapter:
 
 | Chapter | What it shows |
 |---|---|
@@ -502,30 +523,56 @@ One question at a time (`409` otherwise); `askTimeoutSeconds` (default 120) and 
 
 Numbers and names come from the data on the page (tickets, owners, causes, hotspots, counts); a part with no data is skipped.
 
-- **Replays.** When a ticket has been analyzed since the last reset, Case 1 is that ticket. Otherwise the cases are **recorded runs** from the event logs, archived ones included (`/api/tour/replay`): the ticket arrives, the steps stream in, then the analysis, the Teams message, the failing test, the fix, the pull request and the review appear one after the other, sped up, with the real timings. Ask replays **recorded answers** (`/api/tour/asks`): the example question that was asked before, and the newest "not found" one, with the steps rebuilt from the saved run. Every replay says **REPLAY** and its date, lives only in that browser page and is gone when the tour ends. `tourReplay` in `agent.config.json` lists the tickets (`DEM-36`, `FAR-19`); tickets never recorded are left out, and with none the fullest run is chosen.
+- **Replays.** When a ticket has been analyzed since the last reset, Case 1 is that ticket. Otherwise the cases are **recorded runs** from the event logs, archived ones included (`/api/tour/replay`): the ticket arrives, the steps stream in, then the analysis, the Teams message, the failing test, the fix, the pull request and the review appear one after the other, sped up, with the real timings. Ask replays **recorded answers** (`/api/tour/asks`): the example question that was asked before, and the newest "not found" one, with the steps rebuilt from the saved run. Every replay says **REPLAY** and its date, lives only in that browser page and is gone when the tour ends. `tourReplay` in `agent.config.json` lists the tickets (`VAX-21`, `FAR-19`); tickets never recorded are left out, and with none the fullest run is chosen.
 - **Read-only.** It never starts an agent run, a paid Ask question, an app review or a recommendation, and it creates no ticket. Its Ask button press is only shown; nothing is sent. The one exception is System 1's "who knows" question: it is sent with `fastOnly`, so System 1 and plain code answer it or nothing does, never Claude, at no cost. Opening the ticket editor reads the assignable people from Jira, nothing more.
 - **Voice.** The browser's own speech synthesis: free, no key, nothing leaves the machine. The tour picks a natural English voice when there is one (Edge on Windows has *Aria*, *Jenny* and *Guy Natural*); the voice and speed can be changed in the caption bar, or switched to *captions only*.
 - **Controls.** Back / Pause / Next, or ← space →; Esc ends it. Afterwards the dashboard returns to the tab and project it showed before.
 - **For a presentation** open `http://localhost:7070/?tour`: a *Start the guided tour* button covers the page, because browsers let a page speak only after a click.
-- **After changing the code** restart the watcher (`node agent/watcher.mjs --replace`) and reload the page: a watcher started earlier does not serve `tour.js` and `slides.js`, and the buttons then do nothing.
+- **After changing the code** reload the page: `tour.js` and `slides.js` are read on every request. A change to `lib/tour.mjs`, `watcher.mjs` or `agent.config.json` needs a restart (`node agent/watcher.mjs --replace`).
 
 ### Presentation
 
-**▶ Present** in the header (or `http://localhost:7070/?present`) wraps the tour in a presentation of about seventeen minutes, in three parts. The caption bar has a button per part, so a click goes straight to the demo or to the conclusion:
+**▶ Presentation** in the header (the first of the two buttons, or `http://localhost:7070/?present`) is a presentation of about seventeen minutes on how the app works ([docs/PRESENTATION_PLAN.md](../docs/PRESENTATION_PLAN.md) has the run of show). Five parts, one button each in the caption bar:
 
-| Part | Slides (full screen) | About |
+| Part | Steps | About |
 |---|---|---|
-| **Presentation** | title (presenter and team) · the problem, with an example from the demo data · the goal and its six success metrics · how it works (the flow, row by row) · the AI and the policy · the four demo apps and why the cases are replays · what you will see | 3 min |
-| **Demo** | the tour's dashboard part: the dashboard, case 1, case 2, Insights, a suggested ticket, Ask, System 1. The caption bar shows where each step is in the flow: Collect › Analyze › Prove & fix › Learn | 11 min |
-| **Conclusion** | what you just saw (the flow again, with the cases' real timings) · results against the same six metrics · how it was built and what we learned · technologies · limits and next steps · sources (public documentation and the project's documents) · thank you, with a contact | 2.5 min |
+| **What it is** | title · the problem · what it is, in one sentence · before and after (one ticket's work by hand, by the team's own estimates, and measured with it) · what each role gets (support, developers, team leads, management, each with its numbers) · the life of a ticket in eight steps | 3 min |
+| **Under the hood** | the architecture (the watcher, plain code, System 1, Claude; the model never writes) · System 1: how it answers (a real ticket's answers as bars), what it decides (each switch as it is now, and its way back), two real cases (the question to the reporter, the light path), how it learns · Claude's analysis · prove, fix, review, approve · learn and guard. A map of the eight steps on each slide lights the current one | 4 min |
+| **One case** | one ticket whole (`presentation.case`, the pilot's VAX-21): the breaking change, the report before and after the masking, then on the dashboard its recorded run step by step (System 1, the analysis, the first Teams card, the failing test and the bisect, the fix and the second card, the AI review), the Teams thread (the approval by a reply, and `ti:` answered from the records), the knowledge entry with its test, the ticket's lane on the Graph tab, with the case's own clock instead of the eight steps; then what it caught that people missed (a cause in another app, a cheated test, a fix the AI review sent back, a fix missing in copies); then the dashboard's own tabs, live: Insights of one app (`presentation.insights`: the bugs by component and month, the hotspots, how long a bug stays in the code; the knowledge map and the suggested tickets), Ask (`presentation.ask`, its recorded answer replayed: typed, the steps, the answer and its sources), Impact (the management week). Each dashboard step first plays the run up to what it talks about, then speaks; the view follows the lit part, inside its own panel too | 7 min |
+| **Live** | `ti: <presentation.live>` asked in the team's Teams channel by the presenter; the step waits for → | 1 min |
+| **Close** | why it is different · results against the targets · limits and next · thank you | 1.75 min |
 
-After *Thank you* it stays on that slide. **→** then shows backup slides for questions (patient data, what if it is wrong, cost, Copilot and SVN, and System 1: does every ticket need Claude?), without voice.
+After *Thank you* it stays on that slide. **→** then shows backup slides for questions (what stays with people, patient data, what if it is wrong, cost, Copilot and SVN, does every ticket need Claude, Teams at the company, the history, how much it does alone, Insights per app, the morning digest, the four views, technologies, sources), without voice.
 
-- **Voice by default.** **P** (or *🎤 Presenter*) switches to presenter mode: no voice, the captions stay as notes, and **→** shows the next part of a slide, then the next slide. **P** again brings the voice back.
+- **No money in the presentation.** The slides and the voice name no cost, and while it runs the dashboard hides every amount too: `body.no-cost` hides each element marked `cost` (the Impact tile and chart, the cost columns, an Ask answer's price, the app review's). The backup slide on cost stays, for when someone asks.
+
+- **Every number comes from the records.** `GET /api/tour/facts` (`lib/tour.mjs` `presentationFacts`, plain code, read-only) reads the event logs, the case's saved work and pilot record, the Teams answers, the latest digest, System 1's current model and the policy as it acts now; the slides also read `/api/impact`, `/api/ask/stats` and the Insights of each project. A slide says less when a record is missing, never a number it did not read. What has not run live yet is labelled so (the approval by a reply: *built · first live round pending*, until its events exist).
+- **The screen follows the words (beats).** Every slide with more than one part, and every dashboard step of the case and the tabs, is said in beats.
+  - A beat is a part of the screen and the sentence about it: a card, a row, a node of the flow, a Teams post, a tile.
+  - The part being said is lit, the parts not said yet are faint, and the ones said stay as they are.
+  - With the voice, a beat lights as its sentence starts. In presenter mode **→** lights the next beat (← the one before), and after the last it goes on.
+  - In `slides.js` a slide marks its parts with `data-b`, and a step lists its `beats`. The dashboard steps have `caseBeats` and `viewBeats`, each beat naming the part it lights (`at`); `tour.js` (`lightBeat`) lights them.
+- **The presenter speaks by default.**
+  - In presenter mode the captions are not on the shared screen, and the caption bar folds to one line; the controls come back while the mouse moves.
+  - **N** (or *📝 Notes*) opens the presenter notes in another window (`?notes`): the step's words with the lit part's in bold ("part 2 of 4"), where it is, what comes next, and ← / → that move the presentation.
+  - **P** switches to the voice and back.
+- **The voiced run:** `?present&voice`. The browser's voice reads the same text at 0.9×; a slide stays 1.5 s after the voice, a dashboard step 2.5 s (`dwell`); under seventeen minutes with the live question.
+- **Teams as Teams.** The thread slide is drawn as the team's channel, with its posts arriving one by one. The case's Teams step shows, over the dashboard (`#tour-teams`, `slides.js teamsPop`), the owner's phone ringing, then the post as Teams shows it, from the real card.
+- **The case's own clock.** In Part 3 the case's times from the report replace the eight steps, on its slides and in the caption bar. In the bar a clock runs with the replay (*VAX-21 · 3:56 after the report*), and the times passed turn green.
+- **A developer's change.** It is drawn from git: the story, the commit on `main` and its diff (`lib/tour.mjs commitChange`, read-only), the build and the guard. The report's identifiers turn into their placeholders on screen.
+- **Callouts for a TV.** Each beat of the case's dashboard steps puts its facts in a large card beside the light (`#tour-callout`): the cause and the commit, the owner and why, the failing test, the bisect, the tests, the review.
+- **The case's card.** When the case's ticket is on the dashboard, its card is put aside for the replay and comes back at the end.
 - **Full screen.** It asks for full screen at the start; **F** toggles it.
-- **The slides alone:** `?deck` (no demo; the recap slide then says "what the demo shows").
-- **Who presents:** `presentation` in `agent.config.json` (`presenter`, `team`, `contact`); an empty value is left out.
-- The slides and the words of parts 1 and 3 are in `dashboard/slides.js`; `test/slides.test.mjs` checks them, including the time they take.
+- **The slides alone:** `?deck`: a timeline of the case stands in for its dashboard steps.
+- **Settings:** `presentation` in `agent.config.json`: `presenter`, `team`, `contact`, `case`, `live`, `system1` (the tickets of the two System 1 cases), `catches` (`cross`, `guard`, `review`, `copies`), `insights` (the project of the Insights steps), `ask` (the question whose recorded answer is replayed on Ask; `GET /api/tour/asks?question=`); the case must be in `tourReplay` too.
+- **The tabs are warmed ahead.** The watcher keeps Insights and Impact two minutes. Read cold, Insights takes about 5 s and Impact 17–30 s (five apps, one by one, and GitHub's pull requests).
+  - The presentation asks for Insights on the *What it caught* slide, and for Impact on each of the three steps before its own; what comes back also refreshes the numbers the voice says.
+  - The Impact step speaks at once in any case, and its light moves tile by tile.
+  - Impact shows only the weeks since the agent started, and says this week's numbers as its tiles show them. The tab's own number of weeks comes back at the end.
+- **The first slide** shows the team, not the presenter's name. The name and the contact are on the last slide.
+- The slides and their words are in `dashboard/slides.js`.
+  - `test/slides.test.mjs` checks them: each slide with and without the records; that each part a slide lights is said and each beat lights a part; Teams, the callouts and the masking; no cost; the 17 minutes.
+  - `test/presentation-facts.test.mjs` checks the facts and the commit's change.
 
 The script and the player are in `dashboard/tour.js`, the slides in `dashboard/slides.js`; the choice of the recorded runs and answers in `lib/tour.mjs`.
 
@@ -624,7 +671,7 @@ An alert is posted on the commit (a GitHub commit comment) and on the commit's t
 
 Checked on 2026-11-13:
 
-- **The pilot.** The planted regression of VAX-13 brought the Sunday bug back and "adjusted" `Vax13RegressionTest` so CI passed. It was alerted 2 minutes after the push, and the ticket was due about two hours later. The test as it was before the commit failed on it.
+- **The pilot.** The planted regression of VAX-13 brought the Sunday bug back and "adjusted" `Vax13RegressionTest` so CI passed. It was alerted 3.4 minutes after the push (the guard looks every 2 minutes, then runs the tests), and the ticket came 17 hours later. The test as it was before the commit failed on it.
 - **Backtest.** On the 135 commits of the five apps: 128 clear, 5 notes and 2 alerts. Both alerts were deliberate changes that replaced what an earlier fix protected: DEM-33 (dark red instead of DEM-32's blue) and LAB-18 (mg/dL instead of LAB-15's µmol/L). A person should confirm such a change, and the alert asks for exactly that.
 - **The first version** counted any change to a test file. Because test classes are shared, that gave 17 false alerts on the same history.
 

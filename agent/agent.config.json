@@ -9,9 +9,14 @@
   "maxParallel": 1,
   "analysisTimeoutMinutes": 10,
   "dashboardPort": 7070,
-  "tourReplay": ["DEM-36", "FAR-19"],
-  "_presentation": "Shown on the first and the last slide of the presentation (?present, ?deck): who presents, the team, a contact. An empty value is left out.",
-  "presentation": { "presenter": "Bojan Mijatović", "team": "", "contact": "github.com/Bojan-Mijatovic" },
+  "tourReplay": ["VAX-21", "FAR-19"],
+  "_presentation": "The presentation (?present, ?deck; docs/PRESENTATION_PLAN.md). presenter, team, contact: on the first and the last slide (an empty value is left out). case: the one ticket shown whole, replayed from its recorded run (it must be in tourReplay too). live: the ticket asked live in Teams at the end. insights: the project shown on the Insights tab. ask: a recorded Ask answer of the case's project, replayed on the Ask tab (its question, as asked). system1: tickets where System 1 asked the reporter or took the light path. catches: what it caught that people missed (cross: a cause in another app; guard: a story whose commit the regression guard alerted on; review: a fix the AI review sent back; copies: a bug whose fix is missing in copies of its code).",
+  "presentation": {
+    "presenter": "Bojan Mijatović", "team": "", "contact": "github.com/Bojan-Mijatovic",
+    "case": "VAX-21", "live": "VAX-23", "system1": ["BIL-28", "BIL-27"],
+    "insights": "LAB", "ask": "Why could http://localhost:4204/scadenze miss the doses due on Sunday?",
+    "catches": { "cross": "FAR-19", "guard": "VAX-15", "review": "VAX-19", "copies": "LAB-13" }
+  },
   "_teams": "Teams -> agent (ROADMAP #9, agent/README.md): approvers may approve or reject any fix by a reply under its 'fix ready' card, besides the person the card is for (a team lead; matched by the Teams display name, accents aside). project: the project of a question that names none (default: the pilot's). pollSeconds: how often the channel is read (15; 5 for a demo).",
   "teams": { "approvers": ["Bojan Mijatović"] },
   "labels": {

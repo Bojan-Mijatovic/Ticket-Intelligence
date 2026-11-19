@@ -10,7 +10,7 @@
 //
 // Read-only: it never starts an agent run, an Ask question, a review or a recommendation.
 //
-// Three modes. ?tour (or ▶ Tour): the tour above, with its slides over the dashboard. ?present (or ▶ Present): a
+// Three modes. ?tour (or ▶ Dashboard tour): the tour above, with its slides over the dashboard. ?present (or ▶ Presentation): a
 // presentation of about seventeen minutes: full-screen slides (slides.js), then the tour's dashboard part as the demo,
 // then full-screen slides again (what you just saw, results, technologies, sources, thank you) and backup Q&A slides
 // after the end. ?deck: the slides alone. In a presentation, P switches to presenter mode (no voice; → shows the next
@@ -60,6 +60,28 @@
     #tour-bar .tm { display: inline-flex; gap: 3px; font-size: 11px; font-weight: 700; }
     #tour-bar .tm span { padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); white-space: nowrap; }
     #tour-bar .tm span.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+    /* Presenter mode: the presenter speaks, the captions are their notes (?notes), not on the shared screen. */
+    #tour-bar.presenter .tt { display: none; }
+    /* Part 3: the case's own clock instead of the eight steps; it runs with the replay, the times passed turn green. */
+    #tour-bar .tm span.done { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); }
+    #tour-bar .tm span b { font-variant-numeric: tabular-nums; margin-right: 3px; }
+    #tour-bar .tm .clock { background: var(--teams); color: #fff; border-color: var(--teams); font-variant-numeric: tabular-nums; }
+    /* Presenter mode on a TV: the bar folds to one line (where it is, the progress); the controls come back with the mouse. */
+    #tour-bar.presenter { padding: 8px 14px; gap: 6px; }
+    #tour-bar.presenter:not(.peek) .tc > button, #tour-bar.presenter:not(.peek) .tc > select { display: none; }
+    /* Beats: the words of the part that is lit, in the caption. */
+    #tour-bar .tt span.said { color: var(--muted); }
+    #tour-bar .tt span.now { color: var(--text); }
+    /* A callout beside the light (dashboard steps): large, for a TV. */
+    #tour-callout { position: fixed; z-index: 61; width: min(520px, 40vw); padding: 18px 22px; border-radius: 16px; background: var(--surface); color: var(--text);
+      border: 2px solid var(--accent); box-shadow: 0 18px 48px rgb(0 0 0 / .35); font-size: clamp(17px, 1.5vw, 26px); line-height: 1.35;
+      opacity: 0; transform: translateY(12px) scale(.98); transition: opacity .4s ease, transform .4s ease; pointer-events: none; display: grid; gap: 10px; }
+    #tour-callout.on { opacity: 1; transform: none; }
+    #tour-callout .k { font-size: .62em; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; color: var(--accent); }
+    #tour-callout .f { display: grid; gap: 2px; }
+    #tour-callout .f small { font-size: .62em; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+    #tour-callout .f b { font-weight: 800; }
+    #tour-callout code { font-size: .85em; background: var(--code, var(--surface-2)); padding: 1px 6px; border-radius: 6px; }
     @media (max-width: 600px) { #tour-bar { bottom: 8px; } #tour-bar .tt { font-size: 14px; } }
   ` }));
   // The slides' own styles (slides.js).
@@ -203,8 +225,10 @@
     if (bar) bar.dataset.speaking = '1';
     try {
       if (muted()) {
+        // A reading time like the voice's: its words, and a short gap after each sentence (each is an utterance).
         const words = text.split(/\s+/).length;
-        return await until(() => false, (words / 2.6) * 1000 / rate + 900, my);
+        const sentences = (text.match(/[.!?]+(\s|$)/g) ?? ['.']).length;
+        return await until(() => false, (words / 2.6) * 1000 / rate + 250 * sentences, my);
       }
       const parts = speakable(text).match(/[^.!?]+[.!?]+["')]*|[^.!?]+$/g) ?? [text];
       for (const p of parts) {
@@ -219,17 +243,21 @@
 
   // ------------------------------------------------------------------ replays of recorded runs
   const rps = new Map(); // key → { key, recordedAt, events, i, shift }
-  /** Applies a recorded run's events up to (and including) the first one of `type` ('' = all), at a sped-up pace. */
-  async function playTo(key, type, my) {
+  /**
+   * Applies a recorded run's events up to (and including) the first one of `type` ('' = all), at a sped-up pace.
+   * `pace`: { f, min, max } (a share of the real gap between two events, in milliseconds); by default a tenth, so the
+   * steps stream while the voice explains them. The presentation plays its case quicker, then speaks (QUICK).
+   */
+  async function playTo(key, type, my, pace = null) {
     const rp = rps.get(key);
     if (!rp) return true;
     if (rp.shift == null) rp.shift = Date.now() - Date.parse(rp.events[0].at);
+    const { f = 0.1, min = 150, max = 2200 } = pace ?? {};
     while (rp.i < rp.events.length) {
       if (my !== token) return false;
       const e = rp.events[rp.i];
       const prev = rp.events[rp.i - 1];
-      // A tenth of the real pace, so the steps stream while the voice explains them.
-      if (prev) await sleep(Math.min(2200, Math.max(150, (Date.parse(e.at) - Date.parse(prev.at)) * 0.1)));
+      if (prev) await sleep(Math.min(max, Math.max(min, (Date.parse(e.at) - Date.parse(prev.at)) * f)));
       if (my !== token) return false;
       apply({ ...e, at: new Date(Date.parse(e.at) + rp.shift).toISOString() });
       if (e.type === 'picked') tickets.get(key).expanded = true; // keep the steps visible when it is done
@@ -255,12 +283,15 @@
     render();
   }
 
-  /** A recorded Ask answer, replayed: the question is typed, Ask is pressed (not really), the steps stream, the answer appears. */
-  async function replayAsk(rec, project, my) {
+  /**
+   * A recorded Ask answer, replayed: the question is typed, Ask is pressed (not really), the steps stream, the answer
+   * appears. `stepMs`: the time between two of the run's steps (the presentation shows them quicker).
+   */
+  async function replayAsk(rec, project, my, stepMs = 650) {
     const box = $('#ask-q');
     await clickOn(box, my);
     box.value = '';
-    for (const ch of rec.question) { if (my !== token) return false; box.value += ch; await sleep(28); }
+    for (const ch of rec.question) { if (my !== token) return false; box.value += ch; await sleep(full ? 18 : 28); }
     await pressOn($('#ask-go'), my);
     if (my !== token) return false;
     const btn = $('#ask-go');
@@ -269,7 +300,7 @@
     progress.hidden = false;
     progress.replaceChildren(h('div', { class: 'step' }, h('span'), h('span'), h('span', { class: 'typing m' }, 'working')));
     for (const step of rec.steps ?? []) {
-      await sleep(650);
+      await sleep(stepMs);
       if (my !== token) return false;
       progress.insertBefore(h('div', { class: 'step' }, h('span', { class: 't' }, ''), h('span', { class: 'i' }, '›'), h('span', { class: 'm' }, step)), progress.lastChild);
       progress.scrollTop = progress.scrollHeight;
@@ -319,6 +350,75 @@
     requestAnimationFrame(() => reveal(n));
     cursor?.classList.remove('on');
   }
+  // ------------------------------------------------------------------ beats: the screen follows the words
+  // A step may have beats: [{ say, b }] on a slide (b: the slide's data-b="…" parts it lights), [{ say, at, target,
+  // go }] on the dashboard (the light moves to target). The voice lights each beat as it starts saying it; in presenter
+  // mode → lights the next one, and after the last one goes on. Parts not said yet are faint, the one said is lit, the
+  // ones said stay as they are; when all are said, the slide is whole again.
+  let curBeats = [];
+  let beatIdx = -1;
+  const beatsOf = (st) => {
+    try {
+      const b = typeof st.beats === 'function' ? st.beats() : st.beats;
+      return Array.isArray(b) ? b.filter((x) => x?.say) : [];
+    } catch { return []; }
+  };
+  /** The step's words in the caption bar, the beat being said in bold. */
+  function caption(text) {
+    if (!curBeats.length) { textEl.textContent = text; return; }
+    textEl.replaceChildren(...curBeats.map((b, j) => h('span', { class: j === beatIdx ? 'now' : 'said' }, `${b.say} `)));
+  }
+  function lightBeat(i) {
+    beatIdx = i;
+    const beat = curBeats[i] ?? null;
+    if (curBeats.length) caption();
+    if (slideEl && steps[cur]?.slide) {
+      const b = i >= curBeats.length ? Infinity : beat?.b ?? 0;
+      for (const el of slideEl.querySelectorAll('[data-b]')) {
+        const nums = el.dataset.b.split(/[\s,]+/).map(Number).filter(Number.isFinite);
+        el.classList.toggle('lit', nums.includes(b));
+        el.classList.toggle('pend', b !== Infinity && Math.min(...nums) > b);
+      }
+      return;
+    }
+    if (!beat) return;
+    try { beat.go?.(); } catch { /* the part is not there */ }
+    if (beat.target) {
+      target = beat.target;
+      followedEl = null; // follow() brings it into view as soon as it is there
+      followedAt = 0;
+    }
+    callout(beat.callout ?? null);
+  }
+
+  // A callout: the two to four facts a dashboard step says, large, beside the lit part (a TV is read from across a
+  // room; the dashboard's own text is small). follow() places it on the side away from the light.
+  let calloutEl = null;
+  function callout(html) {
+    if (!html) { calloutEl?.classList.remove('on'); return; }
+    if (!calloutEl) { calloutEl = Object.assign(document.createElement('div'), { id: 'tour-callout' }); document.body.append(calloutEl); }
+    calloutEl.innerHTML = html;
+    calloutEl.classList.remove('on');
+    void calloutEl.offsetWidth; // restart its entrance
+    calloutEl.classList.add('on');
+  }
+
+  // The case's Teams moment, over the dashboard (slides.js teamsPop): the owner's phone rings, then the post as Teams
+  // shows it. The light is on it; follow() keeps it on the right, inside the space above the caption bar.
+  let teamsEl = null;
+  function teamsMoment(which, stage) {
+    const html = which ? window.TourSlides?.teamsPop?.(ctx, which, stage) ?? '' : '';
+    if (!html) { teamsEl?.classList.remove('on'); return null; }
+    if (!teamsEl) { teamsEl = Object.assign(document.createElement('div'), { id: 'tour-teams' }); document.body.append(teamsEl); }
+    teamsEl.innerHTML = html;
+    teamsEl.classList.toggle('phone', stage === 'notice');
+    teamsEl.classList.remove('on');
+    void teamsEl.offsetWidth;
+    teamsEl.classList.add('on');
+    return teamsEl;
+  }
+  const teamsShown = () => (teamsEl?.classList.contains('on') ? teamsEl : null);
+
   /** A full-screen slide fades out (into the dashboard); one over the page just goes. */
   function hideSlide() {
     const el = slideEl;
@@ -334,10 +434,13 @@
   let presenter = false; // no voice; → moves on (present, deck)
   let deckCfg = {}; // agent.config.json "presentation": presenter, team, contact
   let ctx = {}; // what the slides show: the cases, the apps (built with the steps)
+  let impactBefore = null; // the Impact tab's own number of weeks, while the presentation shows the weeks since the start
   let asks = []; // recorded Ask answers for the tour
   let s1 = null; // System 1's chapter (J9): /api/tour/system1 (its recorded runs, the privacy moment, a live question)
   let suite = null; // the suite insights, fetched at the start (it also warms the server's cache)
   let preIns = null; // the first case's project insights, fetched at the start for the same reason
+  let pres = null; // a presentation's records: /api/tour/facts, /api/impact, /api/ask/stats, and each project's insights
+  let stash = null; // the presentation's case when its card was on the dashboard: put back at the end
   /** The steps, built from what the dashboard has now: real tickets (live or recorded runs), a real project, real numbers. */
   function buildSteps() {
     const T = (k) => tickets.get(k);
@@ -463,7 +566,14 @@
       apps: projects().map((p) => ({ key: p.key, name: p.name, role: String(p.description ?? ROLE[p.key] ?? '').split(/[;:]/)[0], linked: p.linked ?? [] })),
       cases: [k1, k2].filter(Boolean).map(caseFacts),
       system1: s1,
-      teams: { live: Boolean(status?.teams?.live), mentions: Boolean(status?.teams?.mentions) },
+      teams: { live: Boolean(status?.teams?.live), mentions: Boolean(status?.teams?.mentions),
+        channel: [...document.querySelectorAll('h2')].map((x) => x.textContent.match(/Teams · #([\w-]+)/)?.[1]).find(Boolean) ?? 'support-triage' },
+      // A presentation's records (slides.js reads them when a slide is shown, so what arrives later still counts).
+      facts: pres?.facts ?? null, impact: pres?.impact ?? null, askStats: pres?.askStats ?? null, insights: pres?.insights ?? {}, suite,
+      ask: askFound ? {
+        question: askFound.question, answer: String(askFound.answer ?? ''), secs: Math.round((askFound.meta?.durationMs ?? 0) / 1000) || null,
+        sources: (askFound.sources ?? []).map((s) => (typeof s === 'string' ? s : s?.key ?? s?.ref ?? s?.path ?? s?.file ?? '')).filter(Boolean),
+      } : null,
     };
 
     const opening = [
@@ -497,7 +607,7 @@
     let s1Answer = null;
     const system1Chapter = !s1 ? [] : [
       { ch: 'System 1', when: () => kLight || kKnown || s1.ask, slide: 'system1', reveal: 2,
-        say: 'One more thing, in front of Claude: System 1. A small model on this laptop, fine-tuned on our tickets, reads each new ticket in a few seconds and picks one of our answers, with a probability: the kind of ticket, the part of the code, how urgent, a known issue, a name that slipped through. Nothing leaves the machine, and a call costs nothing. Each decision it takes starts in shadow.' },
+        say: 'One more thing, in front of Claude: System 1. A small model on this laptop, fine-tuned on our tickets, reads each new ticket in a few seconds and picks one of our answers, with a probability: the kind of ticket, the part of the code, how urgent, a known issue, a name that slipped through. Nothing leaves the machine, and a call costs nothing. Each decision it takes starts in shadow, and is switched on only with a way back.' },
       { ch: 'System 1', when: () => kLight, go: async (my) => { fold(k1); fold(k2); await toTickets(kLight, my); await playTo(kLight, 'system1', my); }, target: () => s1Card(kLight),
         say: () => {
           const a = s1Of(kLight).answers;
@@ -510,7 +620,7 @@
         say: () => {
           // A card's steps keep only type and text: the cost is on the card (t.meta), or in the recorded event.
           const cost = firstOf(kLight, 'analyzed')?.meta?.costUsd ?? T(kLight)?.meta?.costUsd;
-          return `Today Claude analyzes it anyway: ${secs(kLight, 'picked', 'analyzed')} seconds${cost ? ` and ${cents(cost)}` : ''} for a code analysis it does not need${did(kLight, 'notified') ? ', and a developer is notified in Teams' : ''}. With the light path on, it would get a short comment and a label instead. It stays in shadow until two weeks of the pilot show no bug among the tickets it would skip.`;
+          return `When this was recorded, the light path was in shadow, so Claude analyzed it anyway: ${secs(kLight, 'picked', 'analyzed')} seconds${cost ? ` and ${cents(cost)}` : ''} for a code analysis it did not need${did(kLight, 'notified') ? ', and a developer was notified in Teams' : ''}. Since November 17 the light path is on: such a ticket gets a short comment and a label in about a second. A reply from the reporter still gets the full analysis, and if one turns out to be about code, the light path switches itself back to shadow.`;
         } },
       { ch: 'System 1', when: () => kKnown, go: async (my) => { fold(kLight); await toTickets(kKnown, my); await playTo(kKnown, 'known-test', my); }, target: () => s1Card(kKnown),
         say: () => {
@@ -524,7 +634,7 @@
           return `${pa?.key ? `Claude's analysis agrees two minutes later: already known, fixed on main by ${pa.key}. ` : ''}Then the test runs on main. ${t?.status === 'pass' ? 'It passes: the problem is not back in that form, so an old build or another cause is likelier.' : t?.status === 'fail' ? 'It fails: the known issue is back.' : 'Its verdict lands on the card.'}`;
         } },
       { ch: 'System 1', when: () => s1.privacy, slide: 'system1Privacy', reveal: 3,
-        say: () => `Privacy. Before a ticket goes to a cloud model, the names the masking knows are replaced. In ${s1.privacy.key}, an uncommon name went through. A second check, System 1 on the text with every name masked, says it still names a person: ${pctOf(s1.privacy.p)}.${s1.privacy.mode === 'shadow' ? ' The check was in shadow, so the ticket went on, and the analysis repeated the name. With the check on, such a ticket waits for a person.' : ''} It is not on yet: on real tickets that name nobody, it still holds too many.` },
+        say: () => `Privacy. Before a ticket goes to a cloud model, the names the masking knows are replaced. In ${s1.privacy.key}, an uncommon name went through. A second check, System 1 on the text with every name masked, says it still names a person: ${pctOf(s1.privacy.p)}.${s1.privacy.mode === 'shadow' ? ' The check was in shadow, so the ticket went on, and the analysis repeated the name. With the check on, such a ticket waits for a person.' : ''} It is not on yet: on an unseen pilot ticket it missed a name, so it would promise a protection it does not give.` },
       { ch: 'System 1', when: () => s1.ask,
         go: async (my) => {
           await openTab('ask', my);
@@ -670,21 +780,139 @@
 
     const closing = [
       { ch: 'How it was built', slide: 'built', reveal: 3,
-        say: "How was it built? Problem first: the problem, metrics, risks and rules were approved before any code. Then a skill on demand, then the watcher that runs it alone, with evidence over opinion and a human deciding. It is tested on four linked demo apps with hidden answer keys: about eighty seconds to an analysis, six to eight out of eight on the scored cases, no writes outside the policy. Next: approval from Teams, a night shift, and redaction of patient data before company tickets." },
+        say: "How was it built? Problem first: the problem, metrics, risks and rules were approved before any code. Then a skill on demand, then the watcher that runs it alone, with evidence over opinion and a human deciding. It is tested on four linked demo apps with hidden answer keys: about eighty seconds to an analysis, six to eight out of eight on the scored cases, seven of seven pilot bugs, no writes outside the policy. Next: the approval round in Teams, live, a trust ladder for the agent's autonomy, and a pilot on company tickets once patient data is approved." },
       { ch: 'The end', go: async (my) => { await openTab('tickets', my); window.scrollTo({ top: 0, behavior: 'smooth' }); }, target: () => $('header'),
         say: "That's Ticket Intelligence: tickets understood in minutes, the bug proven with a test, a fix proposed and reviewed, the right person informed, and the knowledge kept. Thanks for watching." },
     ];
 
     if (mode === 'tour' || !window.TourSlides) return [...opening, ...dashboard, ...closing];
     const deck = window.TourSlides.deck(ctx);
-    if (mode === 'deck') return [...deck.intro, ...deck.outro, ...deck.backup];
-    return [...deck.intro, ...dashboard.map((s) => ({ ...s, part: 2 })), ...deck.outro, ...deck.backup];
+    if (mode === 'deck') return deck.slidesOnly;
+
+    // The presentation (docs/PRESENTATION_PLAN.md): one case whole, its dashboard steps between its slides. Each step
+    // first plays the recorded run up to what it talks about (QUICK: a twentieth of the real time, at most 0.6 s
+    // between two events), lights exactly that part, and only then speaks.
+    const kc = deckCfg.case && rps.has(deckCfg.case) ? deckCfg.case : null;
+    const C = deck.case;
+    const say = deck.caseSay;
+    const QUICK = { f: 0.05, min: 40, max: 600 };
+    const upTo = (k, type) => async (my) => { await toTickets(k, my); await playTo(k, type, my, QUICK); if (T(k)) { T(k).expanded = true; render(); } };
+    const head = (k) => ticketEl(k)?.querySelector('.t-head') ?? ticketEl(k);
+    const teamsCardOf = (k) => [...document.querySelectorAll('#teams .msg')].find((el) => el.textContent.includes(`${k}:`)) ?? null;
+    const fixCardOf = (k) => [...document.querySelectorAll('#teams .msg')].find((el) => el.textContent.includes(`${k}:`) && /fix ready/i.test(el.textContent)) ?? teamsCardOf(k);
+    const stepOf = (k, re) => [...(ticketEl(k)?.querySelectorAll('.step') ?? [])].reverse().find((el) => re.test(el.textContent)) ?? null;
+    // The Graph tab computes a ticket's lanes on first use and keeps them a short while: asked a step or two ahead.
+    const warmLane = () => { if (kc) getJson(`/api/graph?${new URLSearchParams({ project: projOf(kc), days: String(typeof graphOpts !== 'undefined' ? graphOpts.days : 30), ticket: kc })}`); };
+    // What each beat of the case lights (slides.js caseBeats: its `at`), on the case's card and in the Teams panel.
+    const CASE_AT = {
+      s1: () => ticketEl(kc)?.querySelector('.s1') ?? head(kc),
+      known: () => rowOf(kc, 'Already known?') ?? rowOf(kc, 'Likely cause') ?? head(kc),
+      cause: () => rowOf(kc, 'Likely cause') ?? head(kc),
+      owner: () => rowOf(kc, 'Owner') ?? rowOf(kc, 'Likely cause') ?? head(kc),
+      notice: () => teamsShown() ?? teamsCardOf(kc) ?? $('#teams'),
+      message: () => teamsShown() ?? teamsCardOf(kc) ?? $('#teams'),
+      time: () => teamsShown() ?? teamsCardOf(kc) ?? $('#teams'),
+      repro: () => boxOf(kc, '🛠') ?? head(kc),
+      bisect: () => stepOf(kc, /bisect/i) ?? boxOf(kc, '🛠') ?? head(kc),
+      checks: () => boxOf(kc, '🛠') ?? head(kc),
+      teams: () => teamsShown() ?? fixCardOf(kc) ?? boxOf(kc, '🛠'),
+      review: () => boxOf(kc, '🧐') ?? boxOf(kc, '🛠') ?? head(kc),
+    };
+    // The Teams beats show the Teams moment over the dashboard; the others take it away.
+    const CASE_GO = {
+      notice: () => teamsMoment('owner', 'notice'),
+      message: () => teamsMoment('owner', 'message'),
+      time: () => teamsMoment('owner', 'time'),
+      teams: () => teamsMoment('fix', 'message'),
+    };
+    const caseBeats = (name) => () => (deck.caseBeats?.[name] ?? []).map((b) => ({ ...b, target: CASE_AT[b.at] ?? null, go: CASE_GO[b.at] ?? (() => teamsMoment(null)) }));
+    // caseAt: the case's own times lit in the caption bar (renderCaseMap) while the step is shown.
+    const caseWhole = !kc ? [C.timeline] : [
+      { ch: 'One case', stage: 2, caseAt: ['system1'], go: upTo(kc, 'system1'), target: CASE_AT.s1, say: say.s1, beats: caseBeats('s1') },
+      { ch: 'One case', stage: 3, caseAt: ['analysis'], go: upTo(kc, 'prior-art'), target: CASE_AT.known, say: say.analysis, beats: caseBeats('analysis') },
+      { ch: 'One case', stage: 4, caseAt: ['teams'], go: upTo(kc, 'notified'), target: CASE_AT.notice, say: say.teams, beats: caseBeats('teams') },
+      { ch: 'One case', stage: 5, caseAt: ['test', 'bisect'], go: upTo(kc, 'bisected'), target: CASE_AT.repro, say: say.proof, beats: caseBeats('proof') },
+      { ch: 'One case', stage: 6, caseAt: ['fix', 'review'], go: async (my) => { warmLane(); await upTo(kc, 'reviewed')(my); }, target: CASE_AT.checks, say: say.fix, beats: caseBeats('fix') },
+    ].map((s) => ({ ...s, part: 3 }));
+    // The rest of the run (the merge, Done, the documentation) plays on the dashboard while its slide is shown.
+    const learnt = kc ? { ...C.learnt, go: () => warmLane(), play: (my) => playTo(kc, '', my, QUICK) } : C.learnt;
+    // The Graph step speaks while the lanes load; the light is on them as soon as they are there.
+    const lane = !kc ? [] : [{
+      ch: 'One case', stage: 8, part: 3, caseAt: ['documented'],
+      go: async (my) => { await openTab('graph', my); await pickProject(projOf(kc), my); if (typeof showTicketLane === 'function') showTicketLane(kc); },
+      play: (my) => until(() => hasContent('graph-lanes'), 20000, my),
+      target: () => (hasContent('graph-lanes') ? $('#graph-lanes') : $('#graph-title') ?? $('#graph-lanes')),
+      say: say.graph,
+    }];
+    // Then the dashboard's own tabs, live and read-only: Insights (one project), Ask (a recorded answer, replayed),
+    // Impact (the management week). Each opens, waits for its data, lights its part, then speaks.
+    const insKey = deckCfg.insights ?? (kc ? projOf(kc) : null);
+    // The project's own data, not the one shown before (insightsFor changes as soon as a load starts).
+    const insReady = () => insightsData?.project === insKey && insightsFor === insKey && !$('#ins-body').hidden;
+    const askProj = askFound ? projOf(deckCfg.case ?? '') || focus()?.key : null;
+    // The watcher keeps Insights and Impact two minutes; read cold they take 5 and 17–30 s (Impact reads the five apps
+    // one by one, and GitHub's pull requests). They are asked ahead: Insights on the "caught" slide, Impact on each of
+    // the three steps before its own (a part that has expired in between is read again; the rest is cached, at once).
+    // What is read ahead also refreshes the presentation's own numbers, so the voice says what the tab shows.
+    const warmIns = () => getJson(`/api/insights?project=${encodeURIComponent(insKey)}`).then((x) => { if (running && x && pres) pres.insights[insKey] = x; });
+    const warmImpact = () => getJson(`/api/impact?weeks=${typeof impactWeeks !== 'undefined' ? impactWeeks : 8}`).then((x) => { if (running && x?.weeks) { ctx.impact = x; if (pres) pres.impact = x; } });
+    // A section of Insights by its heading (they fold into <details>), opened.
+    const insSec = (title) => { const d = document.querySelector(`#ins-body details.ins-sec[data-title="${title}"]`); if (d) d.open = true; return shown(d) ? d : null; };
+    const kpiOf = (id, i) => [...(document.getElementById(id)?.children ?? [])].filter(shown)[i] ?? null;
+    const impactHead = () => $('#tab-impact h2')?.parentElement ?? $('#impact-kpis');
+    // What each beat of the tabs lights (slides.js viewBeats: its `at`).
+    const VIEW_AT = {
+      kpis: () => kpiOf('ins-kpis', 0) ?? sectionOf('ins-body'),
+      heat: () => insSec('Bugs per component and month'),
+      hotspots: () => insSec('Top hotspots'),
+      origins: () => { insSec('Where bugs come from'); return [...document.querySelectorAll('#ins-origins .chip')].find((x) => /days in the code/.test(x.textContent))?.parentElement ?? insSec('Where bugs come from'); },
+      knowledge: () => insSec('Knowledge map') ?? sectionOf('ins-knowledge'),
+      suggestions: () => insSec('Suggested tickets') ?? sectionOf('ins-suggestions'),
+      answer: () => (askFound ? answerEl(0) : $('#ask-form')),
+      head: impactHead,
+      hours: () => kpiOf('impact-kpis', 0) ?? impactHead(),
+      analysed: () => kpiOf('impact-kpis', 1) ?? impactHead(),
+      merged: () => kpiOf('impact-kpis', 2) ?? impactHead(),
+      documented: () => kpiOf('impact-kpis', 3) ?? impactHead(),
+      waiting: () => [...($('#impact-kpis')?.children ?? [])].filter(shown).at(-1) ?? impactHead(),
+      chart: () => $('#impact-hours')?.closest('.panel') ?? impactHead(),
+    };
+    const viewBeats = (name) => () => (deck.viewBeats?.[name]?.() ?? []).map((b) => ({ ...b, target: VIEW_AT[b.at] ?? null }));
+    // Impact shows the weeks since the agent started (the weeks before are zeros); the page's own choice comes back at the end.
+    const impactSince = () => {
+      const n = deck.impactWeeks?.();
+      if (!n || typeof impactWeeks === 'undefined') return;
+      if (impactBefore == null) impactBefore = impactWeeks;
+      impactWeeks = n;
+      const sel = $('#impact-weeks');
+      if (sel && ![...sel.options].some((o) => o.value === String(n))) sel.add(new Option(String(n), String(n)), 0);
+      if (sel) sel.value = String(n);
+    };
+    const views = !insKey ? [] : [
+      { ch: 'Insights', go: async (my) => { warmImpact(); await openTab('insights', my); await pickProject(insKey, my); await until(insReady, 30000, my); },
+        target: VIEW_AT.kpis, say: deck.viewSay.heat, beats: viewBeats('heat') },
+      { ch: 'Insights', go: async (my) => { warmImpact(); await until(insReady, 10000, my); },
+        target: VIEW_AT.knowledge, say: deck.viewSay.knowledge, beats: viewBeats('knowledge') },
+      // While the question is typed, the form is lit (an answer that is not there yet would leave the screen dark).
+      { ch: 'Ask', during: () => $('#ask-form'),
+        go: async (my) => { warmImpact(); await openTab('ask', my); if (askProj) await pickProject(askProj, my); await until(() => !$('#ask-form').hidden, 5000, my); if (askFound) await replayAsk(askFound, askProj, my, 90); },
+        target: VIEW_AT.answer, say: deck.viewSay.ask },
+      // Its numbers are read ahead (warmImpact): it speaks at once, like the Graph step, and the light moves from the
+      // tab's title ("reading the suite…") to each tile as it is said.
+      { ch: 'Impact', go: async (my) => { impactSince(); await openTab('impact', my); },
+        play: (my) => until(() => hasContent('impact-kpis'), 40000, my),
+        target: impactHead, say: deck.viewSay.impact, beats: viewBeats('impact') },
+    ].map((s) => ({ ...s, part: 3 }));
+    // Its beats are read when it is shown (the suite's copies arrive after the start): not copied here.
+    const caught = insKey ? { ...C.caught, beats: () => C.caught.beats, go: () => { warmIns(); } } : C.caught;
+    return [...deck.p1, ...deck.p2, C.intro, C.report, ...caseWhole, C.thread, learnt, ...lane, caught, ...views, ...deck.p4, ...deck.p5, ...deck.backup];
   }
 
-  // Where each demo step is in the flow of the "How it works" slide (the caption bar's small map).
+  // Where each demo step is in the flow (the caption bar's small map): the tour's four rows of the pipeline slide, or
+  // in a presentation the eight steps of a ticket's life (slides.js STEPS; a step's `stage` is 1–8).
   const STAGES = [['collect', 'Collect'], ['analyze', 'Analyze'], ['fix', 'Prove & fix'], ['learn', 'Learn']];
   const CH_STAGE = { 'The dashboard': 'collect', 'Case 1': 'fix', 'Case 2': 'fix', Insights: 'learn', 'A new ticket': 'learn', Ask: 'learn', 'System 1': 'collect' };
-  const PARTS = { 1: 'Presentation', 2: 'Demo', 3: 'Conclusion' };
+  const PARTS = { 1: 'What it is', 2: 'Under the hood', 3: 'One case', 4: 'Live', 5: 'Close' };
 
   // ------------------------------------------------------------------ player
   let steps = [];
@@ -694,7 +922,7 @@
   let paused = false;
   let target = null;
   let saved = null;
-  let spot, bar, textEl, numEl, chEl, progEl, pauseBtn, partsEl, mapEl, presenterBtn;
+  let spot, bar, textEl, numEl, chEl, progEl, pauseBtn, partsEl, mapEl, caseEl, presenterBtn;
 
   function ui() {
     spot = Object.assign(document.createElement('div'), { id: 'tour-spot' });
@@ -722,23 +950,30 @@
     if (synth) synth.onvoiceschanged = () => { voice = pickVoice(); fillVoices(); };
     const rateSel = document.createElement('select');
     rateSel.setAttribute('aria-label', 'Speed');
-    rateSel.replaceChildren(...[0.85, 1, 1.15, 1.3].map((x) => new Option(`${x}×`, String(x))));
+    rateSel.replaceChildren(...[0.85, 0.9, 1, 1.15, 1.3].map((x) => new Option(`${x}×`, String(x))));
     rateSel.value = String(rate);
     rateSel.onchange = () => { rate = Number(rateSel.value); store.set('ti-tour-rate', String(rate)); };
     // A presentation's parts (filled when the steps are built) and, in the demo, where the step is in the flow.
     partsEl = Object.assign(document.createElement('span'), { className: 'parts', hidden: true });
     mapEl = Object.assign(document.createElement('span'), { className: 'tm', hidden: true });
     mapEl.setAttribute('aria-label', 'Stage');
-    for (const [key, label] of STAGES) {
+    const stages = full && window.TourSlides?.STEPS ? window.TourSlides.STEPS.map(([name], i) => [String(i + 1), `${i + 1} ${name}`]) : STAGES;
+    for (const [key, label] of stages) {
       const el = Object.assign(document.createElement('span'), { textContent: label });
       el.dataset.stage = key;
       mapEl.append(el);
     }
+    // Part 3: the case's own times (renderCaseMap, once the facts are read).
+    caseEl = Object.assign(document.createElement('span'), { className: 'tm', hidden: true });
+    caseEl.setAttribute('aria-label', 'The case, from the report');
     presenterBtn = btn('🎤 Presenter', 'Presenter mode: no voice, → moves on (P)', () => setPresenter(!presenter));
     presenterBtn.hidden = !full;
+    // The presenter's notes in a window of their own (?notes), kept in step with the slides: the shared screen shows none.
+    const notesBtn = btn('📝 Notes', 'Open the presenter notes in another window (N)', openNotes);
+    notesBtn.hidden = !full;
     const controls = Object.assign(document.createElement('div'), { className: 'tc' });
     controls.append(btn('⏮ Back', 'Previous step (←)', () => jump(-1)), pauseBtn, btn('Next ⏭', 'Next step (→)', () => jump(1)),
-      partsEl, chEl, numEl, mapEl, Object.assign(document.createElement('span'), { className: 'spacer' }), presenterBtn, voiceSel, rateSel, btn('✕ End', 'End the tour (Esc)', stop));
+      partsEl, chEl, numEl, mapEl, caseEl, Object.assign(document.createElement('span'), { className: 'spacer' }), notesBtn, presenterBtn, voiceSel, rateSel, btn('✕ End', 'End the tour (Esc)', stop));
     bar.append(textEl, progEl, controls);
     document.body.append(spot, bar);
     cursorUi();
@@ -757,12 +992,39 @@
     }
     let el = null;
     try { el = target?.(); } catch { /* gone */ }
+    // The view follows the light: a part that appears or moves out of sight (a replay adds it below, a panel scrolls
+    // it away) is brought into view, inside its own scrolling panel first; at most once a second, never on a slide.
+    if (shown(el) && !slideEl && !el.closest?.('#tour-slide') && Date.now() - followedAt > 1000) {
+      const r0 = el.getBoundingClientRect();
+      const band = Math.max(1, barTop - headBottom - 16);
+      const seen = Math.max(0, Math.min(r0.bottom, barTop) - Math.max(r0.top, headBottom)) / Math.min(Math.max(1, r0.height), band);
+      if (el !== followedEl || seen < 0.6) {
+        followedEl = el;
+        followedAt = Date.now();
+        if (seen < 0.6) { revealInPanels(el); bringIntoView(el); }
+      }
+    }
     if (shown(el)) {
       const r = el.getBoundingClientRect();
       // Below the sticky header, unless the target is in the header itself.
       const top = (el.closest('header') ? r.top : Math.max(r.top, headBottom + 4)) - 6;
       const bottom = Math.min(r.bottom, barTop - 8) + 6;
       Object.assign(spot.style, { top: `${top}px`, left: `${r.left - 6}px`, width: `${r.width + 12}px`, height: `${Math.max(24, bottom - top)}px` });
+      // The Teams moment on the right, in the middle of the space between the header and the caption bar.
+      if (teamsShown()) {
+        const w = teamsEl.offsetWidth;
+        const h = teamsEl.offsetHeight;
+        teamsEl.style.left = `${Math.max(16, innerWidth - w - Math.max(24, innerWidth * 0.04))}px`;
+        teamsEl.style.top = `${Math.max(headBottom + 12, Math.min((headBottom + barTop - h) / 2, barTop - h - 12))}px`;
+      }
+      // The callout on the side away from the light, level with it, inside the space above the caption bar.
+      if (calloutEl?.classList.contains('on')) {
+        const w = calloutEl.offsetWidth;
+        const h = calloutEl.offsetHeight;
+        const right = r.left + r.width / 2 < innerWidth / 2;
+        calloutEl.style.left = `${right ? Math.max(16, innerWidth - w - 24) : 24}px`;
+        calloutEl.style.top = `${Math.max(headBottom + 12, Math.min(top, barTop - h - 14))}px`;
+      }
     } else {
       Object.assign(spot.style, { top: '50%', left: '50%', width: '0px', height: '0px' });
     }
@@ -772,6 +1034,7 @@
         head.append(Object.assign(document.createElement('span'), { className: 'tour-replay', textContent: `REPLAY · ${longDate(rp.recordedAt)}`, title: 'A recorded run of the agent, replayed by the tour (only in this page)' }));
       }
     }
+    tickCaseMap();
     document.querySelectorAll('#ask-answers .answer').forEach((el, i) => {
       const a = answers[i];
       if (a?.tourReplay && !el.querySelector('.tour-replay')) {
@@ -781,6 +1044,18 @@
     requestAnimationFrame(follow);
   }
 
+  let followedEl = null; // the element the view last followed (follow())
+  let followedAt = 0;
+  /** Scrolls each panel with its own scrollbar that holds `el` (the Teams panel, a card's steps) so that `el` shows. */
+  function revealInPanels(el) {
+    for (let p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+      const s = getComputedStyle(p);
+      if (!/(auto|scroll)/.test(s.overflowY) || p.scrollHeight <= p.clientHeight + 4) continue;
+      const pr = p.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      if (r.top < pr.top || r.bottom > pr.bottom) p.scrollTop += r.top - pr.top - 8;
+    }
+  }
   /** Scrolls the target into the space between the sticky header and the caption bar. */
   function bringIntoView(el) {
     if (!shown(el)) return;
@@ -798,9 +1073,86 @@
     chEl.textContent = st.ch ?? '';
     progEl.firstChild.style.width = `${Math.round((Math.min(i + 1, main) / main) * 100)}%`;
     for (const b of partsEl.children) b.classList.toggle('on', Number(b.dataset.part) === st.part);
-    const stage = st.slide ? null : st.stage ?? CH_STAGE[st.ch] ?? null;
+    // A presentation's map has the eight steps (1–8): a step without one shows none (the tour maps its chapters).
+    const stage = st.slide ? null : st.stage ?? (full ? null : CH_STAGE[st.ch]) ?? null;
     mapEl.hidden = !stage;
-    for (const s of mapEl.children) s.classList.toggle('on', s.dataset.stage === stage);
+    for (const s of mapEl.children) s.classList.toggle('on', s.dataset.stage === String(stage));
+    // The case's steps on the dashboard: its own clock and times instead of the eight steps (they were Part 2's).
+    const caseOn = Boolean(full && st.caseAt && caseEl.children.length > 3);
+    caseEl.hidden = !caseOn;
+    if (caseOn) {
+      mapEl.hidden = true;
+      for (const s of caseEl.querySelectorAll('[data-key]')) s.classList.toggle('on', st.caseAt.includes(s.dataset.key));
+    }
+  }
+  const hms = (s) => (s < 3600 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`);
+  /** The case's times in the caption bar (Part 3): a clock, then each step with its time from the report. */
+  function renderCaseMap() {
+    const xs = full ? window.TourSlides?.caseTimes?.(ctx) ?? [] : [];
+    caseEl.replaceChildren(...(xs.length > 2 ? [h('span', { class: 'clock' }, ''), ...xs.map((x) => h('span', { 'data-key': x.key, 'data-secs': x.secs }, h('b', {}, x.at), x.label))] : []));
+  }
+  /** follow(): the clock runs with the replay of the case; what it has passed turns green. */
+  function tickCaseMap() {
+    if (caseEl.hidden) return;
+    const kc = deckCfg.case;
+    const rp = rps.get(kc);
+    const rep = ctx.facts?.case?.reportedAt;
+    if (!rp || !rep || !rp.i) return;
+    const secs = Math.max(0, Math.round((Date.parse(rp.events[rp.i - 1].at) - Date.parse(rep)) / 1000));
+    const label = `${kc} · ${hms(secs)} after the report`;
+    if (caseEl.firstChild.textContent !== label) caseEl.firstChild.textContent = label;
+    for (const s of caseEl.querySelectorAll('[data-key]')) s.classList.toggle('done', !s.classList.contains('on') && Number(s.dataset.secs) <= secs);
+  }
+
+  // ------------------------------------------------------------------ the presenter's notes (?notes)
+  // The presenting page tells the notes window each step: its text, where it is, what comes next; the notes window
+  // sends back → and ←. Same origin, same browser: a BroadcastChannel, nothing over the network.
+  const channel = 'BroadcastChannel' in window ? new BroadcastChannel('ti-present') : null;
+  function openNotes() { window.open(`${location.pathname}?notes`, 'ti-notes', 'width=980,height=640'); }
+  function tellNotes(i, st, text) {
+    if (!channel || !full) return;
+    const main = steps.filter((s) => !s.backup).length;
+    const next = steps.slice(i + 1).find((s) => { try { return !s.when || s.when(); } catch { return false; } });
+    channel.postMessage({ type: 'step', i: i + 1, n: main, part: PARTS[st.part] ?? '', ch: st.ch ?? '', say: text, next: next ? `${PARTS[next.part] ?? ''} · ${next.ch ?? ''}` : 'the end', presenter,
+      beats: curBeats.map((b) => b.say), beat: beatIdx });
+  }
+  if (channel) channel.onmessage = (e) => {
+    if (!running) return;
+    if (e.data?.type === 'cmd' && e.data.cmd === 'next') jump(1);
+    else if (e.data?.type === 'cmd' && e.data.cmd === 'back') jump(-1);
+    else if (e.data?.type === 'hello' && steps[cur]) tellNotes(cur, steps[cur], textEl.textContent);
+  };
+  /** ?notes: this window shows the presenter's notes of the presentation running in another window. */
+  function notesPage() {
+    document.head.append(Object.assign(document.createElement('style'), { textContent: `
+      #tour-notes { position: fixed; inset: 0; z-index: 70; background: var(--bg, var(--surface)); color: var(--text); padding: 24px 32px; display: grid; grid-template-rows: auto 1fr auto; gap: 16px; font-family: inherit; }
+      #tour-notes .where { color: var(--accent); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; font-size: 14px; }
+      #tour-notes .say { font-size: clamp(20px, 2.2vw, 30px); line-height: 1.5; overflow: auto; }
+      #tour-notes .say span { color: var(--muted); }
+      #tour-notes .say span.now { color: var(--text); font-weight: 700; background: var(--accent-soft); border-radius: 6px; padding: 0 4px; }
+      #tour-notes .beat { color: var(--accent); font-weight: 700; margin-left: 8px; }
+      #tour-notes .next { color: var(--muted); font-size: 15px; }
+      #tour-notes .bar { display: flex; gap: 10px; align-items: center; }
+      #tour-notes button { font-size: 18px; padding: 10px 22px; }
+    ` }));
+    const box = Object.assign(document.createElement('div'), { id: 'tour-notes' });
+    box.innerHTML = '<div class="where">Waiting for the presentation in the other window…</div><div class="say"></div><div class="bar"><button type="button" class="small" data-c="back">⏮ Back</button><button type="button" class="primary" data-c="next">Next ⏭</button><span class="next"></span></div>';
+    document.body.append(box);
+    const send = (cmd) => channel?.postMessage({ type: 'cmd', cmd });
+    box.querySelectorAll('button').forEach((b) => { b.onclick = () => send(b.dataset.c); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); send('next'); } else if (e.key === 'ArrowLeft') { e.preventDefault(); send('back'); } });
+    if (channel) channel.onmessage = (e) => {
+      const m = e.data;
+      if (m?.type !== 'step') return;
+      box.querySelector('.where').textContent = `${m.i} / ${m.n} · ${m.part} · ${m.ch}${m.presenter ? '' : ' · the voice is speaking'}`;
+      // With beats: what to say for the part that is lit, in bold; → lights the next part.
+      if (m.beats?.length) {
+        box.querySelector('.where').append(Object.assign(document.createElement('span'), { className: 'beat', textContent: `part ${m.beat + 1} of ${m.beats.length}` }));
+        box.querySelector('.say').replaceChildren(...m.beats.map((s, j) => Object.assign(document.createElement('span'), { className: j === m.beat ? 'now' : '', textContent: `${s} ` })));
+      } else box.querySelector('.say').textContent = m.say;
+      box.querySelector('.next').textContent = `Next: ${m.next}`;
+    };
+    channel?.postMessage({ type: 'hello' });
   }
 
   /** While the voice speaks, the slide's groups appear one after another. */
@@ -827,8 +1179,15 @@
       const keep = i === cur && st.slide && st.slide === slideName ? revealed : 0;
       cur = i;
       mark(i, st);
+      callout(null);
+      teamsMoment(null);
+      curBeats = [];
+      beatIdx = -1;
       textEl.textContent = '…';
       if (st.slide) { showSlide(st.slide, Math.max(keep, st.stagger ? 1 : st.reveal ?? 99)); target = () => slideEl; } else hideSlide();
+      // A slide's beats are known at once: its parts start faint, before the slide is first painted.
+      if (st.slide) { curBeats = beatsOf(st); if (curBeats.length) lightBeat(0); }
+      if (!st.slide && st.during) target = st.during; // what is lit while the step gets ready (the Ask form being typed in)
       try { await st.go?.(my); } catch { /* the step shows what it can */ }
       if (my !== token) return;
       const tgt = st.slide ? () => slideEl : st.target;
@@ -839,11 +1198,17 @@
       if (!(await until(() => shown(tgt()), 8000, my))) return;
       const el = tgt();
       if (!shown(el)) { if (playing) await playing; continue; } // nothing to point at: skip this step
-      if (!st.slide) bringIntoView(el);
+      if (!st.slide) { revealInPanels(el); bringIntoView(el); followedEl = el; followedAt = Date.now(); }
+      // A dashboard step's beats are read now: its data is there (a tab's numbers are read when they are spoken).
+      if (!st.slide) curBeats = beatsOf(st);
       let text = '';
-      try { text = typeof st.say === 'function' ? st.say() : st.say; } catch { continue; }
-      textEl.textContent = text;
-      // Presenter mode, or a silent slide (the backup Q&A): show it and wait for → (a replay still plays).
+      try { text = curBeats.length ? curBeats.map((b) => b.say).join(' ') : typeof st.say === 'function' ? st.say() : st.say; } catch { continue; }
+      if (!text) { if (playing) await playing; continue; }
+      caption(text);
+      if (curBeats.length && !st.slide) lightBeat(0);
+      tellNotes(i, st, text);
+      // Presenter mode, or a silent slide (the backup Q&A): show it and wait for → (a replay still plays). With beats,
+      // → lights the next one (jump), and goes on after the last.
       if (presenter || st.silent) {
         if (st.silent) reveal(groups());
         if (playing) { await playing; if (my === token && !st.slide) bringIntoView(tgt()); }
@@ -851,18 +1216,31 @@
       }
       await sleep(200);
       if (st.stagger) stagger(text, my);
-      if (!(await say(text, my))) return;
+      if (curBeats.length) {
+        for (let j = 0; j < curBeats.length; j++) {
+          if (j) { lightBeat(j); tellNotes(i, st, text); }
+          if (!(await say(curBeats[j].say, my))) return;
+        }
+        if (st.slide) lightBeat(curBeats.length); // all said: the slide whole again
+      } else if (!(await say(text, my))) return;
       if (st.slide && revealed < groups()) reveal(groups());
       // Only a stop, pause or jump (a new token) ends this loop; what the step's animation returned does not.
       if (playing) { await playing; if (my !== token) return; if (!st.slide) bringIntoView(tgt()); }
       try { await st.after?.(my); } catch { /* optional */ }
-      if (st.hold) return; // the end of a presentation: it stays until → (the Q&A slides) or Esc
-      if (!(await until(() => false, 300, my))) return;
+      if (st.hold) return; // the end of a presentation, or the live question: it stays until → (the Q&A slides) or Esc
+      // A presentation's step stays a moment after the voice: a slide 1.5 s, a dashboard step 2.5 s (time to look at
+      // what is lit); the tour moves on at once.
+      if (!(await until(() => false, full ? st.dwell ?? (st.slide ? 1500 : 2500) : 300, my))) return;
     }
     if (my === token) stop();
   }
 
   function jump(by) {
+    // Presenter mode: → first lights the step's next beat (← the one before), then goes on.
+    if (presenter && curBeats.length && steps[cur]) {
+      const to = beatIdx + (by > 0 ? 1 : -1);
+      if (to >= 0 && to < curBeats.length) { lightBeat(to); tellNotes(cur, steps[cur], textEl.textContent); return; }
+    }
     // Presenter mode: → first shows the rest of the slide, then goes on.
     if (presenter && by > 0 && slideEl && revealed < groups()) { reveal(revealed + 1); return; }
     paused = false;
@@ -876,6 +1254,7 @@
   function setPresenter(on) {
     presenter = on;
     presenterBtn.classList.toggle('on', on);
+    bar.classList.toggle('presenter', on);
     paused = false;
     pauseBtn.textContent = '⏸ Pause';
     play(cur, 1);
@@ -898,6 +1277,15 @@
     partsEl.hidden = parts.length < 2;
   }
 
+  // Presenter mode: the folded bar opens while the mouse moves, and folds again 2.5 s after.
+  let peekTimer = null;
+  function onPeek() {
+    if (!bar) return;
+    bar.classList.add('peek');
+    clearTimeout(peekTimer);
+    peekTimer = setTimeout(() => bar?.classList.remove('peek'), 2500);
+  }
+
   function onKey(e) {
     if (!running || e.target.closest?.('input, textarea, select')) return;
     if (e.key === 'Escape') stop();
@@ -905,6 +1293,7 @@
     else if (e.key === 'ArrowLeft') jump(-1);
     else if (e.key === ' ') { e.preventDefault(); paused ? resume() : pause(); }
     else if ((e.key === 'p' || e.key === 'P') && full) setPresenter(!presenter);
+    else if ((e.key === 'n' || e.key === 'N') && full) openNotes();
     else if (e.key === 'f' || e.key === 'F') fullscreen(!document.fullscreenElement);
     else return;
     e.preventDefault();
@@ -923,30 +1312,59 @@
     document.getElementById('tour-start')?.remove();
     running = true;
     paused = false;
+    // A presentation is given by a person (→ moves on, the voice is silent) unless ?voice asks for the browser's voice.
+    presenter = full && !new URLSearchParams(location.search).has('voice');
+    if (full && !store.get('ti-tour-rate')) rate = 0.9;
     voice = pickVoice();
     ui();
+    presenterBtn.classList.toggle('on', presenter);
+    bar.classList.toggle('presenter', presenter);
+    // A presentation leaves the money out of the dashboard too (index.html: body.no-cost hides every .cost).
+    document.body.classList.toggle('no-cost', full);
     textEl.textContent = 'Getting ready…';
     requestAnimationFrame(follow);
     document.addEventListener('keydown', onKey, true);
+    document.addEventListener('mousemove', onPeek);
     const my = token;
     await until(() => status && live, 10000, my);
     if (!running) return;
     saved = { tab, project: selected, expanded: new Map([...tickets.values()].map((t) => [t.key, t.expanded])), scroll: window.scrollY };
-    // Recorded runs for the cases (a ticket shown live is never replaced), and recorded Ask answers.
+    deckCfg = full ? (await getJson('/api/tour/deck'))?.presentation ?? {} : {};
+    // The presentation's numbers and quotes, from the agent's records (none of them is written into the slides).
+    if (full) {
+      const [facts, impact, askStats] = await Promise.all([getJson('/api/tour/facts'), getJson('/api/impact'), getJson('/api/ask/stats')]);
+      pres = { facts, impact, askStats, insights: {} };
+    }
+    // Recorded runs for the cases (a ticket shown live is never replaced), and recorded Ask answers. The presentation's
+    // own case is replayed even when its card is on the dashboard: the card is put aside, and back at the end.
     const replay = await getJson('/api/tour/replay');
-    for (const run of replay?.runs ?? []) if (run?.events?.length && !tickets.has(run.key)) rps.set(run.key, { ...run, i: 0, shift: null });
+    for (const run of replay?.runs ?? []) {
+      if (!run?.events?.length) continue;
+      if (full && run.key === deckCfg.case && tickets.has(run.key)) {
+        stash = { key: run.key, ticket: tickets.get(run.key), teams: teams.filter((x) => x.key === run.key), drafts: drafts.filter((x) => x.key === run.key) };
+        tickets.delete(run.key);
+        for (const arr of [teams, drafts]) for (let i = arr.length - 1; i >= 0; i--) if (arr[i].key === run.key) arr.splice(i, 1);
+        render();
+      }
+      if (!tickets.has(run.key)) rps.set(run.key, { ...run, i: 0, shift: null });
+    }
     const askProject = projOf([...rps.keys()][0] ?? '') || focus()?.key || projects().find((p) => p.ready)?.key;
-    asks = askProject ? (await getJson(`/api/tour/asks?project=${encodeURIComponent(askProject)}`))?.answers ?? [] : [];
+    // The presentation replays the answer it names (presentation.ask); the tour, the project's examples.
+    const askQ = full && deckCfg.ask ? `&question=${encodeURIComponent(deckCfg.ask)}` : '';
+    asks = askProject ? (await getJson(`/api/tour/asks?project=${encodeURIComponent(askProject)}${askQ}`))?.answers ?? [] : [];
     // System 1's recorded runs join the replays, apart from the cases (they are never case 1 or 2).
     s1 = await getJson('/api/tour/system1');
     for (const run of s1?.runs ?? []) if (run?.events?.length && !tickets.has(run.key) && !rps.has(run.key)) rps.set(run.key, { ...run, i: 0, shift: null, s1: true });
     // Not awaited: the first suite read takes several seconds; by the time the tour reaches Insights it is cached.
-    getJson('/api/insights/suite').then((x) => { if (running) suite = x; });
+    getJson('/api/insights/suite').then((x) => { if (running) { suite = x; if (ctx) ctx.suite = x; } });
     if (askProject) getJson(`/api/insights?project=${encodeURIComponent(askProject)}`).then((x) => { if (running) preIns = x; });
-    deckCfg = full ? (await getJson('/api/tour/deck'))?.presentation ?? {} : {};
+    // Each project's insights for the presentation's numbers, last: a browser opens few requests at a time, and the
+    // replays above must not wait behind them.
+    if (pres) for (const p of projects().filter((x) => x.ready)) getJson(`/api/insights?project=${encodeURIComponent(p.key)}`).then((x) => { if (running && x && pres) pres.insights[p.key] = x; });
     if (!running) return;
     steps = buildSteps();
     renderParts();
+    renderCaseMap();
     play(0, 1);
   }
 
@@ -956,14 +1374,39 @@
     token++;
     synth?.cancel();
     document.removeEventListener('keydown', onKey, true);
-    for (const el of [spot, bar, cursor]) el?.remove();
+    document.removeEventListener('mousemove', onPeek);
+    clearTimeout(peekTimer);
+    for (const el of [spot, bar, cursor, calloutEl, teamsEl]) el?.remove();
+    calloutEl = null;
+    teamsEl = null;
+    curBeats = [];
+    beatIdx = -1;
+    document.body.classList.remove('no-cost');
+    if (impactBefore != null && typeof impactWeeks !== 'undefined') {
+      impactWeeks = impactBefore;
+      const sel = $('#impact-weeks');
+      if (sel) { for (const o of [...sel.options]) if (!['4', '8', '12'].includes(o.value)) o.remove(); sel.value = String(impactBefore); }
+      impactBefore = null;
+      if (tab === 'impact' && typeof loadImpact === 'function') loadImpact();
+    }
     hideSlide();
     target = null;
     removeReplays();
+    if (stash) {
+      // The presentation's case was on the dashboard before: its own card, Teams messages and drafts come back.
+      tickets.set(stash.key, stash.ticket);
+      teams.push(...stash.teams);
+      drafts.push(...stash.drafts);
+      for (const arr of [teams, drafts]) arr.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+      stash = null;
+      render();
+    }
+    if (typeof graphOpts !== 'undefined') graphOpts.ticket = null;
     closeEditor();
     asks = [];
     suite = null;
     preIns = null;
+    pres = null;
     presenter = false;
     if (full) fullscreen(false);
     if (saved) {
@@ -981,7 +1424,8 @@
   document.getElementById('present-btn')?.addEventListener('click', () => start('present'));
   window.startTour = start;
   const entry = ['present', 'deck', 'tour'].find((k) => new URLSearchParams(location.search).has(k));
-  if (entry) {
+  if (new URLSearchParams(location.search).has('notes')) notesPage();
+  else if (entry) {
     const label = { present: '▶ Start the presentation', deck: '▶ Start the slides', tour: '▶ Start the guided tour' }[entry];
     const wrap = Object.assign(document.createElement('div'), { id: 'tour-start' });
     const go = Object.assign(document.createElement('button'), { className: 'primary', textContent: label, onclick: () => start(entry), type: 'button' });

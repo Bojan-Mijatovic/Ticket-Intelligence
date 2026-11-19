@@ -1,6 +1,6 @@
 # Git graph: proposals and plan
 
-Status: **Proposal**, partly built (GG0, G1, G1b, A1, A2) · Date: 2026-11-13, updated 2026-11-16 · Owner: Bojan Mijatović · Builds on: [AUTONOMY_AND_NEXT.md](AUTONOMY_AND_NEXT.md), [ROADMAP.md](ROADMAP.md), [KNOWLEDGE_PLAN.md](KNOWLEDGE_PLAN.md)
+Status: **Proposal**, partly built (GG0, G1, G1b with T4–T6, A1, A2, and the merge check of A4) · Date: 2026-11-13, updated 2026-11-18 · Owner: Bojan Mijatović · Builds on: [AUTONOMY_AND_NEXT.md](AUTONOMY_AND_NEXT.md), [ROADMAP.md](ROADMAP.md), [KNOWLEDGE_PLAN.md](KNOWLEDGE_PLAN.md)
 
 After a short demo of the system, the CTO suggested "a git graph". What exactly was meant was not said. This document lists what it can mean, what we already have for each meaning, and what the AI could do **on its own** on top of such a graph. Each item says whether it is built.
 
@@ -56,7 +56,7 @@ A dashboard view: `main` as the spine, one lane per ticket. Each lane shows its 
 
 Not built, kept as proposals:
 - **J4. Links in Jira itself** · 0.5 d · L1. On each ticket, a remote link ("Links" section) to the commit or PR that changed it or names it: for #31, 14 tickets. It writes to Jira, so it goes behind a switch in `policy.json` (`jiraLinks: off|auto`). The no-code alternative is the "GitHub for Jira" app, which needs a Jira admin and covers git on GitHub only (not SVN).
-- **T3. Links into Teams** · 1–1.5 d + IT. A link to the exact Teams message, or a chat opened with the owner. A webhook returns no message id, so this needs Microsoft Graph with an app registered in Azure (IT admin), or every person's email. It belongs with WF2 (Teams as the front door). **2026-11-17:** WF2 started as ROADMAP #9 (T7 the agent reads the channel through Graph, T8 Ask in Teams, T9 the approval by a reply, T10 the owner's answer). T7 finds the agent's own cards in the channel, with their message ids, so T3 can follow on it.
+- **T3. Links into Teams** · 1–1.5 d + IT. A link to the exact Teams message, or a chat opened with the owner. A webhook returns no message id, so this needs Microsoft Graph with an app registered in Azure (IT admin), or every person's email. It belongs with WF2 (Teams as the front door). **2026-11-17:** WF2 was built as ROADMAP #9 (T7 the agent reads the channel through Graph, T8 Ask in Teams, both live; T9 the approval by a reply, T10 the owner's answer, built). T7 finds the agent's own cards in the channel, with their message ids, so T3 can follow on it.
 - **J5** commits without any key is **A7** below.
 
 **G2. Bug lineage** · 0.5 d
@@ -75,7 +75,7 @@ Each item states what it does, why, how much of it is plain code, the autonomy l
 - An alert needs a failing test. The optional small model is not built: so far the tests decide, and a small local model may take that place later.
 - The owner notice is a Jira comment on the bug's ticket and on the commit's ticket, plus a GitHub comment on the commit.
 
-Proven with the pilot (the VAX-13 regression was alerted 2 minutes after its push) and on 135 commits of history.
+Proven with the pilot (the VAX-13 regression was alerted 3.4 minutes after its push) and on 135 commits of history.
 
 When a new commit lands on `main`, code blames the lines it changes or deletes, in its parent. If some of those lines were written by a **bug fix**, the agent says so before anyone reports anything: "this commit changes lines the fix of DEM-5 added". It names the knowledge entry and its "Prevent recurrence" note, and runs that bug's regression test (KB1). An optional small model, without tools, judges from the diff and the entry whether the change undoes the fix. Output: a comment on the PR it came from, and a notice to the component's owner. *Why:* today a regression is found only when a user reports it; K21's regression case (d) is the one prior-art case we could not test. Measured: alerts, alerts a person confirms, regressions caught before a ticket.
 
@@ -85,7 +85,7 @@ The Fixer already writes a test that fails on `main`. When the analysis says it 
 **A3. Blast radius from what changes together** · 1 d · L2
 Code counts the files and components that change in the same commits, and the bugs whose fix had to touch both. When the Fixer or the AI review handles a change to X, the prompt says: "X changed together with Y in 6 of 8 commits; DEM-5 broke because Y was not updated". It also selects which other tests to run. This gives most of reading (d) without a parser. Measured: review findings that cite it; bugs whose fix touched a file the blast radius named.
 
-**A4. The agent looks after its own branches** · 1 d · L2 on its own branches, L1 on others
+**A4. The agent looks after its own branches** · 1 d · L2 on its own branches, L1 on others · **first part built 2026-11-17**: the merge check (FR-87, `mergeCheck: auto`) merges every open fix PR with the new `main` in a throwaway worktree whenever `main` moves, runs every test on the result and posts the outcome on the PR; it changes no branch. The rebase, the re-run and the branch cleanup below are not built
 When `main` moves under one of the agent's open draft PRs and touches the same files, the agent rebases in its worktree, runs the reproduction test again (it must still fail before the fix and pass after) and all checks, and updates the PR with `--force-with-lease`. It does this **only on branches it created**, as recorded in its state. On a conflict it either runs the fix again on the new `main`, within a budget, or labels the PR `ai-needs-rebase` and tells the owner. It deletes its branches whose PR is merged or closed (LAB-23's branch was left behind, F23). For people's branches it only reports: stale branches, conflicts with `main`. Measured: PRs kept mergeable without a person; branches left behind.
 
 **A5. Port a fix to the copies in other apps** · 1 d · L3

@@ -28,6 +28,7 @@ Everything is **read-only** until you approve. The only write actions are the Ji
 | [docs/PROBLEM_BRIEF.md](docs/PROBLEM_BRIEF.md) | the problem, who it affects, goals, scope, success metrics |
 | [SPEC.md](SPEC.md) | functional requirements, architecture, interfaces, security, validation status |
 | [docs/DEMO_SCENARIO.md](docs/DEMO_SCENARIO.md) | demo script, setup checklist, fallbacks, reset |
+| [docs/PRESENTATION_PLAN.md](docs/PRESENTATION_PLAN.md) | the plan for a clearer presentation: how the app works under the hood, System 1, Teams, one example whole (proposal) |
 | [docs/DEPENDENCIES_AND_RISKS.md](docs/DEPENDENCIES_AND_RISKS.md) | dependencies, assumptions, risk register |
 | [docs/EXIT_CRITERIA.md](docs/EXIT_CRITERIA.md) | gate from discovery to the next build steps |
 | [docs/COPILOT_TEST.md](docs/COPILOT_TEST.md) | test plan for GitHub Copilot on company projects |
@@ -57,7 +58,9 @@ The script copies both skills to `~/.claude/skills/`, so they work in every proj
 
 ## Autonomous agent
 
-`agent/` runs the analysis on its own: it watches a Jira project, analyzes every new ticket headless, posts the analysis to Jira, notifies the most suitable person and shows everything live on a dashboard. A new ticket is analyzed and commented on in about a minute, with no human start. The person is told in a Teams channel, with an @mention and why it is them, and again when the fix is ready (a Workflows webhook; [agent/README.md](agent/README.md#notifications)). On the pilot the whole way, from the report to a verified draft PR and both Teams messages, took about five minutes ([docs/PILOT.md](docs/PILOT.md)).
+`agent/` runs the analysis on its own: it watches a Jira project, analyzes every new ticket headless, posts the analysis to Jira, notifies the most suitable person and shows everything live on a dashboard. A new ticket is analyzed and commented on in about a minute, with no human start. The person is told in a Teams channel, with an @mention and why it is them, and again when the fix is ready (a Workflows webhook; [agent/README.md](agent/README.md#notifications)). On the pilot the whole way, from the report to a verified draft PR and both Teams messages, took about five minutes, and all seven of its bugs so far were found, traced to the change that broke them and fixed ([docs/PILOT.md](docs/PILOT.md)).
+
+The team also talks to it in that channel: `ti: VAX-21` or any other Ask question is answered in the thread, and the owner approves or rejects a fix, takes a ticket or hands it on, by a reply ([agent/README.md](agent/README.md#from-teams-back-to-the-agent-roadmap-9)). A small local model, System 1, reads every ticket first, in a few seconds and at no cost: it asks the reporter in Jira when a report does not say what is wrong or where, and gives a ticket that is not about code a light path without a Claude analysis ([docs/SYSTEM1_PLAN.md](docs/SYSTEM1_PLAN.md)). At night it runs the regression tests of the known issues and the backlog, within a cost limit, and at 08:00 on working days it posts a digest of what it did and what waits for a person. The whole flow on one page: [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md).
 
 ```
 node agent/watcher.mjs        # dashboard on http://localhost:7070
@@ -259,6 +262,7 @@ The agent also takes into account who committed to the component. The ticket's r
 | Phase | What |
 |---|---|
 | 2 | Confluence as an additional documentation source, if you use it |
-| 3 | Input from Teams (Microsoft Graph), **started 2026-11-17** ([ROADMAP #9](docs/ROADMAP.md#9-teams--agent-ask-and-approval-from-the-channel)): Ask in the team's channel ("ti: status VAX-21", the answer in the thread), then the approval of a fix by a reply. Later: a bot that recognizes a ticket in a message and starts the analysis, and input from email |
+| 3 | ~~Input from Teams (Microsoft Graph)~~: **built 2026-11-17** ([ROADMAP #9](docs/ROADMAP.md#9-teams--agent-ask-and-approval-from-the-channel)): Ask in the team's channel ("ti: status VAX-21", the answer in the thread) is live on the test tenant; the approval of a fix and the owner's "I take it" by a reply are built, their first live round pending. Later: a bot that recognizes a ticket in a message and starts the analysis, and input from email |
 | 3 | ~~Sending the handoff message directly to the recommended person~~: done in the agent, a Teams message in the team's channel that @mentions the person |
-| 4 | ~~Automatic `/document-ticket` when a ticket moves to Done~~: done in the agent ([agent/README.md](agent/README.md#done--documentation)) |
+| 4 | ~~Automatic `/document-ticket` when a ticket moves to Done~~: done in the agent ([agent/README.md](agent/README.md#done--documentation)); since 2026-11-17 the agent also merges the documentation PR after 24 h unless a person holds it |
+| 4 | ~~A night shift and a morning digest~~: done 2026-11-18 ([agent/README.md](agent/README.md#night-shift-and-morning-digest-roadmap-3)) |

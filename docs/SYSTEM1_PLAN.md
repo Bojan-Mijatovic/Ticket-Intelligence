@@ -1,6 +1,6 @@
 # System 1: fast local decisions in front of Claude
 
-Status: **In use**: J1–J10 built, each decision behind its own switch (state in section 8) · Date: 2026-11-13, updated 2026-11-17 · Owner: Bojan Mijatović · Builds on: [AUTONOMY_AND_NEXT.md](AUTONOMY_AND_NEXT.md), [KNOWLEDGE_PLAN.md](KNOWLEDGE_PLAN.md), [REDACTION.md](REDACTION.md), [PILOT.md](PILOT.md)
+Status: **In use**: J1–J10 built, each decision behind its own switch; J2, J3, J4, J5 and J7 act, J6 and J10 in shadow (state in section 8) · Date: 2026-11-13, updated 2026-11-18 · Owner: Bojan Mijatović · Builds on: [AUTONOMY_AND_NEXT.md](AUTONOMY_AND_NEXT.md), [KNOWLEDGE_PLAN.md](KNOWLEDGE_PLAN.md), [REDACTION.md](REDACTION.md), [PILOT.md](PILOT.md)
 
 Before System 1, every decision the agent made about a ticket went through Claude: one analysis of about a minute, whatever the ticket was. This document describes a fast layer in front of it. A small local model answers a fixed set of questions about each ticket in a few seconds, with a probability for each answer. Claude stays for everything that has to be reasoned out or written. It was proposed on 2026-11-13 and is now built: which decisions act and which only say what they would do is in section 8 (state) and in [agent/README.md](../agent/README.md#system-1-the-local-decision-model); the measurements are in section 12.
 
@@ -183,8 +183,9 @@ A title that states the side decides, as before, and an answer never prepares mo
 | 4 | **Nothing leaves the machine** | the VAX-13 ticket: the masking missed a name, System 1 holds the ticket, and the cloud model never sees it | J6 |
 | 5 | **Who knows it?** | "Who knows the time slot code best?" answered in about two seconds from the knowledge map, with no Claude call | J5 |
 | 6 | **It knows when it does not know** | the calibration chart, and an unusual ticket at 41 % that goes to Claude | J8 |
+| 7 | **It asks before it spends** | a half-written report ("Oggi non va, controllate"): seconds later a question to the reporter in Jira, in the report's language; the answer starts the analysis | J7 (added 2026-11-18) |
 
-Moment 3 needs LAB-8's bug back on `main`. It can be planted in a scratch copy, as for the bisect proof, or added as a pilot case.
+State on 2026-11-18: moments 1, 2, 3 (LAB-30 recognised as LAB-8, its test run on main), 5 and 6 are in the tour's System 1 chapter (J9); moment 4 shows "would hold", since J6 stays in shadow; moment 7 happens live since J7 is `auto` (BIL-28). Moment 3 needs LAB-8's bug back on `main`. It can be planted in a scratch copy, as for the bisect proof, or added as a pilot case.
 
 ## 7. Data: what we have and what we do not
 
@@ -218,7 +219,7 @@ The pilot gives two new tickets every working day, each with an answer key. It i
 | J8b | the nightly fine-tune with the held-out check; calibration chart; Impact tile | 1 d | a worse model is never swapped in |
 | J9 | tour chapter and slide | 0.5 d | the six moments play from recorded events |
 
-**State on 2026-11-16:**
+**State on 2026-11-18:**
 
 | Step | State |
 |---|---|
@@ -228,13 +229,14 @@ The pilot gives two new tickets every working day, each with an answer key. It i
 | J4 known issue in other words + its test | built and verified live (FR-79): LAB-30 → LAB-8 (85 %), its regression test run on main and passed (`knownTest: auto`). LAB-8 recognised in 5 of 6 new reports; LAB-29 missed |
 | J5 Ask router | built and live (FR-80), `askRouter: auto`: "who" questions answered in about a second when the component is at 0.7 or more. **2026-11-17 (Ask 2/7, FR-90):** a clear wording in English, Italian or Serbian now decides the intent by a rule before System 1, which reads the rest; the component is the one the question names (System 1's own only for "who", at 0.7), after it named "Report" (78 %) for "What are the latest tickets?". Two more plain-code answers (a component's history, where code is), and a ticket key or a page's address is answered before any model. On the suite: 67 % of 79 questions answered without an AI run |
 | J6 privacy check | built (FR-81), in shadow. With `ft-2` it would have held 46 of 185 real tickets that name nobody; with `ft-5`, none of the 60 held out. **Not ready for `auto` yet**: the three real texts with a name are all in the training rows, so catching a name in a real ticket is not measured on unseen ones. **2026-11-17, one unseen case and a miss:** the pilot's VAX-17 kept a patient's name after the masking (2 of 3 identifiers masked), and ft-5 answered "no person" at 97 %. So `auto` stays off: it would promise a protection it does not give yet. The pilot writes exactly the labels this question needs (each report's quoted identifiers and which ones the masking missed) |
-| J2 light path, J3 queue order | built (FR-78), in shadow. `draft` **verified live** (DEM-49: held, a person chose the light path, triage comment and `ai-triaged` in 1 s, no analysis); `auto` is ready behind the policy switch. **J3 queue order set to `auto` on 2026-11-17**: it only reorders tickets waiting together at the head of the queue, and a ticket without an answer counts as normal |
-| J7 ask the reporter (WF1) | built (FR-82), in shadow: 204 reports labelled by hand, 16 half-written bug reports added, the question from a template (IT/EN). With `ft-5`: what is wrong 96 %, where 92 % on unseen rows; asked in 8 of the 10 cases a person marked, never without need. **Verified live** in shadow (BIL-23, BIL-24) and in `draft` with the hold (LAB-31, BIL-25: held, the question in Drafts in the report's language, **Analyze now** releases it) |
+| J2 light path, J3 queue order | built (FR-78), in shadow. `draft` **verified live** (DEM-49: held, a person chose the light path, triage comment and `ai-triaged` in 1 s, no analysis); `auto` is ready behind the policy switch. **J3 queue order set to `auto` on 2026-11-17**: it only reorders tickets waiting together at the head of the queue, and a ticket without an answer counts as normal. **J2 light path set to `auto` on 2026-11-17**, at the owner's request before the two weeks of shadow below, with two safety nets: the triage comment tells the reporter that a reply gets the full analysis (watched for 14 days), and a light path that turns out to be about code (a fix the agent proposes for it, or a commit on main naming it) puts the light path back in shadow by itself (`state/autonomy.json`, event `system1-demoted`). Verified live on BIL-27: the light path in 1 s, the reporter's reply got the full analysis |
+| Path wait | when an answer decides the path (light path, the question to the reporter, a hold), the watcher waits up to `gateWaitSeconds` (60) for System 1 instead of `waitSeconds` (12): BIL-26, queued with another ticket, got its answer only after 25 s and went to the analysis without its question (2026-11-17) |
+| J7 ask the reporter (WF1) | built (FR-82), in shadow: 204 reports labelled by hand, 16 half-written bug reports added, the question from a template (IT/EN). With `ft-5`: what is wrong 96 %, where 92 % on unseen rows; asked in 8 of the 10 cases a person marked, never without need. **Verified live** in shadow (BIL-23, BIL-24) and in `draft` with the hold (LAB-31, BIL-25: held, the question in Drafts in the report's language, **Analyze now** releases it). **Set to `auto` on 2026-11-17**: the agent posts the question in Jira itself and holds the ticket; the reporter's reply (a comment that is not the agent's) or an edited report starts the analysis with the answer, and after `askReporterWaitHours` (24) it starts anyway. Verified live on BIL-28 "Oggi non va, controllate": asked 4 s after it was queued; the reply started the analysis, which used the new details and found BIL-23 as its duplicate |
 | J8b retrain with a check | built (FR-83): `agent/system1-train.mjs` (data → fine-tune → evaluate both → accept only if not worse), `--nightly`, keep-awake, reload without a restart, labels from Claude's analyses, a stable split; the Impact panel with the calibration. The nightly task is ready (`schedule.ps1 -Register`) but **not registered**: it takes about four hours of CPU a night |
 | J9 presentation | built (FR-84): the tour's **System 1 chapter** (8 steps, checked in a browser) and the backup Q&A slide |
 | J10 fix warm-up by the side | built (FR-99, 2026-11-17), in shadow (`warmBySide`). Replayed with the same functions on the recorded runs: 11 of 26 runs with a System 1 answer would have skipped the warm-up, all right (no automatic fix followed); the same with no error at thresholds 0.5–0.9. All eleven were "not code"; no "backend" answer has reached 0.7 yet, so the worktree-only case is not seen live. Several of the eleven were vague bug reports (BIL-23, LAB-31) that got no fix because the analysis was not confident: the call was right for the warm-up, not a verdict that they are not about code. `auto` once the shadow checks stay right on the pilot |
 
-The light path stays in shadow until two weeks of the pilot show no ticket about code among those it would skip.
+The plan was to keep the light path in shadow until two weeks of the pilot showed no ticket about code among those it would skip. On 2026-11-17 the owner chose `auto` earlier, with the safety nets above in place of the wait; the same two weeks of data now decide whether it stays there, and a single miss sends it back to shadow on its own. The next training has its data ready but has not run: section 12, *Data for the next training*.
 
 About **11.5 working days**. J0 decides whether the rest goes ahead. If Laya does not read our tickets well even after fine-tuning, the same plan works with another open Jev-type model (the presentation counts about 90), because the service hides which model answers.
 
@@ -570,3 +572,18 @@ Two defects found and fixed:
 - **An unsure type.** "Verificare per favore." (W-95) got system support at 24 % and was not asked, because only "unclear" counted as unclear. Now no type at 40 % or more counts as unclear too. On `ft-5`'s saved answers this asks 8 of the 10 marked reports instead of 7, none without need, and the light path catches 13 of 28 instead of 14: the one it lost is W-95, which should go to the reporter.
 
 Still missed: W-111 "Da ieri la prenotazione non va" (System 1: tells what is wrong, 88 %) and W-115 "We get error 500" (names the screen, 56 %). Both are data for the next training, with FAR-22.
+
+### Data for the next training (2026-11-17)
+
+The misses above, and BIL-24 named as BIL-9 (J7 live, `ft-5`), are not trained on as they are: FAR-22 and BIL-24 carry `system1-demo` (the shadow test, never trained on), and W-111 and W-115 are rows of the test set. Training on them would teach the model its own test. So `demo/system1/written-tickets.json` gets 16 new reports of the same four kinds, in other words and on other screens (W-140 to W-155):
+
+| Kind | Missed | New reports | Labels |
+|---|---|---|---|
+| an error without its message | FAR-22 "…mi dà errore" (tells what is wrong, 67 %) | 5, in MediFarma, MediLab, MediVax, MediAgenda (IT, EN) | does not tell what is wrong; names the screen; tells what was done |
+| "does not work", with the function named | W-111 (tells what is wrong, 88 %) | 3 | does not tell what is wrong; tells when |
+| an error code, with no screen | W-115 (names the screen, 56 %) | 3, none in MediBill (BIL-13 is an error 500 there) | tells what is wrong; no screen |
+| the same screen, another fault | BIL-24 named as BIL-9 (95 %) | 5 in MediBill: receipts and prices, none of the 11 known issues | none of these; complete reports |
+
+Each was checked against the known issues of its app, so "none of these" is true; none names a person. Built with `system1-data.mjs --out` into a scratch folder: none of the 867 rows already in the data moved between training and test, 12 new rows went to training and 4 to the test (by the hash, as any row). Not trained yet: the next run of `system1-train.mjs` (about four and a half hours of CPU) uses them, and is judged by the usual rule. W-111 and W-115 are then no longer a fully independent check of their kind, since training holds reports like them; FAR-22 and BIL-24 stay the live check.
+
+One label left as it is, for a person to decide: W-108 "Mi dà errore quando prescrivo." is labelled as not telling what was done, while W-112 "Quando premo SALVA non succede niente." and the new reports count such a "when I …" as telling it. It does not change whether the reporter is asked (that rule reads only what is wrong and where).

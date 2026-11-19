@@ -4,7 +4,7 @@ Status: **In use** · Date: 2026-11-05 · Owner: Bojan Mijatović
 
 ## What "training" means here
 
-We do not train or fine-tune a model. The model is the same for everyone. What we control is **what the agent knows and how it is checked** when it works on a ticket. The agent gets better when:
+We do not train or fine-tune Claude. The model is the same for everyone. (The one model we do fine-tune is System 1, a small local model that answers fixed questions about each ticket before Claude: [SYSTEM1_PLAN.md](SYSTEM1_PLAN.md). Its labels come partly from Claude's analyses, so System 2 teaches System 1. This page is about Claude.) What we control is **what the agent knows and how it is checked** when it works on a ticket. The agent gets better when:
 
 1. its **instructions** are precise (the skills);
 2. the **project explains itself**: conventions, history, past problems;

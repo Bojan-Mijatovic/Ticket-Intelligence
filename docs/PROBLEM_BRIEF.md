@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | Approved (2026-11-04) |
 | **Owner** | Bojan Mijatović |
-| **Date** | 2026-11-04 |
+| **Date** | 2026-11-04; the POC results in section 5 updated 2026-11-18 |
 | **Related** | [SPEC.md](../SPEC.md) · [Demo scenario](DEMO_SCENARIO.md) · [Dependencies and risks](DEPENDENCIES_AND_RISKS.md) · [Exit criteria](EXIT_CRITERIA.md) |
 
 ## 1. Problem
@@ -56,7 +56,7 @@ When a ticket is resolved, the cause and fix are recorded in the project's own d
 **Out of scope for now:**
 - changing ticket status, priority or assignee automatically;
 - sending messages to customers automatically;
-- email and Teams *intake* of customer messages; planned for a later phase. (The team's own questions in its Teams channel, answered by Ask, started on 2026-11-17: ROADMAP #9.)
+- email and Teams *intake* of customer messages; planned for a later phase. (The team's own questions in its Teams channel are answered by Ask since 2026-11-17, live on a test tenant: ROADMAP #9.)
 - Confluence / SharePoint as documentation sources;
 - production deployment as a shared service.
 
@@ -64,10 +64,10 @@ When a ticket is resolved, the cause and fix are recorded in the project's own d
 
 | Metric | Target | POC result |
 |---|---|---|
-| Time from ticket creation to analysis posted in Jira | < 5 min | ~80 s (13 s pickup + ~60 s analysis), measured on DEM-8 |
-| Related history found (the ticket the description refers to) | found in ≥ 80 % of a sample | found in the demo (DEM-5, DEM-2) |
-| Likely cause correct (judged by the resolving developer) | ≥ 60 % of a sample | correct in the demo; to be measured on real tickets |
-| Recommended owner accepted | ≥ 70 % of a sample | to be measured |
+| Time from ticket creation to analysis posted in Jira | < 5 min | ~80 s (13 s pickup + ~60 s analysis), measured on DEM-8; 56 s per analysis on average over 84 (2026-11-18) |
+| Related history found (the ticket the description refers to) | found in ≥ 80 % of a sample | found in the demo (DEM-5, DEM-2); "already known?" right on 45 of 45 replayed resolved bugs |
+| Likely cause correct (judged by the resolving developer) | ≥ 60 % of a sample | correct in the demo; on the pilot, with an answer key, 7 of 7 (the file and the breaking commit); a file of the real fix named for 45 of 45 replayed bugs. To be measured on real tickets |
+| Recommended owner accepted | ≥ 70 % of a sample | not measured as acceptance yet; the owner matched the answer key on the pilot 7 of 7, and the person who fixed the bug for 37 of 45 replayed bugs |
 | Unauthorized writes (anything outside `policy.json`) | 0 | 0 |
 | Developer time to orient on an unfamiliar ticket | −50 % | to be measured |
 
